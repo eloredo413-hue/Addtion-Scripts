@@ -32,44 +32,52 @@ local Workspace = game:GetService("Workspace")
 -- (each file's history shows the changes).
 -- The link is pinned to the commit the files were last changed in, like a gist revision
 -- link, so these exact versions load whether or not that commit is merged into main.
--- Point it at the new commit whenever a file in addons/ changes.
--- An add-on given as { repo copy, gist } loads from its gist when the repo copy can't be
--- downloaded, so it never just goes missing.
-local ADDONS = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/de8d99b7cff7cbade57f2274deaa602e06b7e463/addons/"
+-- Point both links at the new commit whenever a file in addons/ changes.
+-- Each one is tried from GitHub, then from jsDelivr (a mirror of the same commit on another
+-- site, for when GitHub refuses too many downloads in a row), then from its gist.
+local ADDONS        = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/de8d99b7cff7cbade57f2274deaa602e06b7e463/addons/"
+local ADDONS_MIRROR = "https://cdn.jsdelivr.net/gh/eloredo413-hue/Addtion-Scripts@de8d99b7cff7cbade57f2274deaa602e06b7e463/addons/"
+
+local function repoAddon(file, gist)
+    return { ADDONS .. file, ADDONS_MIRROR .. file, gist }
+end
 
 local mainAddons = {
     -- FF Fix Hook goes first: it hooks loadstring itself, so it has to see the real one
     -- before the other hooks below wrap it.
     "https://gist.githubusercontent.com/eloredo413-hue/9e58eeb1d7f18ec52d456b9222281a79/raw/366f8a1443c39542db0e9e282333d45d97411cb8/FF%2520Fix%2520Hook",
     "https://gist.githubusercontent.com/eloredo413-hue/08f4496797d708f9174e4ed650107a30/raw/b03820737fac23bf593ce8187ab1a48be19a443b/Sounds%2520Additions%2520fixes",
-    { ADDONS .. "quick_texture_load_studs.lua",
-      "https://gist.githubusercontent.com/eloredo413-hue/ab9f65a116c2d16f989ec72cf254a72f/raw/d6cc1e5239b675e639556af59509192bfdeca1f3/Quick%2520Texture%2520load%2520studs" },
+    repoAddon("quick_texture_load_studs.lua",
+        "https://gist.githubusercontent.com/eloredo413-hue/ab9f65a116c2d16f989ec72cf254a72f/raw/d6cc1e5239b675e639556af59509192bfdeca1f3/Quick%2520Texture%2520load%2520studs"),
     "https://gist.githubusercontent.com/eloredo413-hue/d608fc1be6cd7dc769ff4818615cfb74/raw/f4bf4581441f409a8b6ec60f25f15ba3366bbc4c/Hammer%2520stuff%25201",
-    { ADDONS .. "particles_addon.lua",
-      "https://gist.githubusercontent.com/eloredo413-hue/09b2609e8aff413a178a16ac8477b612/raw/20961a4f1364c9805b1e93ab34f14abc4cc3998f/Particles%2520addon" },
+    repoAddon("particles_addon.lua",
+        "https://gist.githubusercontent.com/eloredo413-hue/09b2609e8aff413a178a16ac8477b612/raw/20961a4f1364c9805b1e93ab34f14abc4cc3998f/Particles%2520addon"),
     -- No gist fallback: the gist's v8 stops the wizard at the materials prompt. Without this
     -- copy the materials question is simply shown.
-    ADDONS .. "smooth_wizard_fix.lua",
-    { ADDONS .. "hook_2010.lua",
-      "https://gist.githubusercontent.com/eloredo413-hue/f156101652b68d2fdcbbeae4dc0481d6/raw/028c65e676eda5d90f9c3a0595347b102df2a0b9/2010%2520hook" },
-    { ADDONS .. "old_physics_camera_addon.lua",
-      "https://gist.githubusercontent.com/eloredo413-hue/6ec77a9b2884b534cd09f653a0fe023d/raw/94075a70190110e81a9c4153c340b19f3c903790/Old%2520physics%2520camera%2520addon" },
-    { ADDONS .. "explosion_replace_addon.lua",
-      "https://gist.githubusercontent.com/eloredo413-hue/0386978714c4e0c69e9de2415b36ee66/raw/5471dd8099e097c97f210374934382fbc843afaf/Explosion%2520Replace%2520Addon" },
+    repoAddon("smooth_wizard_fix.lua"),
+    repoAddon("hook_2010.lua",
+        "https://gist.githubusercontent.com/eloredo413-hue/f156101652b68d2fdcbbeae4dc0481d6/raw/028c65e676eda5d90f9c3a0595347b102df2a0b9/2010%2520hook"),
+    repoAddon("old_physics_camera_addon.lua",
+        "https://gist.githubusercontent.com/eloredo413-hue/6ec77a9b2884b534cd09f653a0fe023d/raw/94075a70190110e81a9c4153c340b19f3c903790/Old%2520physics%2520camera%2520addon"),
+    repoAddon("explosion_replace_addon.lua",
+        "https://gist.githubusercontent.com/eloredo413-hue/0386978714c4e0c69e9de2415b36ee66/raw/5471dd8099e097c97f210374934382fbc843afaf/Explosion%2520Replace%2520Addon"),
 }
 
 local URL_MORE_GUIS         = "https://gist.githubusercontent.com/eloredo413-hue/e8ed0a544d2d2abb2b2fe64fb891a25a/raw/fa0ab187eb41f98e9005cba04aa0fe4715eac563/More%2520gui"
 local URL_SAFECHAT_HOOK     = "https://gist.githubusercontent.com/eloredo413-hue/47847c9c0567c5b365c8bfa249d59190/raw/036418365fc79e40e7dc1d1120fca6de9e4600a0/Safe%2520chat%2520Hook"
-local URL_BUBBLE_SCRIPT     = { ADDONS .. "chat_bubble_fix_2011.lua",
-                                "https://gist.githubusercontent.com/eloredo413-hue/b60bebc8596be9e0174e23ca00edd14e/raw/37f520332a1a89676e03079e39743e2c93852e40/Chat%2520bubble%2520fix%25202011" }
-local URL_HAMMER_2          = { ADDONS .. "hammer_stuff_2.lua",
-                                "https://gist.githubusercontent.com/eloredo413-hue/83645b7fd2303c889c586a283c03c239/raw/a7a955839001cf01c6c187846e2cc0b9881f872e/Hammer%2520stuff%25202" }
-local URL_BUBBLE_2015_2016  = { ADDONS .. "chat_bubble_fix.lua",
-                                "https://gist.githubusercontent.com/eloredo413-hue/f37d62b43e7435cd46dd495b5ed1bcfc/raw/b4ae511afdec2e92e9b956a8ddc4803d9929d0da/Chat%2520bubble%2520fix" }
+local URL_BUBBLE_SCRIPT     = repoAddon("chat_bubble_fix_2011.lua",
+    "https://gist.githubusercontent.com/eloredo413-hue/b60bebc8596be9e0174e23ca00edd14e/raw/37f520332a1a89676e03079e39743e2c93852e40/Chat%2520bubble%2520fix%25202011")
+local URL_HAMMER_2          = repoAddon("hammer_stuff_2.lua",
+    "https://gist.githubusercontent.com/eloredo413-hue/83645b7fd2303c889c586a283c03c239/raw/a7a955839001cf01c6c187846e2cc0b9881f872e/Hammer%2520stuff%25202")
+local URL_BUBBLE_2015_2016  = repoAddon("chat_bubble_fix.lua",
+    "https://gist.githubusercontent.com/eloredo413-hue/f37d62b43e7435cd46dd495b5ed1bcfc/raw/b4ae511afdec2e92e9b956a8ddc4803d9929d0da/Chat%2520bubble%2520fix")
 
 -- The 2017 chat bubbles (taken from the 2017 core gui's OldBubbleChat) as a script of their own.
 -- They are used for 2015 and 2016. (The chat bubble fix above is only used for 2017-2020, as before.)
-local URL_BUBBLE_2017 = "https://raw.githubusercontent.com/eloredo413-hue/E/ccr-f33d83ed-bgaekc/2017_bubble_chat.lua"
+-- The jsDelivr mirror is used when GitHub won't hand it out: without these bubbles 2015 / 2016
+-- would be left with the modern ones.
+local URL_BUBBLE_2017        = "https://raw.githubusercontent.com/eloredo413-hue/E/ccr-f33d83ed-bgaekc/2017_bubble_chat.lua"
+local URL_BUBBLE_2017_MIRROR = "https://cdn.jsdelivr.net/gh/eloredo413-hue/E@ccr-f33d83ed-bgaekc/2017_bubble_chat.lua"
 
 -- url is one link or a list of links tried in order; a download that is an error page
 -- ("404: Not Found" or HTML) or does not compile moves on to the next link.
@@ -202,7 +210,7 @@ task.spawn(function()
     --========================================================
     local BUBBLE_SOURCES = {
         classic    = function() return URL_BUBBLE_SCRIPT end,
-        bubble2017 = function() return { URL_BUBBLE_2017 .. "?cb=" .. tostring(os.time()), URL_BUBBLE_2017 } end,
+        bubble2017 = function() return { URL_BUBBLE_2017 .. "?cb=" .. tostring(os.time()), URL_BUBBLE_2017, URL_BUBBLE_2017_MIRROR } end,
         modern     = function() return URL_BUBBLE_2015_2016 end,
     }
     -- a downloaded script must contain its end marker (a cut-short download is tried again)
@@ -226,7 +234,7 @@ task.spawn(function()
         for _, url in ipairs(urls) do
             for attempt = 1, 2 do
                 local ok, src = pcall(game.HttpGet, game, url)
-                if ok and type(src) == "string" and #src > 20 and not src:find("^%s*<") and not src:find("^404")
+                if ok and type(src) == "string" and #src > 20 and not src:find("^%s*<") and not src:find("^%s*%d%d%d:")
                    and (not marker or src:find(marker, 1, true)) then
                     return src, url
                 end
