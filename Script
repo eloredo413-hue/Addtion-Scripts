@@ -35,7 +35,9 @@ local mainAddons = {
     "https://gist.githubusercontent.com/eloredo413-hue/ab9f65a116c2d16f989ec72cf254a72f/raw/d6cc1e5239b675e639556af59509192bfdeca1f3/Quick%2520Texture%2520load%2520studs",
     "https://gist.githubusercontent.com/eloredo413-hue/d608fc1be6cd7dc769ff4818615cfb74/raw/f4bf4581441f409a8b6ec60f25f15ba3366bbc4c/Hammer%2520stuff%25201",
     "https://gist.githubusercontent.com/eloredo413-hue/09b2609e8aff413a178a16ac8477b612/raw/20961a4f1364c9805b1e93ab34f14abc4cc3998f/Particles%2520addon",
-    "https://gist.githubusercontent.com/eloredo413-hue/e50fdd7179b7c14677988d0d1dccda61/raw/ff00c687173a26bbc5839c9e313f06a094ebb12f/Smooth%2520wizard%2520fix",
+    -- Smooth wizard fix v8.1 (this repo): the gist's v8 stops the wizard at the hidden
+    -- materials prompt, so nothing after the 2006 body question shows up.
+    "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/smooth_wizard_fix.lua",
     "https://gist.githubusercontent.com/eloredo413-hue/f156101652b68d2fdcbbeae4dc0481d6/raw/028c65e676eda5d90f9c3a0595347b102df2a0b9/2010%2520hook",
     "https://gist.githubusercontent.com/eloredo413-hue/6ec77a9b2884b534cd09f653a0fe023d/raw/94075a70190110e81a9c4153c340b19f3c903790/Old%2520physics%2520camera%2520addon",
     "https://gist.githubusercontent.com/eloredo413-hue/0386978714c4e0c69e9de2415b36ee66/raw/5471dd8099e097c97f210374934382fbc843afaf/Explosion%2520Replace%2520Addon",

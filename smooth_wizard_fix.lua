@@ -1,4 +1,6 @@
--- [[ WIZARD SKIP v8 — single sound, no lingering frame, no gap ]]
+-- [[ WIZARD SKIP v8.1 — single sound, no lingering frame, no gap ]]
+-- v8.1: waits for the materials prompt's No button before pressing it (the game
+-- creates its buttons after the question text), so the wizard no longer stops there.
 
 task.spawn(function()
 	local TweenService = game:GetService("TweenService")
@@ -86,7 +88,15 @@ task.spawn(function()
 		if firesignal then
 			if pcall(firesignal, btn.MouseButton1Click) then return end
 		end
-		pcall(function() btn.MouseButton1Click:Fire() end)
+		-- No firesignal: run the button's handlers directly.
+		if getconnections then
+			local ok, conns = pcall(getconnections, btn.MouseButton1Click)
+			if ok and type(conns) == "table" then
+				for _, conn in ipairs(conns) do
+					if conn.Function then pcall(conn.Function) end
+				end
+			end
+		end
 	end
 
 	-- The gap is the hidden materials prompt playing its full slide-in: the
@@ -252,17 +262,20 @@ task.spawn(function()
 		end
 	end
 
+	local waitingForNo = setmetatable({}, {__mode = "k"})
+
 	local function skipFrame(frame)
 		if handled[frame] or not frame:IsA("Frame") or not isMaterialsFrame(frame) then return end
-		handled[frame] = true
 		armedAt = nil
-		log("materials prompt hidden")
 
 		pcall(function()
 			frame.Visible = false
 			frame.Position = UDim2.new(0, 0, 0, -9999)
 		end)
 
+		-- The game sets the question text before it creates the Yes / No
+		-- buttons, so the prompt is often recognised before No exists. It
+		-- stays hidden and is checked again until the button is there.
 		local noBtn
 		for _, d in ipairs(frame:GetDescendants()) do
 			if d:IsA("TextButton") and d.Text == "No" then
@@ -272,16 +285,43 @@ task.spawn(function()
 		end
 
 		if not noBtn then
-			log("No button not found")
+			if not waitingForNo[frame] then
+				waitingForNo[frame] = true
+				log("materials prompt hidden, waiting for its No button")
+			end
 			return
 		end
 
+		handled[frame] = true
+		log("materials prompt hidden")
+
 		-- Let the game's own No handler run, so it records the answer and
-		-- shows the forcefield prompt itself.
-		local sweep = silenceNextPress()
-		fireClick(noBtn)
-		-- Stop it before it's heard if the handler played it straight away.
-		sweep()
+		-- shows the forcefield prompt itself. Deferred so the game has
+		-- finished building the prompt and connecting its buttons first.
+		task.defer(function()
+			for attempt = 1, 2 do
+				local sweep = silenceNextPress()
+				fireClick(noBtn)
+				-- Stop it before it's heard if the handler played it straight away.
+				sweep()
+
+				-- The game's No handler slides the prompt out and destroys it.
+				local waited = 0
+				while frame.Parent and waited < 1.5 do
+					waited = waited + task.wait()
+				end
+				if not frame.Parent then return end
+				log("No press did not register (attempt " .. attempt .. ")")
+			end
+
+			-- It could not be answered for the player: show it so they can
+			-- answer it themselves instead of the wizard stopping here.
+			log("showing the materials prompt")
+			pcall(function()
+				frame.Position = UDim2.new(0.5, -frame.Size.X.Offset / 2, 0.5, -frame.Size.Y.Offset / 2)
+				frame.Visible = true
+			end)
+		end)
 	end
 
 	local function check(frame)
@@ -314,5 +354,5 @@ task.spawn(function()
 		end
 	end)
 
-	log("v8 watching")
+	log("v8.1 watching")
 end)
