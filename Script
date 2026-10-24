@@ -79,11 +79,24 @@ local URL_MORE_GUIS         = "https://gist.githubusercontent.com/eloredo413-hue
 -- of the gist no longer has the text, that version runs as published and a warning is printed.
 local MORE_GUIS_PATCHES = {
     {
-        -- the topbar dropdown list sits right inside its frame: don't walk every descendant
-        -- of every frame (the hammer panel has hundreds) on every frame
+        -- the search for the topbar dropdown walks every descendant of every frame (the hammer
+        -- panel has hundreds): run it only after something was added to the GUI, plus twice a
+        -- second as a backstop, instead of on every frame. The search itself is left as it is:
+        -- it must find the list however deep Bloxy puts it (only looking at the frame's own
+        -- children kept the More GUIs from being added)
         name = "dropdown scan",
-        old = "\t\t\t\tlocal slider = nil\n\t\t\t\tfor _, d in ipairs(frame:GetDescendants()) do\n",
-        new = "\t\t\t\tlocal slider = nil\n\t\t\t\tfor _, d in ipairs(frame:GetChildren()) do\n",
+        old = "\tRunService.RenderStepped:Connect(function()\n\t\tif not sg or not sg.Parent then return end\n\n\t\tfor _, frame in ipairs(sg:GetChildren()) do\n",
+        new = [[
+	local scanDirty, lastScan = true, 0
+	sg.DescendantAdded:Connect(function() scanDirty = true end)
+	RunService.RenderStepped:Connect(function()
+		if not sg or not sg.Parent then return end
+		local now = os.clock()
+		if not scanDirty and now - lastScan < 0.5 then return end
+		scanDirty, lastScan = false, now
+
+		for _, frame in ipairs(sg:GetChildren()) do
+]],
     },
     {
         -- the report-button dedupe walked the whole GUI five times a second: only re-check
