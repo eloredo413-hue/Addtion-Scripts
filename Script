@@ -18,6 +18,10 @@ if getgenv().Bubble2017Cleanup then
     pcall(getgenv().Bubble2017Cleanup)
     getgenv().Bubble2017Cleanup = nil
 end
+if getgenv().BloxyModernBubblesRestore then
+    pcall(getgenv().BloxyModernBubblesRestore)
+    getgenv().BloxyModernBubblesRestore = nil
+end
 getgenv().BloxyEraLoopId = nil
 -- Only the newest run of this loader reacts to Confirm and to topbar loads. An older run that
 -- is still going would otherwise believe its 2017 bubbles are on after this run stopped them,
@@ -325,9 +329,64 @@ task.spawn(function()
         return nil
     end
 
+    -- The modern bubbles are drawn by CoreGui.ExperienceChat.bubbleChat. Switching
+    -- BubbleChatConfiguration.Enabled off (all the 2017 bubble script does) does not hide them on
+    -- current Roblox - the 2017 and 2021 GUIs switch ExperienceChat off for that reason. So while
+    -- the 2017 bubbles run, the bubble part of ExperienceChat is kept switched off too; the chat
+    -- window is left alone. The restore function is kept in getgenv() so any run can undo it.
+    local function setModernBubbleUI(hide)
+        if getgenv().BloxyModernBubblesRestore then
+            pcall(getgenv().BloxyModernBubblesRestore)
+            getgenv().BloxyModernBubblesRestore = nil
+        end
+        if not hide then return end
+
+        local active = true
+        local conns, forced = {}, {}
+        local function force(obj)
+            if not active or forced[obj] ~= nil then return end
+            local ok, isLayer = pcall(function() return obj:IsA("LayerCollector") end)
+            if not ok or not isLayer then return end
+            forced[obj] = obj.Enabled
+            pcall(function() obj.Enabled = false end)
+            table.insert(conns, obj:GetPropertyChangedSignal("Enabled"):Connect(function()
+                if active and obj.Enabled then pcall(function() obj.Enabled = false end) end
+            end))
+        end
+        local function watch(bubbleChat)
+            force(bubbleChat)
+            for _, d in ipairs(bubbleChat:GetDescendants()) do force(d) end
+            table.insert(conns, bubbleChat.DescendantAdded:Connect(force))
+            print("[Loader] modern chat bubbles switched off (ExperienceChat.bubbleChat)")
+        end
+
+        getgenv().BloxyModernBubblesRestore = function()
+            active = false
+            for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
+            for obj, wasEnabled in pairs(forced) do
+                pcall(function() obj.Enabled = wasEnabled end)
+            end
+        end
+
+        -- ExperienceChat may not be built yet: look for it for a while (no yielding calls)
+        task.spawn(function()
+            for _ = 1, 60 do
+                if not active then return end
+                local experienceChat = CoreGui:FindFirstChild("ExperienceChat")
+                local bubbleChat = experienceChat and experienceChat:FindFirstChild("bubbleChat")
+                if bubbleChat then
+                    pcall(watch, bubbleChat)
+                    return
+                end
+                task.wait(0.5)
+            end
+        end)
+    end
+
     local function stopBubbleScript(era)
-        if era == "bubble2017" and getgenv().Bubble2017Cleanup then
-            pcall(getgenv().Bubble2017Cleanup)
+        if era == "bubble2017" then
+            if getgenv().Bubble2017Cleanup then pcall(getgenv().Bubble2017Cleanup) end
+            setModernBubbleUI(false)
         end
         for _, fn in ipairs(bubbleCleanups[era] or {}) do pcall(fn) end
         bubbleCleanups[era] = nil
@@ -350,6 +409,7 @@ task.spawn(function()
                 if activeBubbleEra then stopBubbleScript(activeBubbleEra) end
                 activeBubbleEra = era
                 getgenv().BloxyBubbleEra = era
+                if era == "bubble2017" then setModernBubbleUI(true) end
                 return
             end
 
@@ -406,6 +466,7 @@ task.spawn(function()
             activeBubbleEra = era
             getgenv().BloxyBubbleEra = era
             print("[Loader] " .. era .. " bubbles loaded from " .. tostring(usedUrl):sub(1, 90))
+            if era == "bubble2017" then setModernBubbleUI(true) end
         end)
         bubbleBusy = false
         -- A bubble script that did not start must not leave the game without any bubbles: the
@@ -1175,6 +1236,7 @@ task.spawn(function()
             if activeBubbleEra then stopBubbleScript(activeBubbleEra) end
             -- nothing selected: the 2017 bubbles must not stay on
             if getgenv().Bubble2017Cleanup then pcall(getgenv().Bubble2017Cleanup) end
+            setModernBubbleUI(false)
             return
         end
 
