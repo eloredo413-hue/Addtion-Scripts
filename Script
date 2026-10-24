@@ -926,7 +926,30 @@ task.spawn(function()
             end
         end
 
-        local lastScan = 0
+        -- Only BillboardGuis can be native dialog bubbles. They are collected as they appear
+        -- in PlayerGui / CoreGui (plus a full sweep every few seconds as a backstop) instead
+        -- of walking both containers - CoreGui alone has thousands of objects - five times a
+        -- second, which was a steady source of lag.
+        local billboards = {}
+        local function collectBillboards()
+            for _, container in ipairs({ pg, CoreGui }) do
+                pcall(function()
+                    for _, obj in ipairs(container:GetDescendants()) do
+                        if obj:IsA("BillboardGui") then billboards[obj] = true end
+                    end
+                end)
+            end
+        end
+        collectBillboards()
+        for _, container in ipairs({ pg, CoreGui }) do
+            pcall(function()
+                table.insert(connections, container.DescendantAdded:Connect(function(obj)
+                    if obj:IsA("BillboardGui") then billboards[obj] = true end
+                end))
+            end)
+        end
+
+        local lastScan, lastSweep = 0, os.clock()
         table.insert(connections, RunService.RenderStepped:Connect(function()
             local now = os.clock()
             if now - lastScan >= 0.2 then
@@ -945,12 +968,16 @@ task.spawn(function()
                         end
                     end
                 end
-                for _, container in ipairs({ pg, CoreGui }) do
-                    pcall(function()
-                        for _, obj in ipairs(container:GetDescendants()) do
-                            suppressNative(obj)
-                        end
-                    end)
+                if now - lastSweep >= 5 then
+                    lastSweep = now
+                    collectBillboards()
+                end
+                for obj in pairs(billboards) do
+                    if obj.Parent then
+                        pcall(suppressNative, obj)
+                    else
+                        billboards[obj] = nil
+                    end
                 end
             end
 
@@ -1063,20 +1090,31 @@ task.spawn(function()
         end
     end
 
-    local function checkConfirmHooks()
-        if not pg or not pg.Parent then return end
-        for _, obj in ipairs(pg:GetDescendants()) do
-            if obj:IsA("TextButton") and string.find(string.lower(obj.Text or ""), "confirm", 1, true) and not obj:GetAttribute("BPHookedConfirm") then
-                obj:SetAttribute("BPHookedConfirm", true)
-                obj.MouseButton1Click:Connect(onConfirm)
-            end
+    local function hookConfirm(obj)
+        if obj:IsA("TextButton") and string.find(string.lower(obj.Text or ""), "confirm", 1, true) and not obj:GetAttribute("BPHookedConfirm") then
+            obj:SetAttribute("BPHookedConfirm", true)
+            obj.MouseButton1Click:Connect(onConfirm)
         end
     end
+
+    local function checkConfirmHooks()
+        if not pg or not pg.Parent then return end
+        for _, obj in ipairs(pg:GetDescendants()) do hookConfirm(obj) end
+    end
+
+    -- New buttons are hooked as soon as they are added (Bloxy sets the confirm button's text
+    -- before parenting it), so the full PlayerGui rescan - which ran four times a second and
+    -- costs a lot in games with big GUIs - is only a backstop now.
+    pg.DescendantAdded:Connect(function(obj)
+        if obj:IsA("TextButton") then
+            task.defer(function() pcall(hookConfirm, obj) end)
+        end
+    end)
 
     local lastHookScan = 0
     RunService.RenderStepped:Connect(function()
         local now = os.clock()
-        if now - lastHookScan < 0.25 then return end
+        if now - lastHookScan < 3 then return end
         lastHookScan = now
         checkConfirmHooks()
     end)
