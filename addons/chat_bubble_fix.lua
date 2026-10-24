@@ -448,6 +448,8 @@ task.spawn(function()
 	for _, t in ipairs(TARGETS) do TARGET_SET[t] = true end
 
 	local function runBubbleChat(label)
+		-- the Bloxy Paradox loader starts its own (stoppable) copy of these bubbles for 2015 / 2016
+		if getgenv().BloxyHandles2015_2016Bubbles then return end
 		print("[" .. label .. "] Running bubble chat script...")
 		task.spawn(function()
 			local fn, err = loadstring(EMBEDDED)
