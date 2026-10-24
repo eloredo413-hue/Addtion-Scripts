@@ -285,12 +285,19 @@ local function createBubble(player, text)
 	gui.Parent = head
 
 	local connection
+	local nextSweep = 0
 	connection = RunService.RenderStepped:Connect(function()
 		if not gui.Parent then
 			if connection then connection:Disconnect() end
 			return
 		end
-		removeCharacterBubbles(character)
+		-- New bubbles are removed as they appear (see the interceptor below),
+		-- so the character is swept four times a second, not every frame.
+		local now = os.clock()
+		if now >= nextSweep then
+			nextSweep = now + 0.25
+			removeCharacterBubbles(character)
+		end
 		local camera = workspace.CurrentCamera
 		if not camera then return end
 		local distance = (camera.CFrame.Position - head.Position).Magnitude
@@ -405,10 +412,13 @@ end)
 
 --========================================================
 -- BACKUP CLEANUP
+-- The interceptor above removes bubbles as they appear; this only catches
+-- anything it missed. Walking every character and the whole PlayerGui
+-- seven times a second was a steady source of lag, so it runs once a second.
 --========================================================
 task.spawn(function()
 	while true do
-		task.wait(0.15)
+		task.wait(1)
 		scanWorkspace()
 		scanPlayerGui()
 	end
