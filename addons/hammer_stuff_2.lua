@@ -229,7 +229,15 @@ task.spawn(function()
 								end
 							end
 
-							updateCon = RunService.RenderStepped:Connect(update)
+							-- Ten updates a second is plenty for a name and a health bar;
+							-- doing it every frame for every humanoid added up fast.
+							local nextUpdate = 0
+							updateCon = RunService.RenderStepped:Connect(function()
+								local t = os.clock()
+								if t < nextUpdate then return end
+								nextUpdate = t + 0.1
+								update()
+							end)
 							table.insert(hpState.connections, updateCon)
 							currentHealth = health
 							h.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
@@ -1498,8 +1506,9 @@ task.spawn(function()
 		end
 
 		-- Builds an apply/restore pair that keeps every non-character part on the
-		-- nearest palette color. It re-checks every frame so BTool/executor color
-		-- changes get forced back, and restore puts the original colors back.
+		-- nearest palette color. Each part's Color is watched so BTool/executor
+		-- color changes get forced back right away, and restore puts the original
+		-- colors back.
 		local function makeColorLimiter(tag, palette, useExactRGB)
 			local colorCache = {}
 			local validSet = {}
@@ -1520,6 +1529,7 @@ task.spawn(function()
 				isUpdating = false,
 				connections = {},
 				original = setmetatable({}, { __mode = "k" }),
+				watched = setmetatable({}, { __mode = "k" }),
 			}
 
 			local function isValidColor(part)
@@ -1560,22 +1570,33 @@ task.spawn(function()
 				lim.isUpdating = false
 			end
 
+			-- Snaps a part now and again whenever its color changes. This used to
+			-- re-check every part in the workspace on every physics step (and build
+			-- a color string for each one), which tanked the frame rate.
+			local function watchPart(part)
+				if not lim.active or lim.watched[part] then return end
+				lim.watched[part] = true
+				snapPart(part)
+				table.insert(lim.connections, part:GetPropertyChangedSignal("Color"):Connect(function()
+					snapPart(part)
+				end))
+			end
+
 			local function apply()
 				if lim.active then return end
 				lim.active = true
 
-				table.insert(lim.connections, RunService.Stepped:Connect(function()
-					if lim.isUpdating then return end
-					for _, desc in ipairs(workspace:GetDescendants()) do
-						if desc:IsA("BasePart") and not isValidColor(desc) then
-							snapPart(desc)
-						end
-					end
+				-- Connected before the sweep below, which pauses now and then so a
+				-- big map does not freeze; parts added meanwhile are caught here.
+				table.insert(lim.connections, workspace.DescendantAdded:Connect(function(desc)
+					if desc:IsA("BasePart") then watchPart(desc) end
 				end))
 
-				table.insert(lim.connections, workspace.DescendantAdded:Connect(function(desc)
-					if desc:IsA("BasePart") then snapPart(desc) end
-				end))
+				for i, desc in ipairs(workspace:GetDescendants()) do
+					if not lim.active then return end
+					if desc:IsA("BasePart") then watchPart(desc) end
+					if i % 2000 == 0 then task.wait() end
+				end
 				print("[" .. tag .. "] Enabled.")
 			end
 
@@ -1594,6 +1615,7 @@ task.spawn(function()
 					end
 				end
 				lim.original = setmetatable({}, { __mode = "k" })
+				lim.watched = setmetatable({}, { __mode = "k" })
 				print("[" .. tag .. "] Disabled, original colors restored.")
 			end
 
