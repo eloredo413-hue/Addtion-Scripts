@@ -6,7 +6,9 @@
 -- above it and faded, small "..." bubble at medium distance, nothing when far away.
 --
 --  * Draws its own bubbles from TextChatService messages and switches the modern bubbles off
---    ONLY while it runs (BubbleChatConfiguration.Enabled is put back when it stops).
+--    ONLY while it runs (BubbleChatConfiguration and ExperienceChat.bubbleChat are put back
+--    when it stops).
+--  * Starts drawing at once: nothing waits for the texture preload.
 --  * Does not touch the chat window.
 --  * Stop it with: getgenv().Bubble2017Cleanup()
 --  * Games that still use the legacy chat already have these bubbles: it does nothing there.
@@ -102,21 +104,26 @@ local SavedBubbleEnabled = nil
 
 -- The two bubble textures come with the Roblox client. If this client does not have them the
 -- bubbles are drawn as plain white rounded boxes instead of showing nothing.
+-- The check runs on its own thread: PreloadAsync waits behind every other asset the game is
+-- loading (the 2015 / 2016 GUI loads its images at the same moment) and can take very long or
+-- never return, and nothing may wait for it - the bubbles are drawn with the textures meanwhile.
 local UseTextures = true
 
-pcall(function()
-	local Failed = false
+task.spawn(function()
+	pcall(function()
+		local Failed = false
 
-	ContentProvider:PreloadAsync({ BUBBLE_IMAGE, TAIL_IMAGE }, function(_, Status)
-		if Status == Enum.AssetFetchStatus.Failure or Status == Enum.AssetFetchStatus.TimedOut then
-			Failed = true
+		ContentProvider:PreloadAsync({ BUBBLE_IMAGE, TAIL_IMAGE }, function(_, Status)
+			if Status == Enum.AssetFetchStatus.Failure or Status == Enum.AssetFetchStatus.TimedOut then
+				Failed = true
+			end
+		end)
+
+		if Failed then
+			UseTextures = false
+			print("[2017 bubbles] the bubble textures are missing in this client: plain bubbles are used")
 		end
 	end)
-
-	if Failed then
-		UseTextures = false
-		print("[2017 bubbles] the bubble textures are missing in this client: plain bubbles are used")
-	end
 end)
 
 --========================================================
@@ -154,9 +161,17 @@ end
 DisableModernBubbles()
 
 do
-	local Configuration = GetBubbleConfiguration()
+	local Watched = false
 
-	if Configuration then
+	local function WatchConfiguration(Configuration)
+		if Watched or not Configuration then
+			return
+		end
+
+		Watched = true
+
+		DisableModernBubbles()
+
 		table.insert(Connections, Configuration:GetPropertyChangedSignal("Enabled"):Connect(function()
 			if Running and Configuration.Enabled then
 				pcall(function()
@@ -165,7 +180,75 @@ do
 			end
 		end))
 	end
+
+	WatchConfiguration(GetBubbleConfiguration())
+
+	-- the configuration can be created after this script starts
+	table.insert(Connections, TextChatService.ChildAdded:Connect(function(Child)
+		if Running and Child:IsA("BubbleChatConfiguration") then
+			WatchConfiguration(Child)
+		end
+	end))
 end
+
+-- Switching the configuration off is not always enough on current Roblox: the modern bubbles are
+-- drawn by CoreGui.ExperienceChat.bubbleChat, so its billboards are kept switched off as well
+-- (the 2017 and 2021 GUIs switch all of ExperienceChat off for this). The chat window is left on.
+local HiddenModernBubbles = {}
+
+local function HideModernBubble(Object)
+	if not Running or HiddenModernBubbles[Object] ~= nil then
+		return
+	end
+
+	local Success, IsLayer = pcall(function()
+		return Object:IsA("LayerCollector")
+	end)
+
+	if not Success or not IsLayer then
+		return
+	end
+
+	HiddenModernBubbles[Object] = Object.Enabled
+
+	pcall(function()
+		Object.Enabled = false
+	end)
+
+	table.insert(Connections, Object:GetPropertyChangedSignal("Enabled"):Connect(function()
+		if Running and Object.Enabled then
+			pcall(function()
+				Object.Enabled = false
+			end)
+		end
+	end))
+end
+
+task.spawn(function()
+	-- ExperienceChat may not be built yet: look for it for a while
+	for _ = 1, 60 do
+		if not Running then
+			return
+		end
+
+		local ExperienceChat = game:GetService("CoreGui"):FindFirstChild("ExperienceChat")
+		local ModernBubbles = ExperienceChat and ExperienceChat:FindFirstChild("bubbleChat")
+
+		if ModernBubbles then
+			HideModernBubble(ModernBubbles)
+
+			for _, Object in ipairs(ModernBubbles:GetDescendants()) do
+				HideModernBubble(Object)
+			end
+
+			table.insert(Connections, ModernBubbles.DescendantAdded:Connect(HideModernBubble))
+
+			return
+		end
+
+		task.wait(0.5)
+	end
+end)
 
 --========================================================
 -- MESSAGES
@@ -711,6 +794,14 @@ local function Stop()
 			Configuration.Enabled = SavedBubbleEnabled
 		end
 	end)
+
+	for Object, WasEnabled in pairs(HiddenModernBubbles) do
+		pcall(function()
+			Object.Enabled = WasEnabled
+		end)
+	end
+
+	HiddenModernBubbles = {}
 
 	if Env.Bubble2017Cleanup == Stop then
 		Env.Bubble2017Cleanup = nil
