@@ -28,24 +28,23 @@ local TextService = game:GetService("TextService")
 local Workspace = game:GetService("Workspace")
 
 local mainAddons = {
-    "https://gist.githubusercontent.com/eloredo413-hue/b902b556dbdc8595dd62bbc1964b809e/raw/53f08968605e02116c4b11877e5aa9da8d8d081b/Old%2520Sound%2520Replace%2520Addon",
+    -- FF Fix Hook goes first: it hooks loadstring itself, so it has to see the real one
+    -- before the other hooks below wrap it.
+    "https://gist.githubusercontent.com/eloredo413-hue/9e58eeb1d7f18ec52d456b9222281a79/raw/366f8a1443c39542db0e9e282333d45d97411cb8/FF%2520Fix%2520Hook",
+    "https://gist.githubusercontent.com/eloredo413-hue/08f4496797d708f9174e4ed650107a30/raw/b03820737fac23bf593ce8187ab1a48be19a443b/Sounds%2520Additions%2520fixes",
     "https://gist.githubusercontent.com/eloredo413-hue/ab9f65a116c2d16f989ec72cf254a72f/raw/d6cc1e5239b675e639556af59509192bfdeca1f3/Quick%2520Texture%2520load%2520studs",
-    "https://gist.githubusercontent.com/eloredo413-hue/524e76f705199e08a78a72e7bf79b27d/raw/768a58df75a996d9a306b471526cdd2c31d812a1/Hammer%2520stuff%25201",
+    "https://gist.githubusercontent.com/eloredo413-hue/d608fc1be6cd7dc769ff4818615cfb74/raw/f4bf4581441f409a8b6ec60f25f15ba3366bbc4c/Hammer%2520stuff%25201",
     "https://gist.githubusercontent.com/eloredo413-hue/09b2609e8aff413a178a16ac8477b612/raw/20961a4f1364c9805b1e93ab34f14abc4cc3998f/Particles%2520addon",
-    "https://gist.githubusercontent.com/eloredo413-hue/71f4843dc549f0a415ba9978e7a7de28/raw/54749c226b40163de09c82286a69926d389cc40b/Wizard%2520smooth",
+    "https://gist.githubusercontent.com/eloredo413-hue/e50fdd7179b7c14677988d0d1dccda61/raw/ff00c687173a26bbc5839c9e313f06a094ebb12f/Smooth%2520wizard%2520fix",
     "https://gist.githubusercontent.com/eloredo413-hue/f156101652b68d2fdcbbeae4dc0481d6/raw/028c65e676eda5d90f9c3a0595347b102df2a0b9/2010%2520hook",
-    "https://gist.githubusercontent.com/eloredo413-hue/05925bea976af10969d45b0213b95a3d/raw/3742e5f667698cdbea748c150418aaf4f18749c4/Camera%2520Physics%2520Addon",
-    -- TEST: disabled old "More guis" copy
-    -- "https://gist.githubusercontent.com/eloredo413-hue/84575df86d6267ef937df9093516b4eb/raw/c6c19cd99d63dd6b37d03a89fc667c5eb7bd36e2/More%2520guis",
-    -- TEST: disabled old "More guis" copy
-    -- "https://gist.githubusercontent.com/eloredo413-hue/e927d9ce080849c543a08162cedb8c98/raw/46b20b8242e4c700b300f514ac3b580365a6ec4c/More%2520guis",
+    "https://gist.githubusercontent.com/eloredo413-hue/6ec77a9b2884b534cd09f653a0fe023d/raw/94075a70190110e81a9c4153c340b19f3c903790/Old%2520physics%2520camera%2520addon",
     "https://gist.githubusercontent.com/eloredo413-hue/0386978714c4e0c69e9de2415b36ee66/raw/5471dd8099e097c97f210374934382fbc843afaf/Explosion%2520Replace%2520Addon",
 }
 
-local URL_TOPBAR_HOOK       = "https://gist.githubusercontent.com/eloredo413-hue/27f81974234bf9c7f00f9cbb0fc50645/raw/c36b357693e3a9505d9512cfb101dbfd7c780604/2023%2520New%2520Gui"
+local URL_MORE_GUIS         = "https://gist.githubusercontent.com/eloredo413-hue/03f3286a8aa6ec12ce5e41b6d557d9ef/raw/fb89dd3d3446368edebf03e34cd3f9a948bb147c/More%2520guis"
 local URL_SAFECHAT_HOOK     = "https://gist.githubusercontent.com/eloredo413-hue/47847c9c0567c5b365c8bfa249d59190/raw/036418365fc79e40e7dc1d1120fca6de9e4600a0/Safe%2520chat%2520Hook"
 local URL_BUBBLE_SCRIPT     = "https://gist.githubusercontent.com/eloredo413-hue/b60bebc8596be9e0174e23ca00edd14e/raw/37f520332a1a89676e03079e39743e2c93852e40/Chat%2520bubble%2520fix%25202011"
-local URL_HAMMER_2          = "https://gist.githubusercontent.com/eloredo413-hue/cb580c5dd38155af6f0772db96c5c131/raw/67c40ac116e51426c5242c7a6b04106397a07016/Hammer%2520stuff%25202"
+local URL_HAMMER_2          = "https://gist.githubusercontent.com/eloredo413-hue/208bd0f1f432a727a1cf5b4b18d977f7/raw/b7c7282f556401d9d9896028dcf9ed8abddb4ffa/Hammer%2520stuff%25202"
 local URL_BUBBLE_2015_2016  = "https://gist.githubusercontent.com/eloredo413-hue/f37d62b43e7435cd46dd495b5ed1bcfc/raw/b4ae511afdec2e92e9b956a8ddc4803d9929d0da/Chat%2520bubble%2520fix"
 
 -- The 2017 chat bubbles (taken from the 2017 core gui's OldBubbleChat) as a script of their own.
@@ -64,7 +63,7 @@ end
 -- UNCONDITIONAL MAIN ADDONS (Always Load)
 --========================================================
 for i, url in ipairs(mainAddons) do loadUrl(url, "addon" .. i) task.wait(0.1) end
-loadUrl(URL_TOPBAR_HOOK, "Topbar Hook")
+loadUrl(URL_MORE_GUIS, "More guis")
 task.wait(0.5)
 loadUrl(URL_SAFECHAT_HOOK, "SafeChat Hook")
 task.wait(1)
