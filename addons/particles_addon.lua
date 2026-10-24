@@ -489,27 +489,37 @@ end
 ------------------------------------------------------------
 -- PROCESS
 ------------------------------------------------------------
+-- The class is checked first: the forcefield check walks up every parent
+-- and was run for every object in the game, which froze it for seconds.
+local PARTICLE_CLASSES = { Sparkles = true, Smoke = true, Fire = true }
+
 local function process(item)
     if not item then return end
+    local class = item.ClassName
+    if not PARTICLE_CLASSES[class] then return end
     if isInForcefield(item) then return end
-    if item:IsA("Sparkles") then
+    if class == "Sparkles" then
         pcall(function() setupSparkles(item) end)
-    elseif item:IsA("Smoke") then
+    elseif class == "Smoke" then
         pcall(function() setupSmoke(item) end)
-    elseif item.ClassName == "Fire" then
+    else
         pcall(function() setupFire(item) end)
     end
 end
 
-for _, item in ipairs(game:GetDescendants()) do
-    process(item)
-end
-
+-- Connected before the sweep below, which pauses now and then so a big game
+-- does not freeze; anything added meanwhile is caught here (setup skips
+-- anything it already handled).
 game.DescendantAdded:Connect(function(item)
-    if item:IsA("Fire") or item:IsA("Smoke") or item:IsA("Sparkles") then
+    if PARTICLE_CLASSES[item.ClassName] then
         task.defer(function() process(item) end)
     end
 end)
+
+for i, item in ipairs(game:GetDescendants()) do
+    process(item)
+    if i % 5000 == 0 then task.wait() end
+end
 ]==]
 
     local function build(fireUrl, le)
@@ -564,7 +574,9 @@ end)
         for _, frame in ipairs(sg:GetChildren()) do
             if frame:IsA("Frame") and not handled[frame] then
                 local title, yesBtn, noBtn
-                for _, d in ipairs(frame:GetDescendants()) do
+                -- The prompt's label and buttons sit right inside it. Reading
+                -- every descendant walked the whole hammer panel every frame.
+                for _, d in ipairs(frame:GetChildren()) do
                     if d:IsA("TextLabel") and type(d.Text) == "string"
                        and d.Text:lower():find("old particles") then
                         title = d

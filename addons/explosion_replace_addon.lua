@@ -231,8 +231,10 @@ local function processItem(item)
 	end
 end
 for _, item in ipairs(Workspace:GetDescendants()) do processItem(item) end
+-- Only explosions are deferred: deferring every object added to the workspace
+-- made a thread for each one (thousands when textures or maps load).
 _G.BP_ExplosionHook = Workspace.DescendantAdded:Connect(function(item)
-	task.defer(function() processItem(item) end)
+	if item.ClassName == "Explosion" then task.defer(processItem, item) end
 end)
 print("[Explosion] 2010 style LOADED and HOOKED.")
 ]==]
@@ -335,8 +337,10 @@ local function processItem(item)
 	end
 end
 for _, item in ipairs(Workspace:GetDescendants()) do processItem(item) end
+-- Only explosions are deferred: deferring every object added to the workspace
+-- made a thread for each one (thousands when textures or maps load).
 _G.BP_ExplosionHook = Workspace.DescendantAdded:Connect(function(item)
-	task.defer(function() processItem(item) end)
+	if item.ClassName == "Explosion" then task.defer(processItem, item) end
 end)
 print("[Explosion] 2013 style LOADED and HOOKED.")
 ]==]
@@ -418,7 +422,9 @@ print("[Explosion] 2013 style LOADED and HOOKED.")
 			if frame:IsA("Frame") and not handled[frame] and not busy then
 				local titleLabel, yesBtn, noBtn
 
-				for _, d in ipairs(frame:GetDescendants()) do
+				-- The prompt's label and buttons sit right inside it. Reading
+				-- every descendant walked the whole hammer panel every frame.
+				for _, d in ipairs(frame:GetChildren()) do
 					if d:IsA("TextLabel") and type(d.Text) == "string" then
 						local t = d.Text:lower()
 						if t:find("particle", 1, true) or t:find("explosion", 1, true) then

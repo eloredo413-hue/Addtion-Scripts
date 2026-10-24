@@ -43,6 +43,11 @@ task.spawn(function()
 		}
 		local Players = game:GetService("Players")
 		local RESOLVED = {}
+		-- Textures made while their image id is still being looked up. They all
+		-- get the real image as soon as the lookup finishes; each texture used to
+		-- poll for it on a thread of its own for 4 seconds, which on a big map
+		-- meant thousands of threads waking up ten times a second.
+		local PENDING = {}
 		_G.RetroTrackedParts = setmetatable({}, {__mode="k"})
 
 		local function isPlayerPart(part)
@@ -61,6 +66,7 @@ task.spawn(function()
 		local function resolveId(id)
 			if RESOLVED[id] then return RESOLVED[id] end
 			RESOLVED[id] = "rbxthumb://type=Asset&id="..id.."&w=420&h=420"
+			PENDING[id] = {}
 			task.spawn(function()
 				local ok, xml = pcall(function()
 					return game:HttpGet("https://assetdelivery.roblox.com/v1/asset?id="..id)
@@ -70,6 +76,12 @@ task.spawn(function()
 					if img and img ~= id then
 						RESOLVED[id] = "rbxassetid://"..img
 					end
+				end
+				local waiting = PENDING[id]
+				PENDING[id] = nil
+				local cur = RESOLVED[id]
+				for tex in pairs(waiting) do
+					if tex.Parent and tex.Texture ~= cur then tex.Texture = cur end
 				end
 			end)
 			return RESOLVED[id]
@@ -104,16 +116,8 @@ task.spawn(function()
 				existing.StudsPerTileV = STUDS_PER_TILE_V
 				existing.Transparency = part.Transparency
 
-				task.spawn(function()
-					for _ = 1, 40 do
-						local cur = RESOLVED[decal]
-						if cur and cur ~= id then
-							if existing.Parent then existing.Texture = cur end
-							return
-						end
-						task.wait(0.1)
-					end
-				end)
+				local waiting = PENDING[decal]
+				if waiting then waiting[existing] = true end
 			elseif existing then
 				existing:Destroy()
 			end
@@ -348,7 +352,9 @@ task.spawn(function()
 		for _, frame in ipairs(sg:GetChildren()) do
 			if frame:IsA("Frame") and not handled[frame] then
 				local btn2008, btn2012, btn2016, btnNormal
-				for _, d in ipairs(frame:GetDescendants()) do
+				-- The prompt's buttons sit right inside it. Reading every
+				-- descendant walked the whole hammer panel every frame.
+				for _, d in ipairs(frame:GetChildren()) do
 					if d:IsA("TextButton") then
 						local t = d.Text or ""
 						if matches(t, "2008") and matches(t, "texture") then btn2008 = d end
