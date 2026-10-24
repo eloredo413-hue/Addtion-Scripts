@@ -478,7 +478,9 @@ task.spawn(function()
 
 		for _, frame in ipairs(sg:GetChildren()) do
 			if frame:IsA("Frame") then
-				for _, d in ipairs(frame:GetDescendants()) do
+				-- The topbar dropdown list sits right inside its frame. Reading
+				-- every descendant walked the whole hammer panel every frame.
+				for _, d in ipairs(frame:GetChildren()) do
 					if d:IsA("ScrollingFrame") then
 						for _, opt in ipairs(d:GetChildren()) do
 							if opt:IsA("TextButton") and TARGET_SET[opt.Text] then

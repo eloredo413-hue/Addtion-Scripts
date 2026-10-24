@@ -620,7 +620,9 @@ print("[Retro Master] Full script loaded successfully.")
 			if frame:IsA("Frame") and not handled[frame] and not busy then
 				local titleLabel, yesBtn, noBtn
 
-				for _, d in ipairs(frame:GetDescendants()) do
+				-- The prompt's label and buttons sit right inside it. Reading
+				-- every descendant walked the whole hammer panel every frame.
+				for _, d in ipairs(frame:GetChildren()) do
 					if d:IsA("TextLabel") and type(d.Text) == "string" then
 						local t = d.Text:lower()
 						if t:find("better emotes", 1, true) then
