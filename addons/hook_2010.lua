@@ -6,55 +6,48 @@ do
 	local SIG = 'game:GetService("CoreGui").TopBarApp.TopBarApp.Enabled = false'
 
 	------------------------------------------------------------
-	-- TRACK WHETHER THE WIZARD IS ACTUALLY OPEN
+	-- IS THE WIZARD ACTUALLY OPEN?
+	-- Checked only when the 2010 GUI is about to load. It used to be
+	-- re-checked ten times a second by walking the whole Bloxy GUI.
 	------------------------------------------------------------
-	local wizardActive = false
+	local WIZARD_KEYWORDS = {
+		"which topbar",
+		"do you want",
+		"choose your",
+		"what textures",
+		"do you want better",
+	}
 
-	task.spawn(function()
+	local function isWizardActive()
 		local player = game:GetService("Players").LocalPlayer
-		local pg = player:WaitForChild("PlayerGui")
-		local sg = pg:WaitForChild("BloxyParadoxProject", 30)
-		if not sg then return end
+		local pg = player and player:FindFirstChild("PlayerGui")
+		local sg = pg and pg:FindFirstChild("BloxyParadoxProject")
+		if not sg then return false end
 
-		local WIZARD_KEYWORDS = {
-			"which topbar",
-			"do you want",
-			"choose your",
-			"what textures",
-			"do you want better",
-		}
-
-		while sg.Parent do
-			local found = false
-			for _, frame in ipairs(sg:GetChildren()) do
-				if frame:IsA("Frame") then
-					for _, d in ipairs(frame:GetDescendants()) do
-						if d:IsA("TextLabel") and type(d.Text) == "string" then
-							local t = d.Text:lower()
-							for _, kw in ipairs(WIZARD_KEYWORDS) do
-								if t:find(kw, 1, true) then
-									found = true
-									break
-								end
+		for _, frame in ipairs(sg:GetChildren()) do
+			if frame:IsA("Frame") then
+				for _, d in ipairs(frame:GetDescendants()) do
+					if d:IsA("TextLabel") and type(d.Text) == "string" then
+						local t = d.Text:lower()
+						for _, kw in ipairs(WIZARD_KEYWORDS) do
+							if t:find(kw, 1, true) then
+								return true
 							end
-							if found then break end
 						end
 					end
-					if found then break end
 				end
 			end
-			wizardActive = found
-			task.wait(0.1)
 		end
-	end)
+		return false
+	end
 
 	------------------------------------------------------------
 	-- LOADSTRING HOOK
 	------------------------------------------------------------
 	local function patched(code, name)
-		if wizardActive
-			and type(code) == "string"
-			and string.find(code, SIG, 1, true) then
+		if type(code) == "string"
+			and string.find(code, SIG, 1, true)
+			and isWizardActive() then
 			print("[2010 Hook] Wizard picked 2010 — loading NEW 2010 GUI...")
 			local ok, nc = pcall(function() return game:HttpGet(NEW_URL) end)
 			if ok and type(nc) == "string" and #nc > 100 then
