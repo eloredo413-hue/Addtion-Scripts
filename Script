@@ -27,30 +27,34 @@ local CoreGui = game:GetService("CoreGui")
 local TextService = game:GetService("TextService")
 local Workspace = game:GetService("Workspace")
 
+-- Fixed copies of gist add-ons, kept in this repo's addons/ folder: Smooth wizard fix no
+-- longer stops the wizard at the hidden materials prompt, and the others have lag fixes
+-- (each file's history shows the changes).
+local ADDONS = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/addons/"
+
 local mainAddons = {
     -- FF Fix Hook goes first: it hooks loadstring itself, so it has to see the real one
     -- before the other hooks below wrap it.
     "https://gist.githubusercontent.com/eloredo413-hue/9e58eeb1d7f18ec52d456b9222281a79/raw/366f8a1443c39542db0e9e282333d45d97411cb8/FF%2520Fix%2520Hook",
     "https://gist.githubusercontent.com/eloredo413-hue/08f4496797d708f9174e4ed650107a30/raw/b03820737fac23bf593ce8187ab1a48be19a443b/Sounds%2520Additions%2520fixes",
-    "https://gist.githubusercontent.com/eloredo413-hue/ab9f65a116c2d16f989ec72cf254a72f/raw/d6cc1e5239b675e639556af59509192bfdeca1f3/Quick%2520Texture%2520load%2520studs",
+    ADDONS .. "quick_texture_load_studs.lua",
     "https://gist.githubusercontent.com/eloredo413-hue/d608fc1be6cd7dc769ff4818615cfb74/raw/f4bf4581441f409a8b6ec60f25f15ba3366bbc4c/Hammer%2520stuff%25201",
-    "https://gist.githubusercontent.com/eloredo413-hue/09b2609e8aff413a178a16ac8477b612/raw/20961a4f1364c9805b1e93ab34f14abc4cc3998f/Particles%2520addon",
-    -- Smooth wizard fix v8.1 (this repo): the gist's v8 stops the wizard at the hidden
-    -- materials prompt, so nothing after the 2006 body question shows up.
-    "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/smooth_wizard_fix.lua",
-    "https://gist.githubusercontent.com/eloredo413-hue/f156101652b68d2fdcbbeae4dc0481d6/raw/028c65e676eda5d90f9c3a0595347b102df2a0b9/2010%2520hook",
-    "https://gist.githubusercontent.com/eloredo413-hue/6ec77a9b2884b534cd09f653a0fe023d/raw/94075a70190110e81a9c4153c340b19f3c903790/Old%2520physics%2520camera%2520addon",
-    "https://gist.githubusercontent.com/eloredo413-hue/0386978714c4e0c69e9de2415b36ee66/raw/5471dd8099e097c97f210374934382fbc843afaf/Explosion%2520Replace%2520Addon",
+    ADDONS .. "particles_addon.lua",
+    ADDONS .. "smooth_wizard_fix.lua",
+    ADDONS .. "hook_2010.lua",
+    ADDONS .. "old_physics_camera_addon.lua",
+    ADDONS .. "explosion_replace_addon.lua",
 }
 
-local URL_MORE_GUIS         = "https://gist.githubusercontent.com/eloredo413-hue/03f3286a8aa6ec12ce5e41b6d557d9ef/raw/fb89dd3d3446368edebf03e34cd3f9a948bb147c/More%2520guis"
+-- More guis lives in its own repo (the same script as the More guis gist, with lag fixes).
+local URL_MORE_GUIS         = "https://raw.githubusercontent.com/eloredo413-hue/More-guis/main/More%20gui%20fix"
 local URL_SAFECHAT_HOOK     = "https://gist.githubusercontent.com/eloredo413-hue/47847c9c0567c5b365c8bfa249d59190/raw/036418365fc79e40e7dc1d1120fca6de9e4600a0/Safe%2520chat%2520Hook"
-local URL_BUBBLE_SCRIPT     = "https://gist.githubusercontent.com/eloredo413-hue/b60bebc8596be9e0174e23ca00edd14e/raw/37f520332a1a89676e03079e39743e2c93852e40/Chat%2520bubble%2520fix%25202011"
-local URL_HAMMER_2          = "https://gist.githubusercontent.com/eloredo413-hue/83645b7fd2303c889c586a283c03c239/raw/a7a955839001cf01c6c187846e2cc0b9881f872e/Hammer%2520stuff%25202"
-local URL_BUBBLE_2015_2016  = "https://gist.githubusercontent.com/eloredo413-hue/f37d62b43e7435cd46dd495b5ed1bcfc/raw/b4ae511afdec2e92e9b956a8ddc4803d9929d0da/Chat%2520bubble%2520fix"
+local URL_BUBBLE_SCRIPT     = ADDONS .. "chat_bubble_fix_2011.lua"
+local URL_HAMMER_2          = ADDONS .. "hammer_stuff_2.lua"
+local URL_BUBBLE_2015_2016  = ADDONS .. "chat_bubble_fix.lua"
 
 -- The 2017 chat bubbles (taken from the 2017 core gui's OldBubbleChat) as a script of their own.
--- They are used for 2015 and 2016. (The gist above is now only used for 2017-2020, as before.)
+-- They are used for 2015 and 2016. (The chat bubble fix above is only used for 2017-2020, as before.)
 local URL_BUBBLE_2017 = "https://raw.githubusercontent.com/eloredo413-hue/E/ccr-f33d83ed-bgaekc/2017_bubble_chat.lua"
 
 local function loadUrl(url, label)
