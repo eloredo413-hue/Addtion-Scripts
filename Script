@@ -27,6 +27,13 @@ getgenv().BloxyEraLoopId = nil
 -- Only the newest run of this loader reacts to Confirm and to topbar loads. An older run that
 -- is still going would otherwise believe its 2017 bubbles are on after this run stopped them,
 -- and refuse to start them again.
+-- On-screen status (Roblox notifications), so what the loader decided can be seen without a console.
+local LOADER_VERSION = "bubbles-check 1"
+local function notify(text)
+    pcall(function()
+        game:GetService("StarterGui"):SetCore("SendNotification", { Title = "Bloxy loader", Text = text, Duration = 6 })
+    end)
+end
 local LOADER_ID = tostring(os.clock()) .. "-" .. tostring(math.random(1, 1000000000))
 getgenv().BloxyLoaderId = LOADER_ID
 local function isCurrentLoader() return getgenv().BloxyLoaderId == LOADER_ID end
@@ -960,6 +967,10 @@ Env.Bubble2017Running = true
 
 print("[2017 bubbles] running")
 
+pcall(function()
+	game:GetService("StarterGui"):SetCore("SendNotification", { Title = "Bloxy loader", Text = "2017 bubbles on", Duration = 6 })
+end)
+
 -- end of 2017_bubble_chat.lua
 ]==]
 -- The 2015 / 2016 chat bubble fix hooks the 2015 / 2016 buttons too: it leaves them to this loader.
@@ -1209,6 +1220,7 @@ task.spawn(function()
             if not chunk then
                 failed = true
                 warn("[Loader] the " .. era .. " bubble script did not compile:", compileError)
+                notify(era .. " bubbles did not compile: " .. tostring(compileError):sub(1, 80))
                 return
             end
 
@@ -1228,6 +1240,7 @@ task.spawn(function()
             if finished and not runOk then
                 failed = true
                 warn("[Loader] the " .. era .. " bubble script errored:", runError)
+                notify(era .. " bubbles errored: " .. tostring(runError):sub(1, 80))
                 return
             end
 
@@ -2006,6 +2019,7 @@ task.spawn(function()
     local function applyEra(era, raw)
         if not isCurrentLoader() then return end
         print("[Loader] topbar choice \"" .. tostring(raw) .. "\" -> era: " .. era)
+        notify("topbar \"" .. tostring(raw) .. "\" -> " .. (era == "bubble2017" and "2017 bubbles" or era))
         getgenv().BloxyEra = era
         desiredBubbleEra = (era ~= "none") and era or nil
         if lastFailedEra == era then lastFailedEra = nil end
@@ -2134,3 +2148,4 @@ task.spawn(function()
 end)
 
 print("[Loader] All scripts loaded.")
+notify("loaded (" .. LOADER_VERSION .. ")")
