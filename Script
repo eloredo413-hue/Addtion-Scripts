@@ -19,6 +19,12 @@ if getgenv().Bubble2017Cleanup then
     getgenv().Bubble2017Cleanup = nil
 end
 getgenv().BloxyEraLoopId = nil
+-- Only the newest run of this loader reacts to Confirm and to topbar loads. An older run that
+-- is still going would otherwise believe its 2017 bubbles are on after this run stopped them,
+-- and refuse to start them again.
+local LOADER_ID = tostring(os.clock()) .. "-" .. tostring(math.random(1, 1000000000))
+getgenv().BloxyLoaderId = LOADER_ID
+local function isCurrentLoader() return getgenv().BloxyLoaderId == LOADER_ID end
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
@@ -98,6 +104,31 @@ end
 -- UNCONDITIONAL MAIN ADDONS (Always Load)
 --========================================================
 for _, url in ipairs(mainAddons) do loadUrl(url) task.wait(0.1) end
+
+--========================================================
+-- 2015 / 2016 GUI WATCH
+-- Bloxy loads its 2015 / 2016 topbar through loadstring. Seeing that load is the surest sign
+-- those GUIs are on, whatever the setup path (wizard, skip setup, configure button), so the
+-- 2017 bubbles are started from here as well as from Confirm.
+-- The handler is looked up in getgenv() so it is always the newest run's: More guis keeps
+-- calling the loadstring it saw on its first run, which can be an older run's hook.
+--========================================================
+do
+    local previousLoadstring = getgenv().loadstring or loadstring
+    local function watchedLoadstring(code, name)
+        local handler = getgenv().BloxyOnTopbarLoaded
+        if type(code) == "string" and type(handler) == "function" then
+            if code:sub(1, 200):find("%-%-%s*201[56] topbar")
+               or code:find("pastebin.com/raw/uHtNKptM", 1, true) or code:find("pastebin.com/raw/gvxgVrKD", 1, true)
+               or code:find("Year = 2016,", 1, true) or code:find("Year = 2015,", 1, true) then
+                task.defer(handler, "bubble2017")
+            end
+        end
+        return previousLoadstring(code, name)
+    end
+    pcall(function() getgenv().loadstring = watchedLoadstring end)
+    pcall(function() _G.loadstring = watchedLoadstring end)
+end
 loadUrl(URL_MORE_GUIS, "More guis")
 task.wait(0.5)
 loadUrl(URL_SAFECHAT_HOOK, "SafeChat Hook")
@@ -255,6 +286,11 @@ task.spawn(function()
     end
 
     local function startBubbleScript(era)
+        -- the 2017 bubbles can be stopped from outside (a new run of this loader stops them)
+        if era == "bubble2017" and not getgenv().Bubble2017Running then
+            cannotStop.bubble2017 = nil
+            if activeBubbleEra == "bubble2017" then activeBubbleEra = nil end
+        end
         if activeBubbleEra == era or bubbleBusy then return end
         bubbleBusy = true
         local failed = false
@@ -1073,8 +1109,10 @@ task.spawn(function()
         dialogLoaded_Classic = true
     end
 
-    local function evaluateAndLoad()
-        local era, raw = getSelectedEra()
+    local detectedEra = nil -- era of the topbar GUI Bloxy was seen loading since the last Confirm
+
+    local function applyEra(era, raw)
+        if not isCurrentLoader() then return end
         print("[Loader] topbar choice \"" .. tostring(raw) .. "\" -> era: " .. era)
         getgenv().BloxyEra = era
         desiredBubbleEra = (era ~= "none") and era or nil
@@ -1114,10 +1152,27 @@ task.spawn(function()
         end
     end
 
+    local function evaluateAndLoad()
+        local era, raw = getSelectedEra()
+        -- the config can't be read (or isn't saved yet) but Bloxy was seen loading the GUI
+        if era == "none" and detectedEra then
+            era, raw = detectedEra, "GUI Bloxy loaded"
+        end
+        applyEra(era, raw)
+    end
+
+    getgenv().BloxyOnTopbarLoaded = function(era)
+        if not isCurrentLoader() then return end
+        detectedEra = era
+        applyEra(era, "GUI Bloxy loaded")
+    end
+
     -- Confirm: the era is read from the saved config. The config may be written a moment after
     -- the click, so it is read again a little later (the second reading changes nothing when the
     -- era is the same; it only fixes a reading that was taken before the config was saved).
     local function onConfirm()
+        if not isCurrentLoader() then return end
+        detectedEra = nil
         for _, delay in ipairs({ 0.5, 2, 4 }) do
             task.delay(delay, evaluateAndLoad)
         end
@@ -1137,8 +1192,8 @@ task.spawn(function()
     end)
 
     local function hookConfirm(obj)
-        if obj:IsA("TextButton") and string.find(string.lower(obj.Text or ""), "confirm", 1, true) and not obj:GetAttribute("BPHookedConfirm") then
-            obj:SetAttribute("BPHookedConfirm", true)
+        if obj:IsA("TextButton") and string.find(string.lower(obj.Text or ""), "confirm", 1, true) and obj:GetAttribute("BPHookedConfirm") ~= LOADER_ID then
+            obj:SetAttribute("BPHookedConfirm", LOADER_ID)
             obj.MouseButton1Click:Connect(onConfirm)
         end
     end
