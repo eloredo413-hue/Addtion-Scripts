@@ -1,6 +1,9 @@
--- [[ WIZARD SKIP v8.1 — single sound, no lingering frame, no gap ]]
+-- [[ WIZARD SKIP v8.2 — single sound, no lingering frame, no gap ]]
 -- v8.1: waits for the materials prompt's No button before pressing it (the game
 -- creates its buttons after the question text), so the wizard no longer stops there.
+-- v8.2: much less work per frame: only a prompt's own labels and buttons are read,
+-- the __namecall hook does almost nothing outside the moment it is needed, and
+-- the tween hook no longer searches the GUI of every tween in the game.
 
 task.spawn(function()
 	local TweenService = game:GetService("TweenService")
@@ -62,12 +65,16 @@ task.spawn(function()
 		end
 	end
 
+	-- The game's prompts keep their question label directly inside the prompt
+	-- frame, so only a frame's own labels are read. Reading every descendant
+	-- made each check walk the whole hammer panel (hundreds of objects), and a
+	-- help text there that mentions "2006 body" passed for the body prompt.
 	local function hasText(obj, needle)
 		if not obj or typeof(obj) ~= "Instance" then return false end
 		if not obj:IsA("GuiObject") then return false end
 		local found = false
 		pcall(function()
-			for _, d in ipairs(obj:GetDescendants()) do
+			for _, d in ipairs(obj:GetChildren()) do
 				if d:IsA("TextLabel")
 				   and type(d.Text) == "string"
 				   and d.Text:lower():find(needle, 1, true) then
@@ -108,7 +115,10 @@ task.spawn(function()
 	-- created (its text may not be set yet), so from the moment the body
 	-- prompt is answered until the materials prompt is recognised, tweens on
 	-- anything other than the body prompt are made instant too.
-	local handled = setmetatable({}, {__mode = "k"})
+	-- Not weak: Roblox can drop and recreate an Instance's Lua object, which
+	-- would make a weak table forget a prompt that is still on screen.
+	-- Destroyed prompts are removed below.
+	local handled = {}
 	local bodyFrame, armedAt
 
 	local function inside(obj, frame)
@@ -118,12 +128,18 @@ task.spawn(function()
 	local function isHiddenPromptTween(obj)
 		if typeof(obj) ~= "Instance" or not obj:IsA("GuiObject") then return false end
 		for frame in pairs(handled) do
-			if inside(obj, frame) then return true end
+			if not frame.Parent then
+				handled[frame] = nil
+			elseif inside(obj, frame) then
+				return true
+			end
 		end
 		if armedAt and os.clock() - armedAt < 2 and not inside(obj, bodyFrame) then
 			return true
 		end
-		return isMaterialsFrame(obj)
+		-- Only the game's prompts (frames right under its ScreenGui) can be the
+		-- materials prompt; every other tween in the game is left alone.
+		return obj.Parent == sg and isMaterialsFrame(obj)
 	end
 
 	local function createTween(create, self, obj, tweenInfo, goal)
@@ -159,6 +175,7 @@ task.spawn(function()
 
 	-- Set when the hidden No is pressed so the game's click sound for it is
 	-- swallowed; the player already heard one for the body prompt.
+	local muting = false
 	local muteClickUntil = 0
 
 	-- The game calls TweenService:Create(...), which goes through __namecall
@@ -166,22 +183,29 @@ task.spawn(function()
 	if hookmetamethod and getnamecallmethod then
 		local ok, err = pcall(function()
 			local oldNamecall
+			-- Every method call in the game passes through here, so the usual case
+			-- (not TweenService, no click to swallow) is kept to two checks.
 			local namecallWrapper = function(self, ...)
-				if muteClickUntil > 0 and os.clock() < muteClickUntil then
-					-- No Instance namecalls before oldNamecall below, or the pending
-					-- method name changes; ClassName is a plain property read.
-					-- Lowercase too: older games use the deprecated sound:play().
-					local method = tostring(getnamecallmethod()):lower()
-					if ((method == "play" or method == "resume")
-					    and typeof(self) == "Instance" and self.ClassName == "Sound")
-					   or (method == "playlocalsound" and self == SoundService) then
-						return
+				if self == TweenService then
+					if getnamecallmethod() == "Create" then
+						-- Index call, not a namecall: anything namecalled while checking
+						-- changes the pending method name, so oldNamecall can't be reused.
+						return createTween(TweenService.Create, self, ...)
 					end
-				end
-				if self == TweenService and getnamecallmethod() == "Create" then
-					-- Index call, not a namecall: anything namecalled while checking
-					-- changes the pending method name, so oldNamecall can't be reused.
-					return createTween(TweenService.Create, self, ...)
+				elseif muting then
+					if os.clock() < muteClickUntil then
+						-- No Instance namecalls before oldNamecall below, or the pending
+						-- method name changes; ClassName is a plain property read.
+						-- Lowercase too: older games use the deprecated sound:play().
+						local method = string.lower(tostring(getnamecallmethod()))
+						if ((method == "play" or method == "resume")
+						    and typeof(self) == "Instance" and self.ClassName == "Sound")
+						   or (method == "playlocalsound" and self == SoundService) then
+							return
+						end
+					else
+						muting = false
+					end
 				end
 				return oldNamecall(self, ...)
 			end
@@ -226,6 +250,7 @@ task.spawn(function()
 
 		local stopAt = os.clock() + 0.3
 		muteClickUntil = stopAt
+		muting = true
 
 		-- Sounds created on the spot can be parented anywhere.
 		local added = game.DescendantAdded:Connect(function(d)
@@ -237,6 +262,7 @@ task.spawn(function()
 			if os.clock() >= stopAt then
 				stepped:Disconnect()
 				added:Disconnect()
+				if muteClickUntil <= stopAt then muting = false end
 			end
 		end)
 
@@ -248,7 +274,7 @@ task.spawn(function()
 	local function watchBody(frame)
 		if watchedBody[frame] or not frame:IsA("Frame") or not isBodyFrame(frame) then return end
 		local buttons = {}
-		for _, d in ipairs(frame:GetDescendants()) do
+		for _, d in ipairs(frame:GetChildren()) do
 			if d:IsA("TextButton") then table.insert(buttons, d) end
 		end
 		if #buttons == 0 then return end
@@ -277,7 +303,7 @@ task.spawn(function()
 		-- buttons, so the prompt is often recognised before No exists. It
 		-- stays hidden and is checked again until the button is there.
 		local noBtn
-		for _, d in ipairs(frame:GetDescendants()) do
+		for _, d in ipairs(frame:GetChildren()) do
 			if d:IsA("TextButton") and d.Text == "No" then
 				noBtn = d
 				break
@@ -346,13 +372,19 @@ task.spawn(function()
 		end)
 	end)
 
+	-- Backstop only: the events above catch prompts while they are being
+	-- built, so this does not need to run every frame.
+	local lastCheck = 0
 	RunService.RenderStepped:Connect(function()
 		if not sg or not sg.Parent then return end
+		local now = os.clock()
+		if now - lastCheck < 0.1 then return end
+		lastCheck = now
 
 		for _, frame in ipairs(sg:GetChildren()) do
 			check(frame)
 		end
 	end)
 
-	log("v8.1 watching")
+	log("v8.2 watching")
 end)
