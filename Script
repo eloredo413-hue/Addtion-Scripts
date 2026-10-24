@@ -44,7 +44,7 @@ local mainAddons = {
 local URL_MORE_GUIS         = "https://gist.githubusercontent.com/eloredo413-hue/03f3286a8aa6ec12ce5e41b6d557d9ef/raw/fb89dd3d3446368edebf03e34cd3f9a948bb147c/More%2520guis"
 local URL_SAFECHAT_HOOK     = "https://gist.githubusercontent.com/eloredo413-hue/47847c9c0567c5b365c8bfa249d59190/raw/036418365fc79e40e7dc1d1120fca6de9e4600a0/Safe%2520chat%2520Hook"
 local URL_BUBBLE_SCRIPT     = "https://gist.githubusercontent.com/eloredo413-hue/b60bebc8596be9e0174e23ca00edd14e/raw/37f520332a1a89676e03079e39743e2c93852e40/Chat%2520bubble%2520fix%25202011"
-local URL_HAMMER_2          = "https://gist.githubusercontent.com/eloredo413-hue/208bd0f1f432a727a1cf5b4b18d977f7/raw/b7c7282f556401d9d9896028dcf9ed8abddb4ffa/Hammer%2520stuff%25202"
+local URL_HAMMER_2          = "https://gist.githubusercontent.com/eloredo413-hue/83645b7fd2303c889c586a283c03c239/raw/a7a955839001cf01c6c187846e2cc0b9881f872e/Hammer%2520stuff%25202"
 local URL_BUBBLE_2015_2016  = "https://gist.githubusercontent.com/eloredo413-hue/f37d62b43e7435cd46dd495b5ed1bcfc/raw/b4ae511afdec2e92e9b956a8ddc4803d9929d0da/Chat%2520bubble%2520fix"
 
 -- The 2017 chat bubbles (taken from the 2017 core gui's OldBubbleChat) as a script of their own.
