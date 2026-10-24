@@ -58,10 +58,7 @@ local mainAddons = {
       "https://gist.githubusercontent.com/eloredo413-hue/0386978714c4e0c69e9de2415b36ee66/raw/5471dd8099e097c97f210374934382fbc843afaf/Explosion%2520Replace%2520Addon" },
 }
 
--- More guis lives in its own repo (the same script as the More guis gist, with lag fixes),
--- pinned the same way to the commit it was last changed in.
-local URL_MORE_GUIS         = { "https://raw.githubusercontent.com/eloredo413-hue/More-guis/91ce3751046bf7590e8643ee7658951d1b95faa3/More%20gui%20fix",
-                                "https://gist.githubusercontent.com/eloredo413-hue/e8ed0a544d2d2abb2b2fe64fb891a25a/raw/fa0ab187eb41f98e9005cba04aa0fe4715eac563/More%2520gui" }
+local URL_MORE_GUIS         = "https://gist.githubusercontent.com/eloredo413-hue/e8ed0a544d2d2abb2b2fe64fb891a25a/raw/fa0ab187eb41f98e9005cba04aa0fe4715eac563/More%2520gui"
 local URL_SAFECHAT_HOOK     = "https://gist.githubusercontent.com/eloredo413-hue/47847c9c0567c5b365c8bfa249d59190/raw/036418365fc79e40e7dc1d1120fca6de9e4600a0/Safe%2520chat%2520Hook"
 local URL_BUBBLE_SCRIPT     = { ADDONS .. "chat_bubble_fix_2011.lua",
                                 "https://gist.githubusercontent.com/eloredo413-hue/b60bebc8596be9e0174e23ca00edd14e/raw/37f520332a1a89676e03079e39743e2c93852e40/Chat%2520bubble%2520fix%25202011" }
