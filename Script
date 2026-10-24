@@ -69,7 +69,44 @@ local mainAddons = {
         "https://gist.githubusercontent.com/eloredo413-hue/0386978714c4e0c69e9de2415b36ee66/raw/5471dd8099e097c97f210374934382fbc843afaf/Explosion%2520Replace%2520Addon"),
 }
 
-local URL_MORE_GUIS         = "https://gist.githubusercontent.com/eloredo413-hue/e8ed0a544d2d2abb2b2fe64fb891a25a/raw/fa0ab187eb41f98e9005cba04aa0fe4715eac563/More%2520gui"
+local URL_MORE_GUIS         = "https://gist.githubusercontent.com/eloredo413-hue/38e3c9b858d6a4e660b5b72617fdee6c/raw/6abc1af49d6136d2604638e5496ab037bd898ec1/More%2520gui"
+-- Lag fixes applied to the downloaded More gui (exact text, replaced once). If a later version
+-- of the gist no longer has the text, that version runs as published and a warning is printed.
+local MORE_GUIS_PATCHES = {
+    {
+        -- the topbar dropdown list sits right inside its frame: don't walk every descendant
+        -- of every frame (the hammer panel has hundreds) on every frame
+        name = "dropdown scan",
+        old = "\t\t\t\tlocal slider = nil\n\t\t\t\tfor _, d in ipairs(frame:GetDescendants()) do\n",
+        new = "\t\t\t\tlocal slider = nil\n\t\t\t\tfor _, d in ipairs(frame:GetChildren()) do\n",
+    },
+    {
+        -- the report-button dedupe walked the whole GUI five times a second: only re-check
+        -- after something was added to the GUI, plus every 2 seconds as a backstop
+        name = "report dedupe",
+        old = "\twhile true do\n\t\ttask.wait(0.2)\n\t\tpcall(dedupe)\n\tend",
+        new = [[
+	local dirty = true
+	local watchedRoot, rootConn
+	local lastFull = 0
+	while true do
+		task.wait(0.2)
+		local root = getBloxyRoot()
+		if root ~= watchedRoot then
+			if rootConn then rootConn:Disconnect() end
+			watchedRoot = root
+			rootConn = root and root.DescendantAdded:Connect(function() dirty = true end) or nil
+			dirty = true
+		end
+		local now = os.clock()
+		if dirty or now - lastFull >= 2 then
+			dirty = false
+			lastFull = now
+			pcall(dedupe)
+		end
+	end]],
+    },
+}
 local URL_SAFECHAT_HOOK     = "https://gist.githubusercontent.com/eloredo413-hue/47847c9c0567c5b365c8bfa249d59190/raw/036418365fc79e40e7dc1d1120fca6de9e4600a0/Safe%2520chat%2520Hook"
 local URL_BUBBLE_SCRIPT     = repoAddon("chat_bubble_fix_2011.lua",
     "https://gist.githubusercontent.com/eloredo413-hue/b60bebc8596be9e0174e23ca00edd14e/raw/37f520332a1a89676e03079e39743e2c93852e40/Chat%2520bubble%2520fix%25202011")
@@ -85,14 +122,27 @@ local URL_BUBBLE_2015_2016  = repoAddon("chat_bubble_fix.lua",
 local URL_BUBBLE_2017        = "https://raw.githubusercontent.com/eloredo413-hue/E/ccr-f33d83ed-bgaekc/2017_bubble_chat.lua"
 local URL_BUBBLE_2017_MIRROR = "https://cdn.jsdelivr.net/gh/eloredo413-hue/E@ccr-f33d83ed-bgaekc/2017_bubble_chat.lua"
 
+-- Replaces exact text (no patterns) once.
+local function applyPatches(src, patches, label)
+    for _, patch in ipairs(patches or {}) do
+        local i, j = string.find(src, patch.old, 1, true)
+        if i then
+            src = string.sub(src, 1, i - 1) .. patch.new .. string.sub(src, j + 1)
+        else
+            warn("[Loader] " .. tostring(label) .. " changed: its " .. patch.name .. " lag fix was not applied")
+        end
+    end
+    return src
+end
+
 -- url is one link or a list of links tried in order; a download that is an error page
 -- ("404: Not Found" or HTML) or does not compile moves on to the next link.
-local function loadUrl(url, label)
+local function loadUrl(url, label, patches)
     local urls = type(url) == "table" and url or { url }
     for _, u in ipairs(urls) do
         local ok, src = pcall(game.HttpGet, game, u)
         if ok and type(src) == "string" and #src > 20 and not src:find("^%s*<") and not src:find("^%s*%d%d%d:") then
-            local chunk = loadstring(src)
+            local chunk = loadstring(applyPatches(src, patches, label))
             if chunk then return pcall(chunk) end
         end
     end
@@ -129,7 +179,7 @@ do
     pcall(function() getgenv().loadstring = watchedLoadstring end)
     pcall(function() _G.loadstring = watchedLoadstring end)
 end
-loadUrl(URL_MORE_GUIS, "More guis")
+loadUrl(URL_MORE_GUIS, "More guis", MORE_GUIS_PATCHES)
 task.wait(0.5)
 loadUrl(URL_SAFECHAT_HOOK, "SafeChat Hook")
 task.wait(1)
