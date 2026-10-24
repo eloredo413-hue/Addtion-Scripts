@@ -30,9 +30,12 @@ local Workspace = game:GetService("Workspace")
 -- Fixed copies of gist add-ons, kept in this repo's addons/ folder: Smooth wizard fix no
 -- longer stops the wizard at the hidden materials prompt, and the others have lag fixes
 -- (each file's history shows the changes).
+-- The link is pinned to the commit the files were last changed in, like a gist revision
+-- link, so these exact versions load whether or not that commit is merged into main.
+-- Point it at the new commit whenever a file in addons/ changes.
 -- An add-on given as { repo copy, gist } loads from its gist when the repo copy can't be
--- downloaded (e.g. before addons/ is merged into main), so it never just goes missing.
-local ADDONS = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/addons/"
+-- downloaded, so it never just goes missing.
+local ADDONS = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/de8d99b7cff7cbade57f2274deaa602e06b7e463/addons/"
 
 local mainAddons = {
     -- FF Fix Hook goes first: it hooks loadstring itself, so it has to see the real one
@@ -55,8 +58,9 @@ local mainAddons = {
       "https://gist.githubusercontent.com/eloredo413-hue/0386978714c4e0c69e9de2415b36ee66/raw/5471dd8099e097c97f210374934382fbc843afaf/Explosion%2520Replace%2520Addon" },
 }
 
--- More guis lives in its own repo (the same script as the More guis gist, with lag fixes).
-local URL_MORE_GUIS         = { "https://raw.githubusercontent.com/eloredo413-hue/More-guis/main/More%20gui%20fix",
+-- More guis lives in its own repo (the same script as the More guis gist, with lag fixes),
+-- pinned the same way to the commit it was last changed in.
+local URL_MORE_GUIS         = { "https://raw.githubusercontent.com/eloredo413-hue/More-guis/8832dd6ebcde96299ca75834966b1488b59766a4/More%20gui%20fix",
                                 "https://gist.githubusercontent.com/eloredo413-hue/03f3286a8aa6ec12ce5e41b6d557d9ef/raw/fb89dd3d3446368edebf03e34cd3f9a948bb147c/More%2520guis" }
 local URL_SAFECHAT_HOOK     = "https://gist.githubusercontent.com/eloredo413-hue/47847c9c0567c5b365c8bfa249d59190/raw/036418365fc79e40e7dc1d1120fca6de9e4600a0/Safe%2520chat%2520Hook"
 local URL_BUBBLE_SCRIPT     = { ADDONS .. "chat_bubble_fix_2011.lua",
