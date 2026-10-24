@@ -28,7 +28,7 @@ getgenv().BloxyEraLoopId = nil
 -- is still going would otherwise believe its 2017 bubbles are on after this run stopped them,
 -- and refuse to start them again.
 -- On-screen status (Roblox notifications), so what the loader decided can be seen without a console.
-local LOADER_VERSION = "bubbles-check 1"
+local LOADER_VERSION = "bubbles-check 2"
 local function notify(text)
     pcall(function()
         game:GetService("StarterGui"):SetCore("SendNotification", { Title = "Bloxy loader", Text = text, Duration = 6 })
@@ -2072,6 +2072,24 @@ task.spawn(function()
         detectedEra = era
         applyEra(era, "GUI Bloxy loaded")
     end
+
+    -- Bloxy versions differ in how they save and load the topbar, so the 2015 / 2016 GUI is also
+    -- recognised by what it builds: the Legacy GUI puts a "NewRobloxGui" into CoreGui. The 2017
+    -- and 2021 GUIs switch ExperienceChat off and draw their own bubbles, and a GUI already known
+    -- as classic (2010-2014) or 2017-2020 keeps its bubbles, so those are left alone.
+    local function onLegacyGui()
+        if not isCurrentLoader() then return end
+        local era = getgenv().BloxyEra
+        if activeBubbleEra == "bubble2017" or era == "classic" or era == "modern" then return end
+        local experienceChat = CoreGui:FindFirstChild("ExperienceChat")
+        if experienceChat and not experienceChat.Enabled then return end
+        detectedEra = "bubble2017"
+        applyEra("bubble2017", "2015 / 2016 GUI seen")
+    end
+    CoreGui.ChildAdded:Connect(function(child)
+        if child.Name == "NewRobloxGui" then task.delay(1, onLegacyGui) end
+    end)
+    if CoreGui:FindFirstChild("NewRobloxGui") then task.delay(1, onLegacyGui) end
 
     -- Confirm: the era is read from the saved config. The config may be written a moment after
     -- the click, so it is read again a little later (the second reading changes nothing when the
