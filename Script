@@ -1123,6 +1123,19 @@ task.spawn(function()
         end
     end
 
+    -- With "skip setup" on, Bloxy applies the saved choices by itself and no confirm button is
+    -- ever pressed, so the saved topbar's bubbles (e.g. the 2017 ones for 2015 / 2016) are
+    -- loaded at start in that case. Without skip setup nothing loads until Confirm, as before.
+    pcall(function()
+        if readfile and isfile and isfile("BloxyParadoxConfig.json") then
+            local cfg = HttpService:JSONDecode(readfile("BloxyParadoxConfig.json"))
+            if type(cfg) == "table" and cfg.isSkipped == true then
+                print("[Loader] setup is skipped: loading the saved topbar's bubbles")
+                onConfirm()
+            end
+        end
+    end)
+
     local function hookConfirm(obj)
         if obj:IsA("TextButton") and string.find(string.lower(obj.Text or ""), "confirm", 1, true) and not obj:GetAttribute("BPHookedConfirm") then
             obj:SetAttribute("BPHookedConfirm", true)
