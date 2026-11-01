@@ -6,12 +6,17 @@
 -- + Safe Native Dialog Bypass (No overlap, no glitching)
 -- + Player dialog bubbles render perfectly (Folder host)
 -- + Regular Chat Bubbles 100% Untouched
+-- + 2010-2014 classic chat bubbles built in: they stack (older ones above, grey), no fade
 -- + 2015/2016 use the 2017 chat bubbles (only after Confirm, only when 2015 or 2016 is chosen)
 --========================================================
 
 if getgenv().ClassicDialogCleanup then
     pcall(getgenv().ClassicDialogCleanup)
     getgenv().ClassicDialogCleanup = nil
+end
+if getgenv().ClassicBubbleCleanup then
+    pcall(getgenv().ClassicBubbleCleanup)
+    getgenv().ClassicBubbleCleanup = nil
 end
 -- running this script again starts from normal: no 2017 bubbles until Confirm
 if getgenv().Bubble2017Cleanup then
@@ -43,7 +48,6 @@ local mainAddons = {
 
 local URL_MORE_GUIS         = "https://gist.githubusercontent.com/eloredo413-hue/03f3286a8aa6ec12ce5e41b6d557d9ef/raw/fb89dd3d3446368edebf03e34cd3f9a948bb147c/More%2520guis"
 local URL_SAFECHAT_HOOK     = "https://gist.githubusercontent.com/eloredo413-hue/47847c9c0567c5b365c8bfa249d59190/raw/036418365fc79e40e7dc1d1120fca6de9e4600a0/Safe%2520chat%2520Hook"
-local URL_BUBBLE_SCRIPT     = "https://gist.githubusercontent.com/eloredo413-hue/b60bebc8596be9e0174e23ca00edd14e/raw/37f520332a1a89676e03079e39743e2c93852e40/Chat%2520bubble%2520fix%25202011"
 local URL_HAMMER_2          = "https://gist.githubusercontent.com/eloredo413-hue/83645b7fd2303c889c586a283c03c239/raw/a7a955839001cf01c6c187846e2cc0b9881f872e/Hammer%2520stuff%25202"
 local URL_BUBBLE_2015_2016  = "https://gist.githubusercontent.com/eloredo413-hue/f37d62b43e7435cd46dd495b5ed1bcfc/raw/b4ae511afdec2e92e9b956a8ddc4803d9929d0da/Chat%2520bubble%2520fix"
 
@@ -168,13 +172,335 @@ task.spawn(function()
     end
 
     --========================================================
+    -- CLASSIC CHAT BUBBLES (2010-2014 / mobile)
+    -- White bubbles over players' heads, built into this loader. A new message goes at the
+    -- bottom with the tail; the player's older messages stay stacked above it with grey text.
+    -- No fading: bubbles appear and disappear at once, like 2011.
+    --========================================================
+    local function startClassicBubbles()
+        if getgenv().ClassicBubbleCleanup then pcall(getgenv().ClassicBubbleCleanup) end
+
+        local Chat = game:GetService("Chat")
+
+        local BUBBLE_NAME = "__CLASSIC_2011_BUBBLE"
+        local MAX_DISTANCE = 75
+        local DOT_DISTANCE = 52          -- farther than this: the newest bubble shows "..."
+        local LIFETIME = 20              -- seconds a message stays up
+        local MAX_BUBBLES = 3            -- messages shown at once per player
+        local BUBBLE_GAP = 2
+        local FONT_SIZE = 20
+        local MAX_WIDTH = 220
+        local TAIL_WIDTH, TAIL_HEIGHT = 16, 19
+        local DOTS_WIDTH, DOTS_HEIGHT = 52, 38
+        local TEXT_COLOR = Color3.fromRGB(0, 0, 0)
+        local OLD_TEXT_COLOR = Color3.fromRGB(160, 160, 160)
+
+        local running = true
+        local connections = {}
+        local stacks = {}                -- player -> { gui, head, tail, entries, far, connection }
+        local lastMessages = {}
+
+        -- the old (legacy) bubble chat is switched off while these bubbles run
+        local savedLegacyBubbles = nil
+        pcall(function()
+            savedLegacyBubbles = Chat.BubbleChatEnabled
+            Chat:SetBubbleChatEnabled(false)
+        end)
+
+        -- a player's character (not an NPC, so NPC dialog icons are never touched)
+        local function playerCharacterOf(object)
+            local current = object
+            while current and current ~= game do
+                if current:IsA("Model") and Players:GetPlayerFromCharacter(current) then return current end
+                current = current.Parent
+            end
+            return nil
+        end
+
+        local function isForeignBubble(object)
+            return (object:IsA("BillboardGui") or object:IsA("SurfaceGui"))
+                and object.Name ~= BUBBLE_NAME
+                and not object:GetAttribute("ClassicOwned")
+        end
+
+        local function belongsToPlayerCharacter(object)
+            if object.Adornee and playerCharacterOf(object.Adornee) then return true end
+            return playerCharacterOf(object) ~= nil
+        end
+
+        -- other bubble guis on a player's character (the game's own chat bubbles)
+        local function removeCharacterBubbles(character)
+            if not character then return end
+            for _, object in ipairs(character:GetDescendants()) do
+                if isForeignBubble(object) then pcall(function() object:Destroy() end) end
+            end
+        end
+
+        -- places the bubbles from the bottom up; the newest one sits on the tail
+        local function layout(stack)
+            local entries = stack.entries
+            local count = #entries
+            if count == 0 then return end
+
+            if stack.far then
+                for i, entry in ipairs(entries) do
+                    local newest = i == count
+                    entry.frame.Visible = newest
+                    if newest then
+                        entry.label.Text = "..."
+                        entry.label.Size = UDim2.new(1, -16, 0, 20)
+                        entry.label.Position = UDim2.new(0, 8, 0, 9)
+                        entry.frame.Size = UDim2.new(0, DOTS_WIDTH, 0, DOTS_HEIGHT)
+                        entry.frame.Position = UDim2.new(0.5, -DOTS_WIDTH / 2, 0, 0)
+                    end
+                end
+                stack.gui.Size = UDim2.new(0, DOTS_WIDTH, 0, DOTS_HEIGHT + TAIL_HEIGHT)
+                stack.tail.Position = UDim2.new(0.5, -TAIL_WIDTH / 2, 0, DOTS_HEIGHT - 6)
+                return
+            end
+
+            local width, total = 0, 0
+            for i, entry in ipairs(entries) do
+                width = math.max(width, entry.width)
+                total = total + entry.height
+                if i > 1 then total = total + BUBBLE_GAP end
+            end
+            stack.gui.Size = UDim2.new(0, width, 0, total + TAIL_HEIGHT)
+
+            local y = total
+            for i = count, 1, -1 do
+                local entry = entries[i]
+                y = y - entry.height
+                entry.frame.Visible = true
+                entry.frame.Size = UDim2.new(0, entry.width, 0, entry.height)
+                entry.frame.Position = UDim2.new(0.5, -entry.width / 2, 0, y)
+                entry.label.Text = entry.text
+                entry.label.Size = UDim2.new(1, -16, 0, entry.textHeight)
+                entry.label.Position = UDim2.new(0, 8, 0, 12)
+                y = y - BUBBLE_GAP
+            end
+            stack.tail.Position = UDim2.new(0.5, -TAIL_WIDTH / 2, 0, total - 6)
+        end
+
+        local function destroyStack(player)
+            local stack = stacks[player]
+            if not stack then return end
+            stacks[player] = nil
+            if stack.connection then stack.connection:Disconnect() end
+            pcall(function() stack.gui:Destroy() end)
+        end
+
+        local function removeEntry(stack, entry)
+            if entry.removed then return end
+            entry.removed = true
+            local index = table.find(stack.entries, entry)
+            if index then table.remove(stack.entries, index) end
+            pcall(function() entry.frame:Destroy() end)
+            if stacks[stack.player] ~= stack then return end
+            if #stack.entries == 0 then
+                destroyStack(stack.player)
+            else
+                layout(stack)
+            end
+        end
+
+        local function getStack(player, head)
+            local existing = stacks[player]
+            if existing and existing.head == head and existing.gui.Parent then return existing end
+            destroyStack(player)
+
+            for _, object in ipairs(head:GetChildren()) do
+                if object.Name == BUBBLE_NAME then object:Destroy() end
+            end
+
+            local gui = Instance.new("BillboardGui")
+            gui.Name = BUBBLE_NAME
+            gui.Adornee = head
+            gui.Size = UDim2.new(0, DOTS_WIDTH, 0, DOTS_HEIGHT + TAIL_HEIGHT)
+            gui.StudsOffset = Vector3.new(0, 2.5, 0)
+            gui.SizeOffset = Vector2.new(0, 0.5)
+            gui.MaxDistance = MAX_DISTANCE
+            gui.AlwaysOnTop = false
+            gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+
+            local tail = Instance.new("ImageLabel")
+            tail.Name = "Tail"
+            tail.BackgroundTransparency = 1
+            tail.Image = "rbxassetid://2582470060"
+            tail.Size = UDim2.new(0, TAIL_WIDTH, 0, TAIL_HEIGHT)
+            tail.ZIndex = 4
+            tail.Parent = gui
+
+            local connector = Instance.new("Frame")
+            connector.Name = "Connector"
+            connector.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+            connector.BorderSizePixel = 0
+            connector.Size = UDim2.new(0, 10, 0, 6)
+            connector.Position = UDim2.new(0.5, -5, 0, -4)
+            connector.ZIndex = 3
+            connector.Parent = tail
+
+            local stack = { player = player, gui = gui, head = head, tail = tail, entries = {}, far = false }
+
+            stack.connection = RunService.RenderStepped:Connect(function()
+                if not gui.Parent then
+                    if stacks[player] == stack then destroyStack(player) else stack.connection:Disconnect() end
+                    return
+                end
+                local cam = Workspace.CurrentCamera
+                if not cam then return end
+                local far = (cam.CFrame.Position - head.Position).Magnitude > DOT_DISTANCE
+                if far ~= stack.far then
+                    stack.far = far
+                    layout(stack)
+                end
+            end)
+
+            stacks[player] = stack
+            gui.Parent = head
+            return stack
+        end
+
+        local function createBubble(player, text)
+            local character = player.Character
+            local head = character and character:FindFirstChild("Head")
+            if not head then return end
+            removeCharacterBubbles(character)
+
+            local stack = getStack(player, head)
+
+            -- older messages stay above, with grey text
+            for _, old in ipairs(stack.entries) do
+                old.label.TextColor3 = OLD_TEXT_COLOR
+            end
+            -- too many: the oldest goes
+            while #stack.entries >= MAX_BUBBLES do
+                removeEntry(stack, stack.entries[1])
+            end
+
+            local measured = TextService:GetTextSize(text, FONT_SIZE, Enum.Font.Arial, Vector2.new(MAX_WIDTH, 1000))
+
+            local frame = Instance.new("Frame")
+            frame.Name = "Bubble"
+            frame.BackgroundTransparency = 1
+
+            local body = Instance.new("ImageLabel")
+            body.Name = "Body"
+            body.BackgroundTransparency = 1
+            body.Image = "rbxassetid://2582470061"
+            body.ScaleType = Enum.ScaleType.Slice
+            body.SliceCenter = Rect.new(29, 29, 67, 67)
+            body.SliceScale = 0.4
+            body.Size = UDim2.new(1, 0, 1, 0)
+            body.ZIndex = 2
+            body.Parent = frame
+
+            local label = Instance.new("TextLabel")
+            label.Name = "Text"
+            label.BackgroundTransparency = 1
+            label.FontFace = Font.new("rbxasset://fonts/families/Arial.json", Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+            label.TextSize = FONT_SIZE
+            label.TextColor3 = TEXT_COLOR
+            label.TextWrapped = true
+            label.Text = text
+            label.ZIndex = 10
+            label.Parent = frame
+
+            local entry = {
+                text = text,
+                width = math.clamp(measured.X + 24, 42, MAX_WIDTH + 24),
+                height = measured.Y + 24,
+                textHeight = measured.Y,
+                frame = frame,
+                label = label,
+            }
+            table.insert(stack.entries, entry)
+            frame.Parent = stack.gui
+            layout(stack)
+
+            task.delay(LIFETIME, function() removeEntry(stack, entry) end)
+        end
+
+        local function receiveMessage(player, text)
+            if not running or not player then return end
+            if typeof(text) ~= "string" or text == "" then return end
+            -- the same message can arrive through both chat systems
+            local key = tostring(player.UserId) .. ":" .. text
+            if lastMessages[key] then return end
+            lastMessages[key] = true
+            task.delay(0.25, function() lastMessages[key] = nil end)
+            createBubble(player, text)
+        end
+
+        local function hookPlayer(player)
+            table.insert(connections, player.Chatted:Connect(function(text)
+                receiveMessage(player, text)
+            end))
+            table.insert(connections, player.CharacterAdded:Connect(function(character)
+                task.wait(0.2)
+                if running then removeCharacterBubbles(character) end
+            end))
+        end
+        for _, player in ipairs(Players:GetPlayers()) do hookPlayer(player) end
+        table.insert(connections, Players.PlayerAdded:Connect(hookPlayer))
+        table.insert(connections, Players.PlayerRemoving:Connect(destroyStack))
+
+        pcall(function()
+            table.insert(connections, TextChatService.MessageReceived:Connect(function(message)
+                if not message or not message.TextSource then return end
+                receiveMessage(Players:GetPlayerByUserId(message.TextSource.UserId), message.Text)
+            end))
+        end)
+
+        -- the game's own bubbles on player characters are removed as soon as they appear
+        local function watchContainer(container)
+            table.insert(connections, container.DescendantAdded:Connect(function(object)
+                if not isForeignBubble(object) then return end
+                task.defer(function()
+                    if running and object.Parent and belongsToPlayerCharacter(object) then
+                        pcall(function() object:Destroy() end)
+                    end
+                end)
+            end))
+        end
+        watchContainer(Workspace)
+        watchContainer(pg)
+
+        task.spawn(function()
+            while running do
+                for _, player in ipairs(Players:GetPlayers()) do
+                    removeCharacterBubbles(player.Character)
+                end
+                pcall(function()
+                    for _, object in ipairs(pg:GetDescendants()) do
+                        if isForeignBubble(object) and belongsToPlayerCharacter(object) then object:Destroy() end
+                    end
+                end)
+                task.wait(0.15)
+            end
+        end)
+
+        local function cleanup()
+            running = false
+            for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
+            connections = {}
+            for player in pairs(stacks) do destroyStack(player) end
+            if savedLegacyBubbles ~= nil then
+                pcall(function() Chat:SetBubbleChatEnabled(savedLegacyBubbles) end)
+            end
+            if getgenv().ClassicBubbleCleanup == cleanup then getgenv().ClassicBubbleCleanup = nil end
+        end
+        getgenv().ClassicBubbleCleanup = cleanup
+        return cleanup
+    end
+
+    --========================================================
     -- BUBBLE SCRIPTS (one per era)
     -- Loaded with retries; remembered only when they really started; the previous era's bubbles
     -- are stopped (through the cleanup function the script registered) before the next era's
     -- script starts, so two eras never run on top of each other.
     --========================================================
     local BUBBLE_SOURCES = {
-        classic    = function() return { URL_BUBBLE_SCRIPT } end,
         bubble2017 = function() return { URL_BUBBLE_2017 .. "?cb=" .. tostring(os.time()), URL_BUBBLE_2017 } end,
         modern     = function() return { URL_BUBBLE_2015_2016 } end,
     }
@@ -224,6 +550,16 @@ task.spawn(function()
         bubbleBusy = true
         local failed = false
         pcall(function()
+            -- 2010-2014: the classic bubbles are built in (nothing to download)
+            if era == "classic" then
+                if activeBubbleEra then stopBubbleScript(activeBubbleEra) end
+                bubbleCleanups[era] = { startClassicBubbles() }
+                activeBubbleEra = era
+                getgenv().BloxyBubbleEra = era
+                print("[Loader] classic bubbles started")
+                return
+            end
+
             -- a script that cannot be stopped is still running: do not start a second copy
             if cannotStop[era] then
                 if activeBubbleEra then stopBubbleScript(activeBubbleEra) end
@@ -760,10 +1096,32 @@ task.spawn(function()
         local function hookDialog(dialog)
             if not dialog or not dialog:IsA("Dialog") or dialog:GetAttribute("ClassicHooked") == SESSION_ID then return end
 
-            local head = dialog:FindFirstAncestorWhichIsA("BasePart") or (dialog.Parent and dialog.Parent:IsA("BasePart") and dialog.Parent)
+            local head = dialog:FindFirstAncestorWhichIsA("BasePart")
+            if not head then
+                -- a Dialog put straight into a Model: use that model's head / main part
+                local model = dialog:FindFirstAncestorWhichIsA("Model")
+                if model then
+                    local h = model:FindFirstChild("Head")
+                    head = (h and h:IsA("BasePart") and h) or model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
+                end
+            end
             if not head then task.delay(1, function() hookDialog(dialog) end) return end
 
             dialog:SetAttribute("ClassicHooked", SESSION_ID)
+
+            -- Where the icon sits. A Dialog inside an NPC shows over the NPC's head; anything
+            -- else shows over the top of its part (not its centre: a big part's centre can be
+            -- down in the floor, and the floor then hides the icon).
+            local anchor = head
+            local npc = head:FindFirstAncestorWhichIsA("Model")
+            while npc do
+                if npc:FindFirstChildOfClass("Humanoid") then
+                    local npcHead = npc:FindFirstChild("Head")
+                    if npcHead and npcHead:IsA("BasePart") then anchor = npcHead end
+                    break
+                end
+                npc = npc:FindFirstAncestorWhichIsA("Model")
+            end
 
             local origDist = dialog:GetAttribute("OrigDist")
             if not origDist then
@@ -779,9 +1137,12 @@ task.spawn(function()
 
             local bb = Instance.new("BillboardGui")
             bb.Name = bbName
-            bb.Adornee = head
+            bb.Adornee = anchor
             bb.Size = UDim2.new(0, 46, 0, 60)
-            bb.StudsOffsetWorldSpace = Vector3.new(0, 4.6, 0)
+            -- the icon's bottom sits 1 stud above the top of the anchor part
+            bb.ExtentsOffsetWorldSpace = Vector3.new(0, 1, 0)
+            bb.StudsOffsetWorldSpace = Vector3.new(0, 1, 0)
+            bb.SizeOffset = Vector2.new(0, 0.5)
             bb.AlwaysOnTop = false
             bb.Active = true
             bb.MaxDistance = math.huge
@@ -876,8 +1237,9 @@ task.spawn(function()
                     return
                 end
 
-                if not bb.Parent or not bb:IsDescendantOf(game) then
-                    dbg("icon was removed by something else, re-hooking")
+                if not bb.Parent or not bb:IsDescendantOf(game) or not anchor.Parent then
+                    dbg("icon (or the NPC head it sits on) was removed, re-hooking")
+                    if bb.Parent then bb:Destroy() end
                     stepConn:Disconnect()
                     hookedNPCs[dialog] = nil
                     dialog:SetAttribute("ClassicHooked", nil)
@@ -890,7 +1252,7 @@ task.spawn(function()
                 local cam = Workspace.CurrentCamera
                 if not cam then return end
 
-                local dist = (cam.CFrame.Position - head.Position).Magnitude
+                local dist = (cam.CFrame.Position - anchor.Position).Magnitude
                 local zoom = math.clamp(30 / math.max(dist, 3), 0.1, 2.5)
                 local storedZoom = bb:GetAttribute("CurrentZoom") or -1
 
