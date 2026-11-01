@@ -7,7 +7,7 @@
 -- + Player dialog bubbles render perfectly (Folder host)
 -- + Regular Chat Bubbles 100% Untouched
 -- + 2010-2014 classic chat bubbles built in: they stack (older ones above, grey), no fade
--- + Terrain Hook: "What terrain do you want?" (2013 / 2014 / none) in Bloxy's setup
+-- + Terrain Hook: "What terrain do you want?" (2013 / 2014 / none) in Bloxy's setup (off for now)
 -- + 2015/2016 use the 2017 chat bubbles (only after Confirm, only when 2015 or 2016 is chosen)
 --========================================================
 
@@ -73,7 +73,9 @@ for i, url in ipairs(mainAddons) do loadUrl(url, "addon" .. i) task.wait(0.1) en
 loadUrl(URL_MORE_GUIS, "More guis")
 task.wait(0.5)
 loadUrl(URL_SAFECHAT_HOOK, "SafeChat Hook")
-loadUrl(URL_TERRAIN_HOOK, "Terrain Hook")
+-- OFF for now: this gist version hides some of Bloxy's setup questions. Turn it back on
+-- (and update URL_TERRAIN_HOOK) once the gist has the fixed version.
+-- loadUrl(URL_TERRAIN_HOOK, "Terrain Hook")
 task.wait(1)
 loadUrl(URL_HAMMER_2, "Hammer stuff 2")
 
