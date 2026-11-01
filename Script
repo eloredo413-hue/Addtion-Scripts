@@ -1096,10 +1096,32 @@ task.spawn(function()
         local function hookDialog(dialog)
             if not dialog or not dialog:IsA("Dialog") or dialog:GetAttribute("ClassicHooked") == SESSION_ID then return end
 
-            local head = dialog:FindFirstAncestorWhichIsA("BasePart") or (dialog.Parent and dialog.Parent:IsA("BasePart") and dialog.Parent)
+            local head = dialog:FindFirstAncestorWhichIsA("BasePart")
+            if not head then
+                -- a Dialog put straight into a Model: use that model's head / main part
+                local model = dialog:FindFirstAncestorWhichIsA("Model")
+                if model then
+                    local h = model:FindFirstChild("Head")
+                    head = (h and h:IsA("BasePart") and h) or model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
+                end
+            end
             if not head then task.delay(1, function() hookDialog(dialog) end) return end
 
             dialog:SetAttribute("ClassicHooked", SESSION_ID)
+
+            -- Where the icon sits. A Dialog inside an NPC shows over the NPC's head; anything
+            -- else shows over the top of its part (not its centre: a big part's centre can be
+            -- down in the floor, and the floor then hides the icon).
+            local anchor = head
+            local npc = head:FindFirstAncestorWhichIsA("Model")
+            while npc do
+                if npc:FindFirstChildOfClass("Humanoid") then
+                    local npcHead = npc:FindFirstChild("Head")
+                    if npcHead and npcHead:IsA("BasePart") then anchor = npcHead end
+                    break
+                end
+                npc = npc:FindFirstAncestorWhichIsA("Model")
+            end
 
             local origDist = dialog:GetAttribute("OrigDist")
             if not origDist then
@@ -1115,9 +1137,12 @@ task.spawn(function()
 
             local bb = Instance.new("BillboardGui")
             bb.Name = bbName
-            bb.Adornee = head
+            bb.Adornee = anchor
             bb.Size = UDim2.new(0, 46, 0, 60)
-            bb.StudsOffsetWorldSpace = Vector3.new(0, 4.6, 0)
+            -- the icon's bottom sits 1 stud above the top of the anchor part
+            bb.ExtentsOffsetWorldSpace = Vector3.new(0, 1, 0)
+            bb.StudsOffsetWorldSpace = Vector3.new(0, 1, 0)
+            bb.SizeOffset = Vector2.new(0, 0.5)
             bb.AlwaysOnTop = false
             bb.Active = true
             bb.MaxDistance = math.huge
@@ -1212,8 +1237,9 @@ task.spawn(function()
                     return
                 end
 
-                if not bb.Parent or not bb:IsDescendantOf(game) then
-                    dbg("icon was removed by something else, re-hooking")
+                if not bb.Parent or not bb:IsDescendantOf(game) or not anchor.Parent then
+                    dbg("icon (or the NPC head it sits on) was removed, re-hooking")
+                    if bb.Parent then bb:Destroy() end
                     stepConn:Disconnect()
                     hookedNPCs[dialog] = nil
                     dialog:SetAttribute("ClassicHooked", nil)
@@ -1226,7 +1252,7 @@ task.spawn(function()
                 local cam = Workspace.CurrentCamera
                 if not cam then return end
 
-                local dist = (cam.CFrame.Position - head.Position).Magnitude
+                local dist = (cam.CFrame.Position - anchor.Position).Magnitude
                 local zoom = math.clamp(30 / math.max(dist, 3), 0.1, 2.5)
                 local storedZoom = bb:GetAttribute("CurrentZoom") or -1
 
