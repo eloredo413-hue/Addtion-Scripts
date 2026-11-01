@@ -44,6 +44,9 @@ local mainAddons = {
     "https://gist.githubusercontent.com/eloredo413-hue/f156101652b68d2fdcbbeae4dc0481d6/raw/028c65e676eda5d90f9c3a0595347b102df2a0b9/2010%2520hook",
     "https://gist.githubusercontent.com/eloredo413-hue/6ec77a9b2884b534cd09f653a0fe023d/raw/94075a70190110e81a9c4153c340b19f3c903790/Old%2520physics%2520camera%2520addon",
     "https://gist.githubusercontent.com/eloredo413-hue/0386978714c4e0c69e9de2415b36ee66/raw/5471dd8099e097c97f210374934382fbc843afaf/Explosion%2520Replace%2520Addon",
+    -- Terrain step (2013 / 2014 / none), shown before the particles step.
+    -- (No need to execute BloxyTerrainHook.lua separately any more.)
+    "https://raw.githubusercontent.com/eloredo413-hue/Bloxy-script/ccr-53573128-wkfl2a/BloxyTerrainHook.lua",
 }
 
 local URL_MORE_GUIS         = "https://gist.githubusercontent.com/eloredo413-hue/03f3286a8aa6ec12ce5e41b6d557d9ef/raw/fb89dd3d3446368edebf03e34cd3f9a948bb147c/More%2520guis"
