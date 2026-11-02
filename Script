@@ -1401,10 +1401,11 @@ task.spawn(function()
 
     --========================================================
     -- DEFAULT DIALOGS UNDER THE 2014 BASE GUI (2015 early)
-    -- The 2014 base GUI switches CoreGui.RobloxGui off. Roblox's default dialog draws its
-    -- choice box ("Sorry, I'm tired" / "Goodbye!") inside RobloxGui, so it never showed (the
-    -- NPC's own line shows by itself). The choice box is found by its text and moved into a GUI
-    -- that is shown, in the same spot and size, above the hotbar. Nothing else is changed.
+    -- The 2014 base GUI hides Roblox's GUI (it switches CoreGui.RobloxGui off), and Roblox's
+    -- default dialog choice box ("Sorry, I'm tired" / "Goodbye!") didn't show. The box is found
+    -- by its text in Roblox's GUIs and moved into a GUI that is shown, in the same spot and size,
+    -- above the hotbar. While you talk to an NPC a small note at the top says where it was
+    -- found (or that it wasn't). Nothing else is changed.
     --========================================================
     local function startDefaultDialogs()
         if getgenv().DefaultDialogCleanup then pcall(getgenv().DefaultDialogCleanup) end
@@ -1486,7 +1487,84 @@ task.spawn(function()
 
         local mirrors = {} -- moved box -> the empty frames made to hold it
 
+        local function clean(text)
+            text = tostring(text or ""):gsub("<[^>]->", "") -- rich text tags
+            return (text:gsub("^%s+", ""):gsub("%s+$", ""))
+        end
+
+        -- the NPC's lines (to tell that you're talking to someone)
+        local function promptTexts()
+            local texts = {}
+            for dialog in pairs(dialogs) do
+                if dialog.Parent then
+                    pcall(function()
+                        if dialog.InitialPrompt ~= "" then texts[clean(dialog.InitialPrompt)] = true end
+                        for _, c in ipairs(dialog:GetDescendants()) do
+                            if c:IsA("DialogChoice") and c.ResponseDialog ~= "" then
+                                texts[clean(c.ResponseDialog)] = true
+                            end
+                        end
+                    end)
+                end
+            end
+            return texts
+        end
+
+        local function anyDialogInUse()
+            for dialog in pairs(dialogs) do
+                local ok, inUse = pcall(function() return dialog.InUse end)
+                if ok and inUse then return true end
+            end
+            return false
+        end
+
+        -- On-screen note while you talk to an NPC: where the choice box was found (or that it
+        -- wasn't), so a screenshot shows what is going on. getgenv().DialogHelperNote = false hides it.
+        local note = Instance.new("TextLabel")
+        note.Name = "DialogHelperNote"
+        note.AnchorPoint = Vector2.new(0.5, 0)
+        note.Position = UDim2.new(0.5, 0, 0, 4)
+        note.Size = UDim2.new(0.9, 0, 0, 0)
+        note.AutomaticSize = Enum.AutomaticSize.Y
+        note.BackgroundColor3 = Color3.new(0, 0, 0)
+        note.BackgroundTransparency = 0.35
+        note.TextColor3 = Color3.new(1, 1, 0)
+        note.Font = Enum.Font.Code
+        note.TextSize = 13
+        note.TextWrapped = true
+        note.Visible = false
+        note.Parent = host
+        local lastNote = ""
+        local function setNote(text)
+            if getgenv().DialogHelperNote == false then note.Visible = false return end
+            note.Visible = text ~= ""
+            note.Text = text
+            if text ~= "" and text ~= lastNote then print("[Dialog helper] " .. text) end
+            lastNote = text
+        end
+
+        -- Roblox's GUIs to look in (not this one, not the old classic dialogs)
+        local function screens()
+            local list = {}
+            local function add(container)
+                if not container then return end
+                for _, g in ipairs(container:GetChildren()) do
+                    if g:IsA("LayerCollector") and g ~= host and not string.find(g.Name, "ClassicDialog", 1, true) then
+                        table.insert(list, g)
+                    end
+                end
+            end
+            pcall(add, CoreGui)
+            pcall(function()
+                local hui = gethui and gethui()
+                if hui and hui ~= CoreGui then add(hui) end
+            end)
+            return list
+        end
+
+        local tick = 0
         local function findBoxes()
+            tick = tick + 1
             -- a box Roblox has since removed: drop the frames made for it
             for box, mirror in pairs(mirrors) do
                 if not box:IsDescendantOf(host) then
@@ -1496,38 +1574,72 @@ task.spawn(function()
                 end
             end
 
-            local robloxGui = CoreGui:FindFirstChild("RobloxGui")
-            -- only while Roblox's GUI is switched off (that's what hides the box)
-            if not robloxGui or robloxGui.Enabled then return end
-            local texts = choiceTexts()
-            local found = {}
-            pcall(function()
-                for _, obj in ipairs(robloxGui:GetDescendants()) do
-                    if (obj:IsA("TextLabel") or obj:IsA("TextButton")) and texts[obj.Text] then
-                        table.insert(found, obj)
+            local inUse = anyDialogInUse()
+            -- a full look is only needed while talking; otherwise now and then
+            if not inUse and tick % 4 ~= 0 then return end
+
+            local choices, prompts = choiceTexts(), promptTexts()
+            local cleanChoices = {}
+            for t in pairs(choices) do cleanChoices[clean(t)] = true end
+
+            local found, promptAt = {}, nil
+            for _, screen in ipairs(screens()) do
+                pcall(function()
+                    for _, obj in ipairs(screen:GetDescendants()) do
+                        if obj:IsA("TextLabel") or obj:IsA("TextButton") then
+                            local text = clean(obj.ContentText ~= "" and obj.ContentText or obj.Text)
+                            if cleanChoices[text] then
+                                table.insert(found, { label = obj, screen = screen })
+                            elseif prompts[text] and not promptAt then
+                                promptAt = obj:GetFullName()
+                            end
+                        end
                     end
-                end
-            end)
-            for _, label in ipairs(found) do
+                end)
+            end
+
+            local talking = inUse or promptAt ~= nil
+            local status = {}
+            for _, hit in ipairs(found) do
+                local label, screen = hit.label, hit.screen
                 -- a label whose box was just moved (with an earlier label) is done already
-                if label:IsDescendantOf(robloxGui) then
+                if label:IsDescendantOf(screen) then
                     -- the box = the biggest frame around the text that is still just the dialog
                     -- (not a big holder with other things in it)
                     local box = label
-                    while box.Parent and box.Parent ~= robloxGui and box.Parent:IsA("GuiObject")
+                    while box.Parent and box.Parent ~= screen and box.Parent:IsA("GuiObject")
                           and #box.Parent:GetDescendants() <= 100 do
                         box = box.Parent
                     end
                     if not moved[box] then
                         local from = box.Parent
-                        local ok, mirror = pcall(placeInHost, box, robloxGui)
+                        local where = from:GetFullName() .. (screen.Enabled and "" or " (" .. screen.Name .. " switched off)")
+                        local ok, mirror = pcall(placeInHost, box, screen)
                         if ok then
                             moved[box] = from
                             mirrors[box] = mirror or false
-                            print("[Loader] 2015 early: showing the dialog's choices (was in " .. from:GetFullName() .. ")")
+                            table.insert(status, "choices shown (moved from " .. where .. ")")
+                        else
+                            table.insert(status, "choices found in " .. where .. " but couldn't be moved: " .. tostring(mirror))
                         end
                     end
                 end
+            end
+            for box in pairs(moved) do
+                if box:IsDescendantOf(host) and #status == 0 then table.insert(status, "choices shown") end
+            end
+
+            if talking then
+                if #status == 0 then
+                    table.insert(status, "talking (" .. (inUse and "dialog in use" or "NPC line seen") .. "), but no choice box"
+                        .. " with 'Goodbye!' or the choice texts was found in Roblox's GUI")
+                end
+                if promptAt then table.insert(status, "NPC line at " .. promptAt) end
+                setNote("Dialog helper (2015 early): " .. table.concat(status, " | "))
+            elseif #status > 0 then
+                setNote("Dialog helper (2015 early): " .. table.concat(status, " | "))
+            else
+                setNote("")
             end
         end
 
@@ -1535,7 +1647,7 @@ task.spawn(function()
         task.spawn(function()
             while running do
                 pcall(findBoxes)
-                task.wait(0.3)
+                task.wait(0.4)
             end
         end)
 
