@@ -50,12 +50,15 @@ local Workspace = game:GetService("Workspace")
 
 --========================================================
 -- KEEP ROBLOX'S NPC DIALOG BOX
--- Roblox's NPC dialog keeps its choice box ("Goodbye!" etc.) in CoreGui.RobloxGui.ControlFrame.
--- The 2014 base (2014 / 2015 early), 2015 and 2016 GUIs delete ControlFrame, and the 2017 /
--- 2019 GUIs switch RobloxGui off, so the box was gone or hidden: nothing to pick, and on phones
--- the controls (Roblox hides them while you choose) never came back. ControlFrame is moved into
--- a GUI of its own here, before any of those GUIs load: the box stays and shows, above the
--- hotbar. Roblox's dialog script keeps working as normal (it holds on to ControlFrame itself).
+-- Roblox's NPC dialog builds its choice box ("Goodbye!" etc.) and its message box inside
+-- CoreGui.RobloxGui. The 2014 base (2014 / 2015 early), 2015 and 2016 GUIs delete ControlFrame
+-- (which holds them), and the 2017 / 2019 GUIs switch RobloxGui off, so the box was gone or
+-- hidden: nothing to pick, and on phones the controls (Roblox hides them while you choose)
+-- never came back. Only those two pieces (DialogFrame and DialogScriptMessage) are moved, here,
+-- before any of those GUIs load, into a GUI of their own that stays on, above the hotbar. They
+-- keep their place on screen (empty frames copy the position and size of what held them), and
+-- Roblox's dialog script keeps working as normal. ControlFrame itself is left where Roblox
+-- expects it (the 2017 / 2019 GUIs say to never remove it on a touch device).
 --========================================================
 local function keepDialogBox()
     local hui = nil
@@ -63,25 +66,19 @@ local function keepDialogBox()
     -- kept already (this script was run before in this server)
     for _, container in ipairs({ CoreGui, hui }) do
         local kept = container and container:FindFirstChild("DialogBoxHost")
-        if kept and (kept:FindFirstChild("ControlFrame") or kept:FindFirstChild("DialogFrame")) then
+        if kept and kept:FindFirstChild("DialogFrame", true) then
             return true
         end
     end
 
     local robloxGui = CoreGui:FindFirstChild("RobloxGui")
     if not robloxGui then return false end
-    -- the dialog box lives in ControlFrame, or straight in RobloxGui when there is none
-    local parts = {}
-    local controlFrame = robloxGui:FindFirstChild("ControlFrame")
-    if controlFrame then
-        table.insert(parts, controlFrame)
-    else
-        for _, name in ipairs({ "DialogFrame", "DialogScriptMessage" }) do
-            local part = robloxGui:FindFirstChild(name)
-            if part then table.insert(parts, part) end
-        end
+    local pieces = {}
+    for _, name in ipairs({ "DialogFrame", "DialogScriptMessage" }) do
+        local piece = robloxGui:FindFirstChild(name, true)
+        if piece and piece:IsA("GuiObject") then table.insert(pieces, piece) end
     end
-    if #parts == 0 then return false end
+    if #pieces == 0 then return false end
 
     local host = Instance.new("ScreenGui")
     host.Name = "DialogBoxHost"
@@ -92,9 +89,33 @@ local function keepDialogBox()
     if not pcall(function() host.Parent = CoreGui end) then
         host.Parent = hui or Players.LocalPlayer:WaitForChild("PlayerGui")
     end
+
     local moved = 0
-    for _, part in ipairs(parts) do
-        if pcall(function() part.Parent = host end) then moved = moved + 1 end
+    for _, piece in ipairs(pieces) do
+        -- empty frames with the position and size of what held the piece, so it stays in place
+        local chain = {}
+        local holder = piece.Parent
+        while holder and holder ~= robloxGui do
+            table.insert(chain, 1, holder)
+            holder = holder.Parent
+        end
+        local parent = host
+        for _, ancestor in ipairs(chain) do
+            local frame = Instance.new("Frame")
+            frame.Name = ancestor.Name
+            frame.BackgroundTransparency = 1
+            frame.BorderSizePixel = 0
+            if ancestor:IsA("GuiObject") then
+                frame.AnchorPoint = ancestor.AnchorPoint
+                frame.Position = ancestor.Position
+                frame.Size = ancestor.Size
+            else
+                frame.Size = UDim2.new(1, 0, 1, 0)
+            end
+            frame.Parent = parent
+            parent = frame
+        end
+        if pcall(function() piece.Parent = parent end) then moved = moved + 1 end
     end
     if moved == 0 then
         host:Destroy()
@@ -135,14 +156,6 @@ local URL_SAFECHAT_HOOK     = "https://gist.githubusercontent.com/eloredo413-hue
 local URL_TERRAIN_HOOK      = "https://gist.githubusercontent.com/eloredo413-hue/e6591965831062d75e09aa49f60e2653/raw/dd8b8127a30461a7d0c11a312e8e0dba665fa5f9/Terrian%2520hook"
 local URL_HAMMER_2          = "https://gist.githubusercontent.com/eloredo413-hue/bd4cfb877697614c2cd440899b1fbd6f/raw/86214a88cdd4ca50909f5aa475c440e62971f633/Hammer%2520stuff%25202"
 local URL_BUBBLE_2015_2016  = "https://gist.githubusercontent.com/eloredo413-hue/f37d62b43e7435cd46dd495b5ed1bcfc/raw/b4ae511afdec2e92e9b956a8ddc4803d9929d0da/Chat%2520bubble%2520fix"
-
--- The 2017 chat bubbles (taken from the 2017 core gui's OldBubbleChat) as a script of their own.
--- They are used for 2015 and 2016. (The gist above is now only used for 2017-2020, as before.)
--- 2017_bubble_chat.lua in this repo is the one used: it connects to chat straight away. The
--- older copy in the E repo waited for a texture check before connecting to anything, and when
--- that check stalled no bubble was ever drawn (and Roblox's own bubbles stayed on).
-local URL_BUBBLE_2017 = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2017_bubble_chat.lua"
-local URL_BUBBLE_2017_OLD = "https://raw.githubusercontent.com/eloredo413-hue/E/ccr-f33d83ed-bgaekc/2017_bubble_chat.lua"
 
 -- GUIs More guis loads, swapped for the copies in this repo before More guis runs (no need to
 -- change the More guis gist):
@@ -291,47 +304,46 @@ task.spawn(function()
     -- so nothing else is lost. Everything is put back when another topbar is picked.
     local regularHidden = false
     local regularSaved = {}   -- instance -> its Enabled before it was switched off
-    local regularConns = {}
+    local regularGen = 0      -- changes every time hiding starts or stops (ends the old check loop)
 
+    -- Kept off by a plain check twice a second, not by property-change listeners: nothing
+    -- here can set off a back-and-forth with Roblox's own code.
     local function setRegularBubblesHidden(hide)
         if hide == regularHidden then return end
         regularHidden = hide
-        for _, c in ipairs(regularConns) do pcall(function() c:Disconnect() end) end
-        regularConns = {}
+        regularGen = regularGen + 1
 
         if not hide then
             for obj, was in pairs(regularSaved) do
                 pcall(function() obj.Enabled = was end)
             end
             regularSaved = {}
-            if getgenv().BloxyRegularBubblesRestore then getgenv().BloxyRegularBubblesRestore = nil end
+            getgenv().BloxyRegularBubblesRestore = nil
             return
         end
         -- running this script again puts them back first
         getgenv().BloxyRegularBubblesRestore = function() setRegularBubblesHidden(false) end
 
-        local function keepOff(obj)
-            if not obj then return end
-            pcall(function()
-                if regularSaved[obj] == nil then regularSaved[obj] = obj.Enabled end
-                obj.Enabled = false
-                table.insert(regularConns, obj:GetPropertyChangedSignal("Enabled"):Connect(function()
-                    if regularHidden and obj.Enabled then obj.Enabled = false end
-                end))
-            end)
-        end
-
-        local cfg = nil
-        pcall(function() cfg = TextChatService:FindFirstChildOfClass("BubbleChatConfiguration") end)
-        if not cfg then pcall(function() cfg = TextChatService.BubbleChatConfiguration end) end
-        keepOff(cfg)
-        keepOff(CoreGui:FindFirstChild("ExperienceChat"))
-        -- Roblox can make its chat display again later
-        table.insert(regularConns, CoreGui.ChildAdded:Connect(function(child)
-            if regularHidden and child.Name == "ExperienceChat" then
-                task.defer(keepOff, child)
+        local gen = regularGen
+        task.spawn(function()
+            while regularHidden and gen == regularGen do
+                local targets = {}
+                pcall(function()
+                    local cfg = TextChatService:FindFirstChildOfClass("BubbleChatConfiguration")
+                        or TextChatService:FindFirstChild("BubbleChatConfiguration")
+                    if cfg then table.insert(targets, cfg) end
+                    local chat = CoreGui:FindFirstChild("ExperienceChat")
+                    if chat then table.insert(targets, chat) end
+                end)
+                for _, obj in ipairs(targets) do
+                    pcall(function()
+                        if regularSaved[obj] == nil then regularSaved[obj] = obj.Enabled end
+                        if obj.Enabled then obj.Enabled = false end
+                    end)
+                end
+                task.wait(0.5)
             end
-        end))
+        end)
     end
 
     -- status for the console only (no message on screen)
@@ -667,22 +679,715 @@ task.spawn(function()
     end
 
     --========================================================
+    -- 2017 CHAT BUBBLES (2015 / 2016), built into this loader
+    -- White bubbles with a tail as drawn by the 2017 core gui: the newest in front, older ones
+    -- stacked above and faded, a small "..." bubble at medium distance. Built in (no download,
+    -- nothing to wait for) the same way the 2010-2014 bubbles are. Roblox's own bubbles are
+    -- hidden by setRegularBubblesHidden, not here. Messages come from TextChatService and from
+    -- Player.Chatted (the same message from both is drawn once). Returns the function that
+    -- stops it.
+    --========================================================
+    local function startBubbles2017()
+        local Env = getgenv()
+        if Env.Bubble2017Cleanup then
+            pcall(Env.Bubble2017Cleanup)
+            Env.Bubble2017Cleanup = nil
+        end
+
+        local Players = game:GetService("Players")
+        local TextChatService = game:GetService("TextChatService")
+        local TweenService = game:GetService("TweenService")
+        local TextService = game:GetService("TextService")
+        local Debris = game:GetService("Debris")
+        local RunService = game:GetService("RunService")
+        local ContentProvider = game:GetService("ContentProvider")
+
+        local LocalPlayer = Players.LocalPlayer
+        local Camera = workspace.CurrentCamera
+
+        -- Legacy chat games draw the 2017 bubbles themselves.
+        local UsesTextChatService = true
+
+        pcall(function()
+        	if TextChatService.ChatVersion == Enum.ChatVersion.LegacyChatService then
+        		UsesTextChatService = false
+        	end
+        end)
+
+        if not UsesTextChatService then
+        	print("[2017 bubbles] this game uses the legacy chat: its own bubbles are the 2017 ones, nothing to do")
+        	return
+        end
+
+        --========================================================
+        -- SETTINGS (same numbers as the 2017 core gui)
+        --========================================================
+
+        local MAX_BUBBLE_WIDTH = 400
+        local MAX_TOTAL_BUBBLE_HEIGHT = 150
+
+        local NEAR_BUBBLE_DISTANCE = 45
+        local MAX_BUBBLE_DISTANCE = 80
+
+        local MIN_BUBBLE_LIFETIME = 12
+        local MAX_BUBBLE_LIFETIME = 20
+
+        local MIN_BUBBLE_LIFETIME_SELF = 8
+        local MAX_BUBBLE_LIFETIME_SELF = 15
+
+        local BUBBLE_FADE_TIME = 1.5
+
+        local MAX_CHAT_MESSAGE_LENGTH = 128
+
+        local ELLIPSES = "..."
+
+        local MAX_CHAT_MESSAGE_LENGTH_EXCLUSIVE = MAX_CHAT_MESSAGE_LENGTH - #ELLIPSES - 1
+
+        local BubbleFont = Font.fromEnum(Enum.Font.SourceSans)
+
+        local BubbleBackground = Color3.fromRGB(255, 255, 255)
+
+        local BubbleTextColor = Color3.fromRGB(60, 68, 75)
+
+        local BubbleTextSize = 22
+
+        local BUBBLE_IMAGE = "rbxasset://textures/ui/dialog_white.png"
+
+        local TAIL_IMAGE = "rbxasset://textures/ui/dialog_tail.png"
+
+        local ResizeBubbleTweenInfo = TweenInfo.new(0.1, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+
+        local ShiftBubblesUpTweenInfo = TweenInfo.new(0.07, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
+
+        --========================================================
+        -- STATE
+        --========================================================
+
+        local Running = true
+
+        local Connections = {}
+
+        local AllBubbleGuis = {}
+
+        -- Most recent bubble is [1], the oldest is at the end.
+        local ChatBubbleQueues = {}
+
+
+        local FirstBubbleLogged = false
+
+        -- The two bubble textures come with the Roblox client. If this client turns out not to have
+        -- them, bubbles drawn from then on are plain white rounded boxes instead of showing nothing.
+        -- (The check runs in the background, after the script is up: waiting for it here used to hold
+        -- the whole script back, so no bubble was ever drawn and Roblox's own bubbles stayed on.)
+        local UseTextures = true
+
+        --========================================================
+        -- MESSAGES
+        --========================================================
+
+        local function GetMessageLength(Message)
+        	local Success, Length = pcall(function()
+        		return utf8.len(utf8.nfcnormalize(Message))
+        	end)
+
+        	if Success and Length then
+        		return Length
+        	end
+
+        	return #Message
+        end
+
+        local function SanitizeChatLine(Message)
+        	local Length = GetMessageLength(Message)
+
+        	if Length <= MAX_CHAT_MESSAGE_LENGTH_EXCLUSIVE then
+        		return Message
+        	end
+
+        	local ByteOffset
+
+        	pcall(function()
+        		ByteOffset = utf8.offset(Message, MAX_CHAT_MESSAGE_LENGTH_EXCLUSIVE + GetMessageLength(ELLIPSES) + 1)
+        	end)
+
+        	if not ByteOffset then
+        		return string.sub(Message, 1, MAX_CHAT_MESSAGE_LENGTH_EXCLUSIVE)
+        	end
+
+        	return string.sub(Message, 1, ByteOffset - 1)
+        end
+
+        local function LerpLength(Message, Minimum, Maximum)
+        	local Alpha = math.min(GetMessageLength(Message) / 75, 1)
+
+        	return Minimum + (Maximum - Minimum) * Alpha
+        end
+
+        --========================================================
+        -- QUEUES
+        --========================================================
+
+        local function RemoveBubbleFromQueue(Adornee, Bubble)
+        	local Queue = ChatBubbleQueues[Adornee]
+
+        	if not Queue then
+        		return
+        	end
+
+        	for Index, Value in ipairs(Queue) do
+        		if Value == Bubble then
+        			table.remove(Queue, Index)
+        			break
+        		end
+        	end
+
+        	if #Queue == 0 then
+        		ChatBubbleQueues[Adornee] = nil
+        	end
+        end
+
+        local function RemoveOldestFromQueue(Adornee)
+        	local Queue = ChatBubbleQueues[Adornee]
+
+        	if not Queue then
+        		return
+        	end
+
+        	local OldestBubble = Queue[#Queue]
+
+        	if not OldestBubble then
+        		return
+        	end
+
+        	table.remove(Queue, #Queue)
+
+        	if OldestBubble.Parent then
+        		OldestBubble:Destroy()
+        	end
+        end
+
+        local function AddBubbleToQueue(Adornee, ChatBubbleGui, Lifetime)
+        	local Queue = ChatBubbleQueues[Adornee]
+
+        	if not Queue then
+        		Queue = {}
+
+        		ChatBubbleQueues[Adornee] = Queue
+
+        		table.insert(Connections, Adornee.Destroying:Connect(function()
+        			ChatBubbleQueues[Adornee] = nil
+        		end))
+        	end
+
+        	local Gap = 4
+
+        	local BillboardFrameOfNew = ChatBubbleGui:FindFirstChild("BillboardFrame")
+
+        	local ChatBubble = BillboardFrameOfNew and BillboardFrameOfNew:FindFirstChild("ChatBubble")
+
+        	local NewBubbleHeight = 0
+
+        	if ChatBubble then
+        		NewBubbleHeight = ChatBubble.AbsoluteSize.Y
+
+        		if NewBubbleHeight <= 0 then
+        			NewBubbleHeight = ChatBubble.Size.Y.Offset
+        		end
+        	end
+
+        	local TotalYSpaceUsed = NewBubbleHeight
+
+        	-- shift the existing bubbles up
+        	for _, Bubble in ipairs(Queue) do
+        		local BillboardFrame = Bubble.Parent and Bubble:FindFirstChild("BillboardFrame")
+
+        		local ExistingBubble = BillboardFrame and BillboardFrame:FindFirstChild("ChatBubble")
+
+        		if ExistingBubble then
+        			local ShiftUp = NewBubbleHeight + Gap
+
+        			TweenService:Create(BillboardFrame, ShiftBubblesUpTweenInfo, {
+        				Position = BillboardFrame.Position - UDim2.fromOffset(0, ShiftUp),
+        			}):Play()
+
+        			TotalYSpaceUsed = TotalYSpaceUsed + ExistingBubble.AbsoluteSize.Y
+
+        			local ExistingText = ExistingBubble:FindFirstChild("BubbleText")
+
+        			if ExistingText then
+        				ExistingText.TextTransparency = 0.5
+        			end
+        		end
+        	end
+
+        	-- remove the oldest when it gets too tall
+        	if TotalYSpaceUsed > MAX_TOTAL_BUBBLE_HEIGHT then
+        		RemoveOldestFromQueue(Adornee)
+        	end
+
+        	table.insert(Queue, 1, ChatBubbleGui)
+
+        	-- remove this bubble after its lifetime
+        	task.delay(Lifetime + BUBBLE_FADE_TIME, function()
+        		if ChatBubbleGui.Parent then
+        			RemoveBubbleFromQueue(Adornee, ChatBubbleGui)
+        		end
+        	end)
+        end
+
+        --========================================================
+        -- LOOK
+        --========================================================
+
+        -- the rounded white body of a bubble
+        local function StyleBody(Label)
+        	if UseTextures then
+        		Label.Image = BUBBLE_IMAGE
+        		Label.ImageColor3 = BubbleBackground
+        		Label.ScaleType = Enum.ScaleType.Slice
+        		Label.SliceCenter = Rect.new(5, 5, 15, 15)
+        	else
+        		Label.BackgroundTransparency = 0
+        		Label.BackgroundColor3 = BubbleBackground
+
+        		local Corner = Instance.new("UICorner")
+        		Corner.CornerRadius = UDim.new(0, 8)
+        		Corner.Parent = Label
+        	end
+        end
+
+        -- the little triangle under a bubble
+        local function StyleTail(Label)
+        	if UseTextures then
+        		Label.Image = TAIL_IMAGE
+        		Label.ImageColor3 = BubbleBackground
+        	else
+        		local Diamond = Instance.new("Frame")
+        		Diamond.Name = "Diamond"
+        		Diamond.AnchorPoint = Vector2.new(0.5, 0.5)
+        		Diamond.BackgroundColor3 = BubbleBackground
+        		Diamond.BorderSizePixel = 0
+        		Diamond.Position = UDim2.fromScale(0.5, 0.2)
+        		Diamond.Rotation = 45
+        		Diamond.Size = UDim2.fromOffset(12, 12)
+        		Diamond.Parent = Label
+        	end
+        end
+
+        local function MakePadding(Parent, Vertical)
+        	local Padding = Instance.new("UIPadding")
+        	Padding.Name = "UIPadding"
+        	Padding.PaddingBottom = UDim.new(0, Vertical)
+        	Padding.PaddingLeft = UDim.new(0, 12)
+        	Padding.PaddingRight = UDim.new(0, 12)
+        	Padding.PaddingTop = UDim.new(0, Vertical)
+        	Padding.Parent = Parent
+
+        	return Padding
+        end
+
+        --========================================================
+        -- CREATE A BUBBLE
+        --========================================================
+
+        local function CreateBubble(Adornee, Message, SentBySelf)
+        	if not Running or not Adornee or not Adornee.Parent then
+        		return
+        	end
+
+        	Message = SanitizeChatLine(Message)
+
+        	local ChatBubbleGui = Instance.new("BillboardGui")
+        	ChatBubbleGui.Name = "ChatBubbleGui"
+        	ChatBubbleGui.Size = UDim2.fromOffset(400, 250)
+        	ChatBubbleGui.Adornee = Adornee
+        	ChatBubbleGui:SetAttribute("ClassicOwned", true)
+        	ChatBubbleGui:SetAttribute("Bubble2017Owned", true)
+
+        	pcall(function()
+        		ChatBubbleGui.MaxDistance = MAX_BUBBLE_DISTANCE
+        	end)
+
+        	local BillboardFrame = Instance.new("Frame")
+        	BillboardFrame.Name = "BillboardFrame"
+        	BillboardFrame.AnchorPoint = Vector2.new(0.5, 0)
+        	BillboardFrame.BackgroundTransparency = 1
+        	BillboardFrame.Position = UDim2.fromScale(0.5, -0.5)
+        	BillboardFrame.Size = UDim2.fromScale(1, 1)
+        	BillboardFrame.Parent = ChatBubbleGui
+
+        	-- small "..." bubble (medium distance)
+        	local SmallTalkBubble = Instance.new("ImageLabel")
+        	SmallTalkBubble.Name = "SmallTalkBubble"
+        	SmallTalkBubble.AnchorPoint = Vector2.new(0.5, 1)
+        	SmallTalkBubble.BackgroundTransparency = 1
+        	SmallTalkBubble.BorderSizePixel = 0
+        	SmallTalkBubble.Position = UDim2.fromScale(0.5, 1)
+        	SmallTalkBubble.Size = UDim2.fromOffset(40, 30)
+        	SmallTalkBubble.Visible = false
+        	StyleBody(SmallTalkBubble)
+        	SmallTalkBubble.Parent = BillboardFrame
+
+        	local SmallTalkBubbleText = Instance.new("TextLabel")
+        	SmallTalkBubbleText.Name = "BubbleText"
+        	SmallTalkBubbleText.BackgroundTransparency = 1
+        	SmallTalkBubbleText.ClipsDescendants = true
+        	SmallTalkBubbleText.FontFace = BubbleFont
+        	SmallTalkBubbleText.Size = UDim2.fromScale(1, 1)
+        	SmallTalkBubbleText.Text = "..."
+        	SmallTalkBubbleText.TextColor3 = BubbleTextColor
+        	SmallTalkBubbleText.TextSize = BubbleTextSize
+        	SmallTalkBubbleText.Parent = SmallTalkBubble
+
+        	MakePadding(SmallTalkBubbleText, 12)
+
+        	local SmallTailFrame = Instance.new("Frame")
+        	SmallTailFrame.Name = "ChatBubbleTailFrame"
+        	SmallTailFrame.BackgroundTransparency = 1
+        	SmallTailFrame.Position = UDim2.fromScale(0.5, 1)
+        	SmallTailFrame.Size = UDim2.fromScale(0.5, 0.5)
+        	SmallTailFrame.SizeConstraint = Enum.SizeConstraint.RelativeXX
+        	SmallTailFrame.Parent = SmallTalkBubble
+
+        	local SmallTail = Instance.new("ImageLabel")
+        	SmallTail.Name = "ChatBubbleTail"
+        	SmallTail.BackgroundTransparency = 1
+        	SmallTail.BorderSizePixel = 0
+        	SmallTail.Position = UDim2.fromScale(-0.5, 0)
+        	SmallTail.Size = UDim2.fromScale(1, 0.5)
+        	StyleTail(SmallTail)
+        	SmallTail.Parent = SmallTailFrame
+
+        	-- main bubble
+        	local ChatBubble = Instance.new("ImageLabel")
+        	ChatBubble.Name = "ChatBubble"
+        	ChatBubble.AnchorPoint = Vector2.new(0.5, 1)
+        	ChatBubble.BackgroundTransparency = 1
+        	ChatBubble.BorderSizePixel = 0
+        	ChatBubble.Position = UDim2.fromScale(0.5, 1)
+        	ChatBubble.Visible = false
+        	StyleBody(ChatBubble)
+        	ChatBubble.Parent = BillboardFrame
+
+        	local BubbleText = Instance.new("TextLabel")
+        	BubbleText.Name = "BubbleText"
+        	BubbleText.BackgroundTransparency = 1
+        	BubbleText.ClipsDescendants = true
+        	BubbleText.FontFace = BubbleFont
+        	BubbleText.Size = UDim2.fromScale(1, 1)
+        	BubbleText.Text = ""
+        	BubbleText.TextColor3 = BubbleTextColor
+        	BubbleText.TextSize = BubbleTextSize
+        	BubbleText.TextWrapped = true
+        	BubbleText.Parent = ChatBubble
+
+        	local UIPadding = MakePadding(BubbleText, 12)
+
+        	local ChatBubbleTail = Instance.new("ImageLabel")
+        	ChatBubbleTail.Name = "ChatBubbleTail"
+        	ChatBubbleTail.BackgroundTransparency = 1
+        	ChatBubbleTail.BorderSizePixel = 0
+        	ChatBubbleTail.Position = UDim2.new(0.5, -14, 1, 0)
+        	ChatBubbleTail.Size = UDim2.fromOffset(30, 14)
+        	ChatBubbleTail.Visible = false
+        	StyleTail(ChatBubbleTail)
+        	ChatBubbleTail.Parent = BillboardFrame
+
+        	-- size from the text
+        	local TextSizeBounds = TextService:GetTextSize(
+        		Message,
+        		BubbleText.TextSize,
+        		BubbleText.Font,
+        		Vector2.new(MAX_BUBBLE_WIDTH, math.huge)
+        	)
+
+        	local Multiline = TextSizeBounds.Y > BubbleText.TextSize
+
+        	if not Multiline then
+        		UIPadding.PaddingTop = UDim.new(0, UIPadding.PaddingTop.Offset / 2)
+        		UIPadding.PaddingBottom = UDim.new(0, UIPadding.PaddingBottom.Offset / 2)
+        	end
+
+        	local ChatBubbleSize = UDim2.fromOffset(
+        		TextSizeBounds.X + UIPadding.PaddingLeft.Offset + UIPadding.PaddingRight.Offset + 1,
+        		TextSizeBounds.Y + UIPadding.PaddingTop.Offset + UIPadding.PaddingBottom.Offset
+        	)
+
+        	-- starts slightly bigger, then settles
+        	ChatBubble.Size = UDim2.fromOffset(ChatBubbleSize.X.Offset + 10, ChatBubbleSize.Y.Offset + 10)
+
+        	TweenService:Create(ChatBubble, ResizeBubbleTweenInfo, { Size = ChatBubbleSize }):Play()
+
+        	task.delay(ResizeBubbleTweenInfo.Time, function()
+        		if BubbleText.Parent then
+        			BubbleText.Text = Message
+        		end
+        	end)
+
+        	local Lifetime
+
+        	if SentBySelf then
+        		ChatBubbleGui.StudsOffset = Vector3.new(0, 1.8, 0)
+        		Lifetime = LerpLength(Message, MIN_BUBBLE_LIFETIME_SELF, MAX_BUBBLE_LIFETIME_SELF)
+        	else
+        		ChatBubbleGui.StudsOffset = Vector3.new(0, 2.4, 0)
+        		Lifetime = LerpLength(Message, MIN_BUBBLE_LIFETIME, MAX_BUBBLE_LIFETIME)
+        	end
+
+        	ChatBubbleGui.Parent = Adornee
+
+        	AllBubbleGuis[ChatBubbleGui] = true
+
+        	ChatBubbleGui.Destroying:Connect(function()
+        		AllBubbleGuis[ChatBubbleGui] = nil
+        	end)
+
+        	-- fade out
+        	task.delay(Lifetime, function()
+        		if not Running or not ChatBubbleGui.Parent then
+        			return
+        		end
+
+        		local FadeInfo = TweenInfo.new(BUBBLE_FADE_TIME, Enum.EasingStyle.Linear)
+
+        		for _, Object in ipairs(ChatBubbleGui:GetDescendants()) do
+        			if Object:IsA("ImageLabel") then
+        				TweenService:Create(Object, FadeInfo, { ImageTransparency = 1 }):Play()
+
+        				if not UseTextures and Object.BackgroundTransparency < 1 then
+        					TweenService:Create(Object, FadeInfo, { BackgroundTransparency = 1 }):Play()
+        				end
+        			elseif Object:IsA("TextLabel") then
+        				TweenService:Create(Object, FadeInfo, { TextTransparency = 1 }):Play()
+        			elseif Object:IsA("Frame") and Object.Name == "Diamond" then
+        				TweenService:Create(Object, FadeInfo, { BackgroundTransparency = 1 }):Play()
+        			end
+        		end
+        	end)
+
+        	Debris:AddItem(ChatBubbleGui, Lifetime + BUBBLE_FADE_TIME + 0.1)
+
+        	AddBubbleToQueue(Adornee, ChatBubbleGui, Lifetime)
+
+        	if not FirstBubbleLogged then
+        		FirstBubbleLogged = true
+        		print("[2017 bubbles] first bubble drawn (" .. tostring(Adornee:GetFullName()) .. ")")
+        	end
+        end
+
+        --========================================================
+        -- RECEIVE TEXTCHAT MESSAGES
+        --========================================================
+
+        local RecentMessages = {}
+
+        local function HandleChat(Player, Message)
+        	if not Running or not Player or type(Message) ~= "string" or Message == "" then
+        		return
+        	end
+
+        	-- the same message can arrive through both chat events
+        	local Key = tostring(Player.UserId) .. ":" .. Message
+
+        	if RecentMessages[Key] then
+        		return
+        	end
+
+        	RecentMessages[Key] = true
+
+        	task.delay(1.5, function()
+        		RecentMessages[Key] = nil
+        	end)
+
+        	local Character = Player.Character
+
+        	if not Character then
+        		return
+        	end
+
+        	local Adornee = Character:FindFirstChild("Head") or Character:FindFirstChild("HumanoidRootPart") or Character
+
+        	CreateBubble(Adornee, Message, Player == LocalPlayer)
+        end
+
+        pcall(function()
+        	table.insert(Connections, TextChatService.MessageReceived:Connect(function(TextChatMessage)
+        		local TextSource = TextChatMessage.TextSource
+
+        		-- system messages do not belong to a head
+        		if not TextSource then
+        			return
+        		end
+
+        		HandleChat(Players:GetPlayerByUserId(TextSource.UserId), TextChatMessage.Text)
+        	end))
+        end)
+
+        local function HookPlayer(Player)
+        	table.insert(Connections, Player.Chatted:Connect(function(Message)
+        		HandleChat(Player, Message)
+        	end))
+        end
+
+        for _, Player in ipairs(Players:GetPlayers()) do
+        	HookPlayer(Player)
+        end
+
+        table.insert(Connections, Players.PlayerAdded:Connect(HookPlayer))
+
+        --========================================================
+        -- DISTANCE / VISIBILITY (every frame)
+        --========================================================
+
+        table.insert(Connections, RunService.Heartbeat:Connect(function()
+        	if not Running then
+        		return
+        	end
+
+        	Camera = workspace.CurrentCamera
+
+        	if not Camera then
+        		return
+        	end
+
+        	for Adornee, Queue in pairs(ChatBubbleQueues) do
+        		if not Adornee or not Adornee.Parent then
+        			ChatBubbleQueues[Adornee] = nil
+        		elseif #Queue > 0 then
+        			local MostRecentChatBubble = Queue[1]
+
+        			local DistanceFromAdornee = nil
+
+        			if MostRecentChatBubble and MostRecentChatBubble.Parent then
+        				pcall(function()
+        					DistanceFromAdornee = (Camera.CFrame.Position - Adornee:GetPivot().Position).Magnitude
+        				end)
+        			end
+
+        			if DistanceFromAdornee then
+        				for Index, BubbleGui in ipairs(Queue) do
+        					local BillboardFrame = BubbleGui.Parent and BubbleGui:FindFirstChild("BillboardFrame")
+
+        					if BillboardFrame then
+        						local MainBubble = BillboardFrame:FindFirstChild("ChatBubble")
+        						local SmallBubble = BillboardFrame:FindFirstChild("SmallTalkBubble")
+        						local MainTail = BillboardFrame:FindFirstChild("ChatBubbleTail")
+
+        						if DistanceFromAdornee < NEAR_BUBBLE_DISTANCE then
+        							-- near: the newest bubble has the tail
+        							if MainBubble then
+        								MainBubble.Visible = true
+        							end
+
+        							if MainTail then
+        								MainTail.Visible = Index == 1
+        							end
+
+        							if SmallBubble then
+        								SmallBubble.Visible = false
+        							end
+
+        							BubbleGui.Enabled = true
+        						elseif DistanceFromAdornee < MAX_BUBBLE_DISTANCE and Index == 1 then
+        							-- medium distance: only a small "..." bubble
+        							if MainBubble then
+        								MainBubble.Visible = false
+        							end
+
+        							if MainTail then
+        								MainTail.Visible = false
+        							end
+
+        							if SmallBubble then
+        								SmallBubble.Visible = true
+        							end
+
+        							BubbleGui.Enabled = true
+        						else
+        							-- far away
+        							BubbleGui.Enabled = false
+        						end
+        					end
+        				end
+        			end
+        		end
+        	end
+        end))
+
+        --========================================================
+        -- STOP
+        --========================================================
+
+        local function Stop()
+        	if not Running then
+        		return
+        	end
+
+        	Running = false
+
+        	for _, Connection in ipairs(Connections) do
+        		pcall(function()
+        			Connection:Disconnect()
+        		end)
+        	end
+
+        	Connections = {}
+
+        	for BubbleGui in pairs(AllBubbleGuis) do
+        		pcall(function()
+        			BubbleGui:Destroy()
+        		end)
+        	end
+
+        	AllBubbleGuis = {}
+
+        	ChatBubbleQueues = {}
+
+        	if Env.Bubble2017Cleanup == Stop then
+        		Env.Bubble2017Cleanup = nil
+        		Env.Bubble2017Running = nil
+        	end
+        end
+
+        Env.Bubble2017Cleanup = Stop
+
+        Env.Bubble2017Running = true
+
+        print("[2017 bubbles] running")
+
+        -- texture check, in the background (a stall here can never hold anything back)
+        task.spawn(function()
+        	local Failed = false
+
+        	local Ok = pcall(function()
+        		ContentProvider:PreloadAsync({ BUBBLE_IMAGE, TAIL_IMAGE }, function(_, Status)
+        			if Status == Enum.AssetFetchStatus.Failure or Status == Enum.AssetFetchStatus.TimedOut then
+        				Failed = true
+        			end
+        		end)
+        	end)
+
+        	if Ok and Failed and Running then
+        		UseTextures = false
+        		print("[2017 bubbles] the bubble textures are missing in this client: plain bubbles are used")
+        	end
+        end)
+
+        return Stop
+
+    end
+
+    --========================================================
     -- BUBBLE SCRIPTS (one per era)
     -- Loaded with retries; remembered only when they really started; the previous era's bubbles
     -- are stopped (through the cleanup function the script registered) before the next era's
     -- script starts, so two eras never run on top of each other.
     --========================================================
     local BUBBLE_SOURCES = {
-        bubble2017 = function()
-            return {
-                URL_BUBBLE_2017 .. "?cb=" .. tostring(os.time()), URL_BUBBLE_2017,
-                URL_BUBBLE_2017_OLD .. "?cb=" .. tostring(os.time()), URL_BUBBLE_2017_OLD,
-            }
-        end,
         modern     = function() return { URL_BUBBLE_2015_2016 } end,
     }
     -- a downloaded script must contain its end marker (a cut-short download is tried again)
-    local BUBBLE_MARKERS = { bubble2017 = "end of 2017_bubble_chat.lua" }
+    local BUBBLE_MARKERS = {}
     local CLEANUP_WORDS = { "cleanup", "unload", "destroy", "stop", "disable" }
 
     local activeBubbleEra = nil     -- era whose bubble script is running right now
@@ -735,6 +1440,15 @@ task.spawn(function()
                 activeBubbleEra = era
                 getgenv().BloxyBubbleEra = era
                 print("[Loader] classic bubbles started")
+                return
+            end
+
+            -- 2015 / 2016: the 2017 bubbles are built in too (nothing to download, nothing to wait for)
+            if era == "bubble2017" then
+                if activeBubbleEra then stopBubbleScript(activeBubbleEra) end
+                bubbleCleanups[era] = { startBubbles2017() }
+                activeBubbleEra = era
+                getgenv().BloxyBubbleEra = era
                 return
             end
 
@@ -821,23 +1535,7 @@ task.spawn(function()
             if failed then
                 showNote("2015 / 2016: the 2017 chat bubbles didn't start (" .. tostring(failReason) .. "), so the regular ones stay", true)
             elseif activeBubbleEra == era then
-                if getgenv().Bubble2017Running then
-                    showNote("2015 / 2016: 2017 chat bubbles on")
-                else
-                    -- the script was started but hasn't said it is up (it prints "[2017 bubbles] running")
-                    showNote("2015 / 2016: the 2017 chat bubbles are still starting after 3 seconds", true)
-                    task.delay(10, function()
-                        if activeBubbleEra ~= era then return end
-                        if getgenv().Bubble2017Running then
-                            showNote("2015 / 2016: 2017 chat bubbles on")
-                        else
-                            showNote("2015 / 2016: the 2017 chat bubbles still aren't up after 13 seconds (the 2017 bubble script is stuck), so Roblox's regular bubbles are back", true)
-                            -- some bubbles are better than none (if it does come up later, it hides them again itself)
-                            setNativeBubbles(false)
-                            setRegularBubblesHidden(false)
-                        end
-                    end)
-                end
+                showNote("2015 / 2016: 2017 chat bubbles on")
             end
         end
         -- the last Confirm may have asked for another era while this one was loading
