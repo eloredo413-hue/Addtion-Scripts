@@ -59,9 +59,25 @@ local URL_BUBBLE_2015_2016  = "https://gist.githubusercontent.com/eloredo413-hue
 -- They are used for 2015 and 2016. (The gist above is now only used for 2017-2020, as before.)
 local URL_BUBBLE_2017 = "https://raw.githubusercontent.com/eloredo413-hue/E/ccr-f33d83ed-bgaekc/2017_bubble_chat.lua"
 
-local function loadUrl(url, label)
+-- The 2015 early GUI with the leaderboard kept thin on phones (E2015 Gui.lua in this repo).
+-- More guis loads the 2015 early GUI from a link of its own, so before More guis runs that
+-- link is swapped for this one (no need to change the More guis gist).
+local URL_E2015_GUI = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/E2015%20Gui.lua"
+
+local function useThinE2015(src)
+    local a, b = string.find(src, 'local URL_2015EARLY%s*=%s*"[^"]*"')
+    if not a then
+        warn("[Loader] More guis: its 2015 early link wasn't found, so it keeps its own")
+        return src
+    end
+    return string.sub(src, 1, a - 1) .. 'local URL_2015EARLY = "' .. URL_E2015_GUI .. '"' .. string.sub(src, b + 1)
+end
+
+-- patch (optional): changes the downloaded code before it runs
+local function loadUrl(url, label, patch)
     local ok, src = pcall(game.HttpGet, game, url)
     if not ok or type(src) ~= "string" then return false end
+    if patch then src = patch(src) end
     local chunk = loadstring(src)
     if not chunk then return false end
     return pcall(chunk)
@@ -71,7 +87,7 @@ end
 -- UNCONDITIONAL MAIN ADDONS (Always Load)
 --========================================================
 for i, url in ipairs(mainAddons) do loadUrl(url, "addon" .. i) task.wait(0.1) end
-loadUrl(URL_MORE_GUIS, "More guis")
+loadUrl(URL_MORE_GUIS, "More guis", useThinE2015)
 task.wait(0.5)
 loadUrl(URL_SAFECHAT_HOOK, "SafeChat Hook")
 loadUrl(URL_TERRAIN_HOOK, "Terrain Hook")
