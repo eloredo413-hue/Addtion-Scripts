@@ -9,7 +9,7 @@
 -- + 2010-2014 classic chat bubbles built in: they stack (older ones above, grey), no fade
 -- + Terrain Hook: "What terrain do you want?" (2013 / 2014 / none) in Bloxy's setup
 -- + 2015/2016 use the 2017 chat bubbles (only after Confirm, only when 2015 or 2016 is chosen)
--- + 2015 early keeps its own chat bubbles: no bubble script of ours runs for it (classic dialogs stay)
+-- + 2015 early keeps its own chat bubbles (no bubble script of ours) and uses Roblox's default dialogs
 --========================================================
 
 if getgenv().ClassicDialogCleanup then
@@ -1453,15 +1453,14 @@ task.spawn(function()
 
         elseif era == "early2015" then
             -- 2015 early draws its own early 2015 chat bubbles, so no bubble script of ours runs
-            -- (the classic one removed its bubbles, any other would add a second set). The rest
-            -- is as for 2014: Roblox's own bubbles stay off and the classic dialogs stay.
+            -- (the classic one removed its bubbles, any other would add a second set), and
+            -- Roblox's own bubbles stay off as for 2014. Dialogs are Roblox's default ones: the
+            -- old (classic) dialogs are turned off.
             setNativeBubbles(true)
             if activeBubbleEra then stopBubbleScript(activeBubbleEra) end
             if getgenv().Bubble2017Cleanup then pcall(getgenv().Bubble2017Cleanup) end
-            if not dialogLoaded_Classic then
-                dialogLoaded_Classic = true
-                task.spawn(injectClassicDialogs)
-            end
+            if getgenv().ClassicDialogCleanup then pcall(getgenv().ClassicDialogCleanup) end
+            dialogLoaded_Classic = false
 
         elseif era == "modern" then
             setNativeBubbles(false)
