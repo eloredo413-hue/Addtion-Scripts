@@ -16,6 +16,9 @@
 -- + 2015/2016 use the real 2017 chat bubbles: the bubble chat block of your 2017 GUI script, taken out of it
 --   as it is and run (not a copy); if it shows nothing, Roblox's own bubbles come back
 -- + 2015 early keeps its own chat bubbles (no bubble script of ours) and uses Roblox's default dialogs
+-- + Less lag: no more scans of the whole GUI / workspace many times a second (see SPEED-UPS below,
+--   and Wizard smooth v10, which no longer leaves its hooks on for the whole game)
+-- + The 2006 avatar's T-shirt shows again with the 2010-2014 chat bubbles (they only remove bubbles now)
 --========================================================
 
 if getgenv().ClassicDialogCleanup then
@@ -132,6 +135,12 @@ if not keepDialogBox() then
     end)
 end
 
+-- Wizard smooth v10 (Wizard smooth.lua in this repo): the same as v9, but its hooks are only on while a
+-- setup question is on screen (v9 kept them on for the whole game, which slowed everything down).
+-- If it can't be downloaded, v9 (the gist) is used instead, so the setup is still smooth.
+local URL_WIZARD_SMOOTH    = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Wizard%20smooth.lua"
+local URL_WIZARD_SMOOTH_V9 = "https://gist.githubusercontent.com/eloredo413-hue/c9757141d957bb07793f812ea5c63601/raw/a16efa62bb2fa1dac7736a6d06870ac74c944f30/Wizard%2520smooth"
+
 local mainAddons = {
     -- FF Fix Hook goes first: it hooks loadstring itself, so it has to see the real one
     -- before the other hooks below wrap it.
@@ -140,7 +149,7 @@ local mainAddons = {
     "https://gist.githubusercontent.com/eloredo413-hue/ab9f65a116c2d16f989ec72cf254a72f/raw/d6cc1e5239b675e639556af59509192bfdeca1f3/Quick%2520Texture%2520load%2520studs",
     "https://gist.githubusercontent.com/eloredo413-hue/df4c1c582f4d9c634682b91b13395c4b/raw/5d71a838cd858c860cfcf646c27e02cd26447294/Hammer%2520stuff%25201",
     "https://gist.githubusercontent.com/eloredo413-hue/09b2609e8aff413a178a16ac8477b612/raw/20961a4f1364c9805b1e93ab34f14abc4cc3998f/Particles%2520addon",
-    "https://gist.githubusercontent.com/eloredo413-hue/c9757141d957bb07793f812ea5c63601/raw/a16efa62bb2fa1dac7736a6d06870ac74c944f30/Wizard%2520smooth",
+    URL_WIZARD_SMOOTH,
     "https://gist.githubusercontent.com/eloredo413-hue/f156101652b68d2fdcbbeae4dc0481d6/raw/028c65e676eda5d90f9c3a0595347b102df2a0b9/2010%2520hook",
     "https://gist.githubusercontent.com/eloredo413-hue/6ec77a9b2884b534cd09f653a0fe023d/raw/94075a70190110e81a9c4153c340b19f3c903790/Old%2520physics%2520camera%2520addon",
     "https://gist.githubusercontent.com/eloredo413-hue/0386978714c4e0c69e9de2415b36ee66/raw/5471dd8099e097c97f210374934382fbc843afaf/Explosion%2520Replace%2520Addon",
@@ -181,11 +190,112 @@ local function patchMoreGuis(src)
     return src
 end
 
--- patch (optional): changes the downloaded code before it runs
+--========================================================
+-- SPEED-UPS FOR THE GISTS
+-- A few of the gists go through Bloxy's whole GUI on every frame, or through the whole workspace
+-- on every physics step, for as long as the game runs. That is what made the game lag with a lot
+-- of features on. They are changed here, in the text that is downloaded, just before it runs (the
+-- gists themselves stay as they are). Each change only applies where the code it replaces is found,
+-- so a gist that is swapped for a different one is simply left alone.
+--   * Bloxy's setup questions are Frames in BloxyParadoxProject, and so is Bloxy's own panel
+--     (HammerBigPanel, the hammer menu). That one is never a question and never goes away, yet
+--     nine scripts searched all of it on every frame (Wizard smooth does not, in v10). They skip it now.
+--   * Hammer stuff 2's 2005 / 2006 / 2012 colors went through every part of the workspace on every
+--     physics step (tens of thousands of parts on a big map). The parts are now listed once, kept up
+--     to date as they come and go, and each step checks a slice of about a millisecond, coming round
+--     to every part again within a second or so.
+--   * More guis' report button check ran five times a second; it now runs about twice a second.
+--========================================================
+local function replacePlain(src, old, new)
+    local pieces, from, count = {}, 1, 0
+    while true do
+        local a, b = string.find(src, old, from, true)
+        if not a then break end
+        table.insert(pieces, string.sub(src, from, a - 1))
+        table.insert(pieces, new)
+        from = b + 1
+        count = count + 1
+    end
+    if count == 0 then return src, 0 end
+    table.insert(pieces, string.sub(src, from))
+    return table.concat(pieces), count
+end
+
+local PANEL_GUARD = ' and frame.Name ~= "HammerBigPanel"'
+local SPEEDUPS_PLAIN = {
+    { 'frame:IsA("Frame") and not handled[frame] and not busy then',
+      'frame:IsA("Frame")' .. PANEL_GUARD .. ' and not handled[frame] and not busy then' },
+    { 'frame:IsA("Frame") and not handled[frame] then',
+      'frame:IsA("Frame")' .. PANEL_GUARD .. ' and not handled[frame] then' },
+    { 'frame:IsA("Frame") and not handled[frame] and frame.Visible and isNextStep(frame) then',
+      'frame:IsA("Frame")' .. PANEL_GUARD .. ' and not handled[frame] and frame.Visible and isNextStep(frame) then' },
+    { 'if frame:IsA("Frame") then',
+      'if frame:IsA("Frame")' .. PANEL_GUARD .. ' then' },
+}
+
+-- Hammer stuff 2: the colors limiter's per-step walk through the workspace
+local LIMITER_PATTERN =
+    'table%.insert%(lim%.connections, RunService%.Stepped:Connect%(function%(%)%s*'
+    .. 'if lim%.isUpdating then return end%s*'
+    .. 'for _, desc in ipairs%(workspace:GetDescendants%(%)%) do%s*'
+    .. 'if desc:IsA%("BasePart"%) and not isValidColor%(desc%) then%s*'
+    .. 'snapPart%(desc%)%s*end%s*end%s*end%)%)'
+local LIMITER_REPLACEMENT = [==[
+-- (sliced) the parts are listed once and kept up to date; each physics step checks a slice of them
+local trackedParts, trackedSlot, sliceCursor = {}, {}, 1
+local function trackPart(part)
+    if not trackedSlot[part] and part:IsA("BasePart") then
+        trackedParts[#trackedParts + 1] = part
+        trackedSlot[part] = #trackedParts
+    end
+end
+local function untrackPart(part)
+    local at = trackedSlot[part]
+    if not at then return end
+    local last = trackedParts[#trackedParts]
+    trackedParts[at] = last
+    trackedSlot[last] = at
+    trackedParts[#trackedParts] = nil
+    trackedSlot[part] = nil
+end
+for _, desc in ipairs(workspace:GetDescendants()) do trackPart(desc) end
+table.insert(lim.connections, workspace.DescendantAdded:Connect(trackPart))
+table.insert(lim.connections, workspace.DescendantRemoving:Connect(untrackPart))
+table.insert(lim.connections, RunService.Stepped:Connect(function()
+    if lim.isUpdating then return end
+    local total = #trackedParts
+    if total == 0 then return end
+    local deadline = os.clock() + 0.0012
+    local checked = 0
+    while checked < total do
+        if sliceCursor > total then sliceCursor = 1 end
+        local part = trackedParts[sliceCursor]
+        sliceCursor = sliceCursor + 1
+        checked = checked + 1
+        if part and not isValidColor(part) then snapPart(part) end
+        if checked % 40 == 0 and os.clock() > deadline then break end
+    end
+end))
+]==]
+
+-- More guis: the report button check
+local DEDUPE_PATTERN = 'task%.wait%(0%.2%)(%s*)pcall%(dedupe%)'
+
+local function applySpeedups(src)
+    for _, edit in ipairs(SPEEDUPS_PLAIN) do
+        src = replacePlain(src, edit[1], edit[2])
+    end
+    src = string.gsub(src, LIMITER_PATTERN, function() return LIMITER_REPLACEMENT end)
+    src = string.gsub(src, DEDUPE_PATTERN, function(gap) return "task.wait(0.6)" .. gap .. "pcall(dedupe)" end)
+    return src
+end
+
+-- patch (optional): changes the downloaded code before it runs (the speed-ups above always apply)
 local function loadUrl(url, label, patch)
     local ok, src = pcall(game.HttpGet, game, url)
-    if not ok or type(src) ~= "string" then return false end
+    if not ok or type(src) ~= "string" then return false, "download" end
     if patch then src = patch(src) end
+    src = applySpeedups(src)
     local chunk = loadstring(src)
     if not chunk then return false end
     return pcall(chunk)
@@ -194,7 +304,14 @@ end
 --========================================================
 -- UNCONDITIONAL MAIN ADDONS (Always Load)
 --========================================================
-for i, url in ipairs(mainAddons) do loadUrl(url, "addon" .. i) task.wait(0.1) end
+for i, url in ipairs(mainAddons) do
+    local _, why = loadUrl(url, "addon" .. i)
+    if why == "download" and url == URL_WIZARD_SMOOTH then
+        warn("[Loader] Wizard smooth v10 couldn't be downloaded: using v9")
+        loadUrl(URL_WIZARD_SMOOTH_V9, "Wizard smooth v9")
+    end
+    task.wait(0.1)
+end
 loadUrl(URL_MORE_GUIS, "More guis", patchMoreGuis)
 task.wait(0.5)
 loadUrl(URL_SAFECHAT_HOOK, "SafeChat Hook")
@@ -355,9 +472,14 @@ task.spawn(function()
             return nil
         end
 
+        -- Only BillboardGuis are chat bubbles. A SurfaceGui is never one, and was being deleted
+        -- along with them (the 2006 avatar's T-shirt is a SurfaceGui on the torso, so it never
+        -- stayed). Guis marked ClassicOwned, and the health bars from Hammer stuff 2, are left alone.
+        local KEEP_NAMES = { CustomExecutorHealth = true }
         local function isForeignBubble(object)
-            return (object:IsA("BillboardGui") or object:IsA("SurfaceGui"))
+            return object.ClassName == "BillboardGui"
                 and object.Name ~= BUBBLE_NAME
+                and not KEEP_NAMES[object.Name]
                 and not object:GetAttribute("ClassicOwned")
         end
 
@@ -604,17 +726,20 @@ task.spawn(function()
         watchContainer(Workspace)
         watchContainer(pg)
 
+        -- One sweep now (bubbles already on screen); after that new ones are caught the moment
+        -- they appear (above), so only a slow safety sweep of the characters is left. This used to
+        -- scan every player's character and the whole PlayerGui more than six times a second.
         task.spawn(function()
+            pcall(function()
+                for _, object in ipairs(pg:GetDescendants()) do
+                    if isForeignBubble(object) and belongsToPlayerCharacter(object) then object:Destroy() end
+                end
+            end)
             while running do
                 for _, player in ipairs(Players:GetPlayers()) do
                     removeCharacterBubbles(player.Character)
                 end
-                pcall(function()
-                    for _, object in ipairs(pg:GetDescendants()) do
-                        if isForeignBubble(object) and belongsToPlayerCharacter(object) then object:Destroy() end
-                    end
-                end)
-                task.wait(0.15)
+                task.wait(3)
             end
         end)
 
@@ -914,7 +1039,7 @@ end
             -- the choice may have changed while it was downloading (another era, or none)
             if desiredBubbleEra ~= era then return end
             if activeBubbleEra then stopBubbleScript(activeBubbleEra) end
-            local chunk, compileError = loadstring(src)
+            local chunk, compileError = loadstring(applySpeedups(src))
             if not chunk then
                 failed = true
                 failReason = "the script didn't compile: " .. tostring(compileError)
@@ -999,7 +1124,9 @@ end
         local dialogGeneration = 0
         local hookedNPCs = {}
         local dialogCounter = 0
-        local disabledNative = {}
+        local disabledNative = {}       -- native dialog icons switched off: icon -> { keepOff, restore }
+        local alive = true
+        local needNativeSweep = true    -- a new dialog was hooked: its native icon may already exist
 
         local OVERHEAD_ICONS = {
             Neutral  = "rbxassetid://44197302",
@@ -1582,6 +1709,7 @@ end
             bubbleTail.Parent = bb
 
             hookedNPCs[dialog] = { head = head, bb = bb }
+            needNativeSweep = true
 
             local stepConn
             stepConn = RunService.RenderStepped:Connect(function()
@@ -1629,46 +1757,82 @@ end
             return false
         end
 
+        -- Roblox's / the game's own dialog icons over the NPCs hooked here are switched off the
+        -- moment they show up, and again if the game switches them back on. This used to look
+        -- through all of PlayerGui and CoreGui five times a second, which slowed the game down.
         local function suppressNative(obj)
-            if not obj:IsA("BillboardGui") then return end
+            if obj.ClassName ~= "BillboardGui" or disabledNative[obj] or not obj.Parent then return end
             if obj:GetAttribute("ClassicOwned") then return end
             if billboardHost and obj:IsDescendantOf(billboardHost) then return end
-            local isDialogLike = string.find(string.lower(obj.Name), "dialog", 1, true) ~= nil
-            local onHead = isHookedHead(obj.Adornee) or isHookedHead(obj.Parent)
-            if (onHead or isDialogLike and isHookedHead(obj.Adornee)) and obj.Enabled then
-                pcall(function() obj.Enabled = false end)
-                disabledNative[obj] = true
+            if not (isHookedHead(obj.Adornee) or isHookedHead(obj.Parent)) then return end
+            local wasOn = obj.Enabled
+            pcall(function() obj.Enabled = false end)
+            local keepOff = obj:GetPropertyChangedSignal("Enabled"):Connect(function()
+                if alive and obj.Enabled then pcall(function() obj.Enabled = false end) end
+            end)
+            disabledNative[obj] = { keepOff = keepOff, restore = wasOn }
+        end
+
+        -- the icons that already exist (and, once, every few seconds, in case one was missed)
+        local function sweepNative()
+            needNativeSweep = false
+            for _, data in pairs(hookedNPCs) do
+                if data.head then
+                    for _, obj in ipairs(data.head:GetChildren()) do suppressNative(obj) end
+                end
+            end
+            for _, container in ipairs({ pg, CoreGui }) do
+                pcall(function()
+                    for _, obj in ipairs(container:GetDescendants()) do suppressNative(obj) end
+                end)
             end
         end
 
-        local lastScan = 0
-        table.insert(connections, RunService.RenderStepped:Connect(function()
-            local now = os.clock()
-            if now - lastScan >= 0.2 then
-                lastScan = now
+        -- icons that appear later are caught as they are added
+        for _, container in ipairs({ pg, CoreGui }) do
+            pcall(function()
+                table.insert(connections, container.DescendantAdded:Connect(function(obj)
+                    if obj.ClassName ~= "BillboardGui" then return end
+                    -- its Adornee is often set a moment after it is parented
+                    task.defer(suppressNative, obj)
+                    task.delay(0.5, suppressNative, obj)
+                end))
+            end)
+        end
+
+        -- every second: the dialog GUIs are put back if they were removed, and the icons on the
+        -- NPC heads are looked at (a few parts, not the whole GUI)
+        task.spawn(function()
+            local sinceFullSweep = 0
+            while alive do
                 pcall(ensureHost)
                 for _, g in ipairs({ gui, noticeGui }) do
                     if not g.Parent then pcall(function() g.Parent = parentGui end) end
                 end
-                for _, data in pairs(hookedNPCs) do
-                    if data.head then
-                        for _, obj in ipairs(data.head:GetChildren()) do
-                            if obj:IsA("BillboardGui") and not obj:GetAttribute("ClassicOwned") and obj.Enabled then
-                                pcall(function() obj.Enabled = false end)
-                                disabledNative[obj] = true
-                            end
+                sinceFullSweep = sinceFullSweep + 1
+                if needNativeSweep or sinceFullSweep >= 10 then
+                    sinceFullSweep = 0
+                    pcall(sweepNative)
+                else
+                    for _, data in pairs(hookedNPCs) do
+                        if data.head then
+                            for _, obj in ipairs(data.head:GetChildren()) do suppressNative(obj) end
                         end
                     end
                 end
-                for _, container in ipairs({ pg, CoreGui }) do
-                    pcall(function()
-                        for _, obj in ipairs(container:GetDescendants()) do
-                            suppressNative(obj)
-                        end
-                    end)
+                -- icons that no longer exist are forgotten
+                for obj, state in pairs(disabledNative) do
+                    if not obj.Parent then
+                        pcall(function() state.keepOff:Disconnect() end)
+                        disabledNative[obj] = nil
+                    end
                 end
+                task.wait(1)
             end
+        end)
 
+        -- walking away from the NPC you are talking to ends the chat
+        table.insert(connections, RunService.RenderStepped:Connect(function()
             if not activeNPC or not activeDialog then return end
 
             local char = LocalPlayer.Character
@@ -1696,10 +1860,17 @@ end
 
         scanContainer(Workspace)
         table.insert(connections, Workspace.DescendantAdded:Connect(function(d)
-            if d:IsA("Dialog") then task.defer(function() hookDialog(d) end) end
+            local class = d.ClassName
+            if class == "Dialog" then
+                task.defer(function() hookDialog(d) end)
+            elseif class == "BillboardGui" then
+                -- an icon the game put on an NPC's head
+                task.defer(suppressNative, d)
+            end
         end))
 
         getgenv().ClassicDialogCleanup = function()
+            alive = false
             dialogGeneration = dialogGeneration + 1
             activeNPC, activeDialog = nil, nil
             pcall(function() gui:Destroy() end)
@@ -1717,8 +1888,9 @@ end
                     end
                 end)
             end
-            for obj in pairs(disabledNative) do
-                pcall(function() obj.Enabled = true end)
+            for obj, state in pairs(disabledNative) do
+                pcall(function() state.keepOff:Disconnect() end)
+                if state.restore then pcall(function() obj.Enabled = true end) end
             end
             disabledNative = {}
             hookedNPCs = {}
@@ -1860,14 +2032,34 @@ end
         end
     end
 
-    local function checkConfirmHooks()
-        if not pg or not pg.Parent then return end
-        for _, obj in ipairs(pg:GetDescendants()) do
-            if obj:IsA("TextButton") and string.find(string.lower(obj.Text or ""), "confirm", 1, true) and not obj:GetAttribute("BPHookedConfirm") then
-                obj:SetAttribute("BPHookedConfirm", true)
-                obj.MouseButton1Click:Connect(function() onConfirm(obj) end)
+    -- Confirm buttons are hooked when they appear (or when a button in Bloxy's GUI is renamed
+    -- "Confirm"). This used to look through all of PlayerGui four times a second, for as long as
+    -- the game ran, which got slower the more GUI the game had.
+    local function hookConfirm(obj)
+        if obj:GetAttribute("BPHookedConfirm") then return end
+        if not string.find(string.lower(obj.Text or ""), "confirm", 1, true) then return end
+        obj:SetAttribute("BPHookedConfirm", true)
+        obj.MouseButton1Click:Connect(function() onConfirm(obj) end)
+    end
+
+    local function watchButton(obj)
+        -- looked at a moment later: the script that made it may still be setting its name and text
+        task.defer(function()
+            if not obj.Parent then return end
+            hookConfirm(obj)
+            if not obj:GetAttribute("BPHookedConfirm") and obj:FindFirstAncestor("BloxyParadoxProject") then
+                obj:GetPropertyChangedSignal("Text"):Connect(function() hookConfirm(obj) end)
             end
+        end)
+    end
+
+    if pg then
+        for _, obj in ipairs(pg:GetDescendants()) do
+            if obj.ClassName == "TextButton" then watchButton(obj) end
         end
+        pg.DescendantAdded:Connect(function(obj)
+            if obj.ClassName == "TextButton" then watchButton(obj) end
+        end)
     end
 
     -- Bloxy can load the saved topbar without a Confirm click: with "skip setup" ticked it does
@@ -1893,14 +2085,6 @@ end
                 if not confirmSeen then evaluateAndLoad() end
             end)
         end
-    end)
-
-    local lastHookScan = 0
-    RunService.RenderStepped:Connect(function()
-        local now = os.clock()
-        if now - lastHookScan < 0.25 then return end
-        lastHookScan = now
-        checkConfirmHooks()
     end)
 end)
 
