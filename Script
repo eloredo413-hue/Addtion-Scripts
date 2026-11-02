@@ -9,7 +9,8 @@
 -- + 2010-2014 classic chat bubbles built in: they stack (older ones above, grey), no fade
 -- + Terrain Hook: "What terrain do you want?" (2013 / 2014 / none) in Bloxy's setup
 -- + 2015/2016 use the 2017 chat bubbles (only after Confirm, only when 2015 or 2016 is chosen)
--- + 2015 early keeps its own chat bubbles (no bubble script of ours) and uses Roblox's default dialogs
+-- + 2015 early keeps its own chat bubbles (no bubble script of ours) and uses Roblox's default dialogs,
+--   made visible under the 2014 base GUI (choice box shown, the dialog's lines drawn as bubbles)
 --========================================================
 
 if getgenv().ClassicDialogCleanup then
@@ -19,6 +20,10 @@ end
 if getgenv().ClassicBubbleCleanup then
     pcall(getgenv().ClassicBubbleCleanup)
     getgenv().ClassicBubbleCleanup = nil
+end
+if getgenv().DefaultDialogCleanup then
+    pcall(getgenv().DefaultDialogCleanup)
+    getgenv().DefaultDialogCleanup = nil
 end
 -- running this script again starts from normal: no 2017 bubbles until Confirm
 if getgenv().Bubble2017Cleanup then
@@ -1394,6 +1399,166 @@ task.spawn(function()
         dialogLoaded_Classic = true
     end
 
+    --========================================================
+    -- DEFAULT DIALOGS UNDER THE 2014 BASE GUI (2015 early)
+    -- The 2014 base GUI switches CoreGui.RobloxGui off and turns Roblox's chat bubbles off.
+    -- Roblox's default dialog keeps its choice box inside RobloxGui and says every line with
+    -- Chat:Chat (a chat bubble), so clicking an NPC showed nothing. This moves the dialog's own
+    -- choice box and message box into a GUI that is shown, and draws the dialog's lines (the
+    -- NPC's and the choices you pick) as early 2015 bubbles. The base only draws players' chat.
+    --========================================================
+    local function startDefaultDialogs()
+        if getgenv().DefaultDialogCleanup then pcall(getgenv().DefaultDialogCleanup) end
+
+        local Chat = game:GetService("Chat")
+        local running = true
+        local connections = {}
+        local moved = {}      -- Roblox's dialog box -> where Roblox had it
+        local ourBubbles = {} -- bubbles drawn here
+
+        local host = Instance.new("ScreenGui")
+        host.Name = "DefaultDialogHost"
+        host.ResetOnSpawn = false
+        host.DisplayOrder = 100
+        pcall(function() host.IgnoreGuiInset = true end)
+        -- the choice box is placed from the bottom-left of what holds it: a full-screen frame
+        -- puts it where Roblox shows it
+        local area = Instance.new("Frame")
+        area.Name = "DialogArea"
+        area.BackgroundTransparency = 1
+        area.Size = UDim2.new(1, 0, 1, 0)
+        area.Parent = host
+        if not pcall(function() host.Parent = CoreGui end) then
+            host.Parent = (gethui and gethui()) or pg
+        end
+
+        -- UserDialogArea = the choices (and "Goodbye!"), DialogScriptMessage = "too far away" etc.
+        local BOX_NAMES = { UserDialogArea = true, DialogScriptMessage = true }
+        local function adoptBoxes()
+            local robloxGui = CoreGui:FindFirstChild("RobloxGui")
+            -- only while Roblox's own GUI is switched off (that's what hides them)
+            if not robloxGui or robloxGui.Enabled then return end
+            pcall(function()
+                for _, obj in ipairs(robloxGui:GetDescendants()) do
+                    if BOX_NAMES[obj.Name] and obj:IsA("GuiObject") and not moved[obj] then
+                        local from = obj.Parent
+                        if pcall(function() obj.Parent = area end) then
+                            moved[obj] = from
+                        end
+                    end
+                end
+            end)
+        end
+
+        -- Roblox's dialog script and the 2014 base can both start after this: keep looking
+        -- until both boxes are found
+        task.spawn(function()
+            for _ = 1, 120 do
+                if not running then return end
+                adoptBoxes()
+                local count = 0
+                for _ in pairs(moved) do count = count + 1 end
+                if count >= 2 then return end
+                task.wait(1)
+            end
+        end)
+
+        -- the dialog's lines, drawn like early 2015's chat bubbles: see-through white, small
+        -- round corners, dark gray SourceSans text, a small tail
+        local FILL = 0.3
+        local TAIL_W, TAIL_H = 25, 10
+        local LINE_TIME = 12
+
+        local function showLine(part, text)
+            local head = part
+            if part:IsA("Model") then
+                head = part:FindFirstChild("Head") or part.PrimaryPart
+            end
+            if not head or not head:IsA("BasePart") then return end
+
+            -- one bubble per head, like the base's own
+            for _, child in ipairs(head:GetChildren()) do
+                if child.Name == "ClassicBubbleGui" then child:Destroy() end
+            end
+
+            local size = TextService:GetTextSize(text, 22, Enum.Font.SourceSans, Vector2.new(220, 1000))
+            local width = math.max(size.X + 50, 70)
+            local height = size.Y + 28
+
+            local billboard = Instance.new("BillboardGui")
+            billboard.Name = "ClassicBubbleGui"
+            billboard.Adornee = head
+            billboard.StudsOffset = Vector3.new(0, 2.5, 0)
+            billboard.SizeOffset = Vector2.new(0, 0.5)
+            billboard.Size = UDim2.new(0, width, 0, height + TAIL_H)
+            billboard.AlwaysOnTop = false
+            billboard.MaxDistance = 100
+
+            local body = Instance.new("Frame")
+            body.Name = "BubbleBody"
+            body.BackgroundColor3 = Color3.new(1, 1, 1)
+            body.BackgroundTransparency = FILL
+            body.BorderSizePixel = 0
+            body.Size = UDim2.new(1, 0, 0, height)
+            body.Parent = billboard
+            local corner = Instance.new("UICorner")
+            corner.CornerRadius = UDim.new(0, 5)
+            corner.Parent = body
+
+            local tail = Instance.new("ImageLabel")
+            tail.Name = "BubbleTail"
+            tail.BackgroundTransparency = 1
+            tail.Image = "rbxassetid://89395716827984"
+            tail.ImageTransparency = FILL
+            tail.Size = UDim2.new(0, TAIL_W, 0, TAIL_H)
+            tail.Position = UDim2.new(0.5, -TAIL_W / 2, 0, height)
+            tail.Parent = billboard
+
+            local label = Instance.new("TextLabel")
+            label.BackgroundTransparency = 1
+            label.Font = Enum.Font.SourceSans
+            label.TextSize = 22
+            label.TextColor3 = Color3.fromRGB(60, 68, 75)
+            label.TextWrapped = true
+            label.Text = text
+            label.Size = UDim2.new(1, 0, 1, 0)
+            label.Parent = body
+
+            billboard.Parent = head
+            ourBubbles[billboard] = true
+            task.delay(LINE_TIME, function()
+                ourBubbles[billboard] = nil
+                if billboard.Parent then billboard:Destroy() end
+            end)
+        end
+
+        table.insert(connections, Chat.Chatted:Connect(function(part, message)
+            if not running or typeof(part) ~= "Instance" or type(message) ~= "string" or message == "" then return end
+            -- a part of a player's character = that player's own chat, which the base draws
+            if part:IsA("BasePart")
+               and (Players:GetPlayerFromCharacter(part.Parent) or Players:GetPlayerFromCharacter(part)) then
+                return
+            end
+            pcall(showLine, part, message)
+        end))
+
+        local function cleanup()
+            running = false
+            for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
+            connections = {}
+            -- give Roblox its dialog boxes back
+            for obj, from in pairs(moved) do
+                pcall(function() obj.Parent = from end)
+            end
+            moved = {}
+            for billboard in pairs(ourBubbles) do pcall(function() billboard:Destroy() end) end
+            ourBubbles = {}
+            pcall(function() host:Destroy() end)
+            if getgenv().DefaultDialogCleanup == cleanup then getgenv().DefaultDialogCleanup = nil end
+        end
+        getgenv().DefaultDialogCleanup = cleanup
+    end
+
     -- "2015 early" (added by More guis) presses Bloxy's 2014 button for you, so Bloxy saves
     -- "2014". It is told apart at Confirm by what the topbar list shows ("2015 early  ▼"), or
     -- by the More guis pick that is still waiting to load.
@@ -1419,6 +1584,8 @@ task.spawn(function()
         end
         print("[Loader] topbar choice \"" .. tostring(raw) .. "\" -> era: " .. era)
         getgenv().BloxyEra = era
+        -- the default-dialog helper is only for 2015 early
+        if era ~= "early2015" and getgenv().DefaultDialogCleanup then pcall(getgenv().DefaultDialogCleanup) end
         -- the bubble script each era runs (none for "none" and for 2015 early)
         local bubbleEra = era
         if era == "none" or era == "early2015" then bubbleEra = nil end
@@ -1455,12 +1622,14 @@ task.spawn(function()
             -- 2015 early draws its own early 2015 chat bubbles, so no bubble script of ours runs
             -- (the classic one removed its bubbles, any other would add a second set), and
             -- Roblox's own bubbles stay off as for 2014. Dialogs are Roblox's default ones: the
-            -- old (classic) dialogs are turned off.
+            -- old (classic) dialogs are turned off, and the default dialog is made visible under
+            -- the 2014 base GUI (its choice box shown, its lines drawn as bubbles).
             setNativeBubbles(true)
             if activeBubbleEra then stopBubbleScript(activeBubbleEra) end
             if getgenv().Bubble2017Cleanup then pcall(getgenv().Bubble2017Cleanup) end
             if getgenv().ClassicDialogCleanup then pcall(getgenv().ClassicDialogCleanup) end
             dialogLoaded_Classic = false
+            if not getgenv().DefaultDialogCleanup then startDefaultDialogs() end
 
         elseif era == "modern" then
             setNativeBubbles(false)
