@@ -2720,8 +2720,13 @@ task.spawn(function()
 		local container = findTopBar()
 		if container then
 			makeTopBarPassClicks(container)
+			-- one pass for a whole burst of new parts (this used to go through the whole top bar once per part)
+			local passPending = false
 			container.DescendantAdded:Connect(function()
+				if passPending then return end
+				passPending = true
 				task.defer(function()
+					passPending = false
 					makeTopBarPassClicks(container)
 				end)
 			end)
@@ -3359,6 +3364,19 @@ task.spawn(function()
 
 	end
 
+	-- Whether a ScreenGui has a top bar of its own is looked up every few seconds, not twice a second
+	-- (it searches the whole ScreenGui, which is slow for the big ones).
+	local topBarLookup = setmetatable({}, { __mode = "k" })
+	local function hasTopBar(Gui)
+		local entry = topBarLookup[Gui]
+		local now = os.clock()
+		if not entry or now - entry.at > 8 then
+			entry = { has = Gui:FindFirstChild("TopBarContainer", true) ~= nil, at = now }
+			topBarLookup[Gui] = entry
+		end
+		return entry.has
+	end
+
 	while task.wait(0.5) do
 
 		for _, Gui in ipairs(PlayerGui:GetChildren()) do
@@ -3368,7 +3386,7 @@ task.spawn(function()
 				and Gui.Enabled
 				and not Ignored[Gui.Name]
 				and Gui ~= LegacyGui
-				and not Gui:FindFirstChild("TopBarContainer", true)
+				and not hasTopBar(Gui)
 			then
 
 				pcall(function()
