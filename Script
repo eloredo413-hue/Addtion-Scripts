@@ -34,6 +34,11 @@ if getgenv().Bubble2017Cleanup then
     pcall(getgenv().Bubble2017Cleanup)
     getgenv().Bubble2017Cleanup = nil
 end
+-- and Roblox's regular bubbles, hidden for 2015 / 2016, come back
+if getgenv().BloxyRegularBubblesRestore then
+    pcall(getgenv().BloxyRegularBubblesRestore)
+    getgenv().BloxyRegularBubblesRestore = nil
+end
 getgenv().BloxyEraLoopId = nil
 
 local HttpService = game:GetService("HttpService")
@@ -272,6 +277,65 @@ task.spawn(function()
                 pcall(function() obj.Enabled = true end)
             end
             hiddenNativeBubbles = {}
+        end
+    end
+
+    -- 2015 / 2016: Roblox's regular bubbles stay hidden for as long as the 2017 bubbles are on,
+    -- the way the original 2015 / 2016 bubble script ("Chat bubble fix") did it: the bubble
+    -- setting is switched off AND Roblox's chat display (CoreGui.ExperienceChat, which draws those
+    -- bubbles) is switched off, and both are kept off. These topbars use Legacy's own chat window,
+    -- so nothing else is lost. Everything is put back when another topbar is picked.
+    local regularHidden = false
+    local regularSaved = {}   -- instance -> its Enabled before it was switched off
+    local regularConns = {}
+
+    local function setRegularBubblesHidden(hide)
+        if hide == regularHidden then return end
+        regularHidden = hide
+        for _, c in ipairs(regularConns) do pcall(function() c:Disconnect() end) end
+        regularConns = {}
+
+        if not hide then
+            for obj, was in pairs(regularSaved) do
+                pcall(function() obj.Enabled = was end)
+            end
+            regularSaved = {}
+            if getgenv().BloxyRegularBubblesRestore then getgenv().BloxyRegularBubblesRestore = nil end
+            return
+        end
+        -- running this script again puts them back first
+        getgenv().BloxyRegularBubblesRestore = function() setRegularBubblesHidden(false) end
+
+        local function keepOff(obj)
+            if not obj then return end
+            pcall(function()
+                if regularSaved[obj] == nil then regularSaved[obj] = obj.Enabled end
+                obj.Enabled = false
+                table.insert(regularConns, obj:GetPropertyChangedSignal("Enabled"):Connect(function()
+                    if regularHidden and obj.Enabled then obj.Enabled = false end
+                end))
+            end)
+        end
+
+        local cfg = nil
+        pcall(function() cfg = TextChatService:FindFirstChildOfClass("BubbleChatConfiguration") end)
+        if not cfg then pcall(function() cfg = TextChatService.BubbleChatConfiguration end) end
+        keepOff(cfg)
+        keepOff(CoreGui:FindFirstChild("ExperienceChat"))
+        -- Roblox can make its chat display again later
+        table.insert(regularConns, CoreGui.ChildAdded:Connect(function(child)
+            if regularHidden and child.Name == "ExperienceChat" then
+                task.defer(keepOff, child)
+            end
+        end))
+    end
+
+    -- status for the console only (no message on screen)
+    local function showNote(text, isProblem)
+        if isProblem then
+            warn("[Loader] " .. text)
+        else
+            print("[Loader] " .. text)
         end
     end
 
@@ -653,7 +717,8 @@ task.spawn(function()
         if activeBubbleEra == era or bubbleBusy then return end
         bubbleBusy = true
         local failed = false
-        pcall(function()
+        local failReason = nil
+        local startOk, startError = pcall(function()
             -- 2010-2014: the classic bubbles are built in (nothing to download)
             if era == "classic" then
                 if activeBubbleEra then stopBubbleScript(activeBubbleEra) end
@@ -675,7 +740,7 @@ task.spawn(function()
             local src, usedUrl = fetchBubbleSource(BUBBLE_SOURCES[era](), BUBBLE_MARKERS[era])
             if not src then
                 failed = true
-                lastFailedEra = era
+                failReason = "couldn't download them"
                 warn("[Loader] could not download the " .. era .. " bubble script (will retry on the next Confirm)")
                 return
             end
@@ -685,6 +750,7 @@ task.spawn(function()
             local chunk, compileError = loadstring(src)
             if not chunk then
                 failed = true
+                failReason = "the script didn't compile: " .. tostring(compileError)
                 warn("[Loader] the " .. era .. " bubble script did not compile:", compileError)
                 return
             end
@@ -704,6 +770,7 @@ task.spawn(function()
             end
             if finished and not runOk then
                 failed = true
+                failReason = "the script errored: " .. tostring(runError)
                 warn("[Loader] the " .. era .. " bubble script errored:", runError)
                 return
             end
@@ -727,9 +794,27 @@ task.spawn(function()
             print("[Loader] " .. era .. " bubbles loaded from " .. tostring(usedUrl):sub(1, 90))
         end)
         bubbleBusy = false
-        -- A bubble script that did not start must not leave the game without any bubbles: the
-        -- regular ones (switched off for the 2010-2014 bubbles) come back.
-        if failed then setNativeBubbles(false) end
+        -- an unexpected error is a failure too (it used to make this start itself again and again)
+        if not startOk then
+            failed = true
+            failReason = "loader error: " .. tostring(startError)
+            warn("[Loader] starting the " .. era .. " bubbles failed:", startError)
+        end
+        if failed then
+            -- not tried again until the next Confirm
+            lastFailedEra = era
+            -- A bubble script that did not start must not leave the game without any bubbles: the
+            -- regular ones (switched off for the 2010-2014 bubbles) come back.
+            setNativeBubbles(false)
+            if era == "bubble2017" then setRegularBubblesHidden(false) end
+        end
+        if era == "bubble2017" and desiredBubbleEra == era then
+            if failed then
+                showNote("2015 / 2016: the 2017 chat bubbles didn't start (" .. tostring(failReason) .. "), so the regular ones stay", true)
+            elseif activeBubbleEra == era then
+                showNote("2015 / 2016: 2017 chat bubbles on")
+            end
+        end
         -- the last Confirm may have asked for another era while this one was loading
         if desiredBubbleEra and desiredBubbleEra ~= activeBubbleEra and lastFailedEra ~= desiredBubbleEra then
             task.spawn(startBubbleScript, desiredBubbleEra)
@@ -1524,6 +1609,14 @@ task.spawn(function()
         desiredBubbleEra = bubbleEra
         if bubbleEra and lastFailedEra == bubbleEra then lastFailedEra = nil end
 
+        if era ~= "bubble2017" then
+            -- leaving 2015 / 2016: the 2017 bubbles stop first (they put the bubble setting back
+            -- the way they found it), then Roblox's regular bubbles and chat display come back
+            if activeBubbleEra == "bubble2017" then stopBubbleScript("bubble2017") end
+            if getgenv().Bubble2017Cleanup then pcall(getgenv().Bubble2017Cleanup) end
+            setRegularBubblesHidden(false)
+        end
+
         if era == "none" then
             if getgenv().ClassicDialogCleanup then pcall(getgenv().ClassicDialogCleanup) end
             dialogLoaded_Classic = false
@@ -1543,9 +1636,11 @@ task.spawn(function()
             end
 
         elseif era == "bubble2017" then
-            -- 2015 / 2016: the 2017 bubbles. The modern bubbles stay as they are until the 2017
-            -- script is really running (it switches them off itself, and back on when it stops).
+            -- 2015 / 2016: the 2017 bubbles, and Roblox's regular bubbles hidden (the bubble
+            -- setting and its chat display, kept off) so only the 2017 ones show. If the 2017
+            -- bubbles can't start, the regular ones come back.
             setNativeBubbles(false)
+            setRegularBubblesHidden(true)
             if getgenv().ClassicDialogCleanup then pcall(getgenv().ClassicDialogCleanup) end
             dialogLoaded_Classic = false
             task.spawn(startBubbleScript, "bubble2017")
