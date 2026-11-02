@@ -9,7 +9,7 @@
 -- + 2010-2014 classic chat bubbles built in: they stack (older ones above, grey), no fade
 -- + Terrain Hook: "What terrain do you want?" (2013 / 2014 / none) in Bloxy's setup
 -- + 2015/2016 use the 2017 chat bubbles (only after Confirm, only when 2015 or 2016 is chosen)
--- + 2015 early uses those 2015 bubbles too (not the 2014 ones), and keeps the classic dialogs
+-- + 2015 early keeps its own chat bubbles: no bubble script of ours runs for it (classic dialogs stay)
 --========================================================
 
 if getgenv().ClassicDialogCleanup then
@@ -1398,15 +1398,16 @@ task.spawn(function()
     local function evaluateAndLoad()
         local era, raw = getSelectedEra()
         if confirmedEarly2015 then
-            -- 2015 early: the 2014 GUI with the 2015 backpack, and 2015's own chat bubbles
+            -- 2015 early: the 2014 GUI with the 2015 backpack, chat and chat bubbles of its own
             era, raw = "early2015", "2015 early"
         end
         print("[Loader] topbar choice \"" .. tostring(raw) .. "\" -> era: " .. era)
         getgenv().BloxyEra = era
-        -- the bubble script each era runs
-        local bubbleEra = (era == "early2015") and "bubble2017" or era
-        desiredBubbleEra = (era ~= "none") and bubbleEra or nil
-        if lastFailedEra == bubbleEra then lastFailedEra = nil end
+        -- the bubble script each era runs (none for "none" and for 2015 early)
+        local bubbleEra = era
+        if era == "none" or era == "early2015" then bubbleEra = nil end
+        desiredBubbleEra = bubbleEra
+        if bubbleEra and lastFailedEra == bubbleEra then lastFailedEra = nil end
 
         if era == "none" then
             if getgenv().ClassicDialogCleanup then pcall(getgenv().ClassicDialogCleanup) end
@@ -1435,10 +1436,12 @@ task.spawn(function()
             task.spawn(startBubbleScript, "bubble2017")
 
         elseif era == "early2015" then
-            -- 2015 early: 2015's chat bubbles (the 2017 bubbles, like 2015 / 2016) instead of the
-            -- 2014 ones. It is still the 2014 GUI, so the classic dialogs stay.
-            setNativeBubbles(false)
-            task.spawn(startBubbleScript, "bubble2017")
+            -- 2015 early draws its own early 2015 chat bubbles, so no bubble script of ours runs
+            -- (the classic one removed its bubbles, any other would add a second set). The rest
+            -- is as for 2014: Roblox's own bubbles stay off and the classic dialogs stay.
+            setNativeBubbles(true)
+            if activeBubbleEra then stopBubbleScript(activeBubbleEra) end
+            if getgenv().Bubble2017Cleanup then pcall(getgenv().Bubble2017Cleanup) end
             if not dialogLoaded_Classic then
                 dialogLoaded_Classic = true
                 task.spawn(injectClassicDialogs)
