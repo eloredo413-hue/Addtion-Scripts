@@ -10,7 +10,7 @@
 -- + Terrain Hook: "What terrain do you want?" (2013 / 2014 / none) in Bloxy's setup
 -- + 2015/2016 use the 2017 chat bubbles (only after Confirm, only when 2015 or 2016 is chosen)
 -- + 2015 early keeps its own chat bubbles (no bubble script of ours) and uses Roblox's default dialogs,
---   made visible under the 2014 base GUI (choice box shown, the dialog's lines drawn as bubbles)
+--   with their choice box shown under the 2014 base GUI
 --========================================================
 
 if getgenv().ClassicDialogCleanup then
@@ -1401,158 +1401,155 @@ task.spawn(function()
 
     --========================================================
     -- DEFAULT DIALOGS UNDER THE 2014 BASE GUI (2015 early)
-    -- The 2014 base GUI switches CoreGui.RobloxGui off and turns Roblox's chat bubbles off.
-    -- Roblox's default dialog keeps its choice box inside RobloxGui and says every line with
-    -- Chat:Chat (a chat bubble), so clicking an NPC showed nothing. This moves the dialog's own
-    -- choice box and message box into a GUI that is shown, and draws the dialog's lines (the
-    -- NPC's and the choices you pick) as early 2015 bubbles. The base only draws players' chat.
+    -- The 2014 base GUI switches CoreGui.RobloxGui off. Roblox's default dialog draws its
+    -- choice box ("Sorry, I'm tired" / "Goodbye!") inside RobloxGui, so it never showed (the
+    -- NPC's own line shows by itself). The choice box is found by its text and moved into a GUI
+    -- that is shown, in the same spot and size, above the hotbar. Nothing else is changed.
     --========================================================
     local function startDefaultDialogs()
         if getgenv().DefaultDialogCleanup then pcall(getgenv().DefaultDialogCleanup) end
 
-        local Chat = game:GetService("Chat")
         local running = true
         local connections = {}
-        local moved = {}      -- Roblox's dialog box -> where Roblox had it
-        local ourBubbles = {} -- bubbles drawn here
+        local moved = {}   -- choice box -> where Roblox had it
+        local dialogs = {} -- the game's Dialogs, to know their choice texts
 
         local host = Instance.new("ScreenGui")
         host.Name = "DefaultDialogHost"
         host.ResetOnSpawn = false
-        host.DisplayOrder = 100
-        pcall(function() host.IgnoreGuiInset = true end)
-        -- the choice box is placed from the bottom-left of what holds it: a full-screen frame
-        -- puts it where Roblox shows it
-        local area = Instance.new("Frame")
-        area.Name = "DialogArea"
-        area.BackgroundTransparency = 1
-        area.Size = UDim2.new(1, 0, 1, 0)
-        area.Parent = host
+        host.DisplayOrder = 10000 -- above the 2014 GUI's hotbar and the game's GUIs
         if not pcall(function() host.Parent = CoreGui end) then
             host.Parent = (gethui and gethui()) or pg
         end
 
-        -- UserDialogArea = the choices (and "Goodbye!"), DialogScriptMessage = "too far away" etc.
-        local BOX_NAMES = { UserDialogArea = true, DialogScriptMessage = true }
-        local function adoptBoxes()
+        local function trackDialog(obj)
+            if obj:IsA("Dialog") then dialogs[obj] = true end
+        end
+        pcall(function()
+            for _, d in ipairs(Workspace:GetDescendants()) do trackDialog(d) end
+        end)
+        table.insert(connections, Workspace.DescendantAdded:Connect(trackDialog))
+
+        -- texts that only the dialog's choice box shows
+        local function choiceTexts()
+            local texts = { ["Goodbye!"] = true }
+            for dialog in pairs(dialogs) do
+                if dialog.Parent then
+                    pcall(function()
+                        if dialog.GoodbyeDialog ~= "" then texts[dialog.GoodbyeDialog] = true end
+                        for _, c in ipairs(dialog:GetDescendants()) do
+                            if c:IsA("DialogChoice") then
+                                if c.UserDialog ~= "" then texts[c.UserDialog] = true end
+                                if c.GoodbyeDialog ~= "" then texts[c.GoodbyeDialog] = true end
+                            end
+                        end
+                    end)
+                else
+                    dialogs[dialog] = nil
+                end
+            end
+            return texts
+        end
+
+        -- Recreate the frames that held the box (same position / size, nothing drawn), so the
+        -- box lands in exactly the same place on screen.
+        local function placeInHost(box, screen)
+            local chain = {}
+            local p = box.Parent
+            while p and p ~= screen do
+                table.insert(chain, 1, p)
+                p = p.Parent
+            end
+            if p ~= screen then error("not inside " .. screen.Name) end
+            pcall(function() host.IgnoreGuiInset = screen.IgnoreGuiInset end)
+            pcall(function() host.ScreenInsets = screen.ScreenInsets end)
+            local parent, top = host, nil
+            for _, ancestor in ipairs(chain) do
+                local f = Instance.new("Frame")
+                f.Name = ancestor.Name
+                f.BackgroundTransparency = 1
+                f.BorderSizePixel = 0
+                if ancestor:IsA("GuiObject") then
+                    f.AnchorPoint = ancestor.AnchorPoint
+                    f.Position = ancestor.Position
+                    f.Size = ancestor.Size
+                else
+                    f.Size = UDim2.new(1, 0, 1, 0)
+                end
+                f.Parent = parent
+                parent = f
+                top = top or f
+            end
+            box.Parent = parent
+            return top -- nil when the box sat right in the screen GUI
+        end
+
+        local mirrors = {} -- moved box -> the empty frames made to hold it
+
+        local function findBoxes()
+            -- a box Roblox has since removed: drop the frames made for it
+            for box, mirror in pairs(mirrors) do
+                if not box:IsDescendantOf(host) then
+                    if mirror then pcall(function() mirror:Destroy() end) end
+                    mirrors[box] = nil
+                    moved[box] = nil
+                end
+            end
+
             local robloxGui = CoreGui:FindFirstChild("RobloxGui")
-            -- only while Roblox's own GUI is switched off (that's what hides them)
+            -- only while Roblox's GUI is switched off (that's what hides the box)
             if not robloxGui or robloxGui.Enabled then return end
+            local texts = choiceTexts()
+            local found = {}
             pcall(function()
                 for _, obj in ipairs(robloxGui:GetDescendants()) do
-                    if BOX_NAMES[obj.Name] and obj:IsA("GuiObject") and not moved[obj] then
-                        local from = obj.Parent
-                        if pcall(function() obj.Parent = area end) then
-                            moved[obj] = from
-                        end
+                    if (obj:IsA("TextLabel") or obj:IsA("TextButton")) and texts[obj.Text] then
+                        table.insert(found, obj)
                     end
                 end
             end)
+            for _, label in ipairs(found) do
+                -- a label whose box was just moved (with an earlier label) is done already
+                if label:IsDescendantOf(robloxGui) then
+                    -- the box = the biggest frame around the text that is still just the dialog
+                    -- (not a big holder with other things in it)
+                    local box = label
+                    while box.Parent and box.Parent ~= robloxGui and box.Parent:IsA("GuiObject")
+                          and #box.Parent:GetDescendants() <= 100 do
+                        box = box.Parent
+                    end
+                    if not moved[box] then
+                        local from = box.Parent
+                        local ok, mirror = pcall(placeInHost, box, robloxGui)
+                        if ok then
+                            moved[box] = from
+                            mirrors[box] = mirror or false
+                            print("[Loader] 2015 early: showing the dialog's choices (was in " .. from:GetFullName() .. ")")
+                        end
+                    end
+                end
+            end
         end
 
-        -- Roblox's dialog script and the 2014 base can both start after this: keep looking
-        -- until both boxes are found
+        -- the dialog may make its box only when you talk to someone: keep looking
         task.spawn(function()
-            for _ = 1, 120 do
-                if not running then return end
-                adoptBoxes()
-                local count = 0
-                for _ in pairs(moved) do count = count + 1 end
-                if count >= 2 then return end
-                task.wait(1)
+            while running do
+                pcall(findBoxes)
+                task.wait(0.3)
             end
         end)
-
-        -- the dialog's lines, drawn like early 2015's chat bubbles: see-through white, small
-        -- round corners, dark gray SourceSans text, a small tail
-        local FILL = 0.3
-        local TAIL_W, TAIL_H = 25, 10
-        local LINE_TIME = 12
-
-        local function showLine(part, text)
-            local head = part
-            if part:IsA("Model") then
-                head = part:FindFirstChild("Head") or part.PrimaryPart
-            end
-            if not head or not head:IsA("BasePart") then return end
-
-            -- one bubble per head, like the base's own
-            for _, child in ipairs(head:GetChildren()) do
-                if child.Name == "ClassicBubbleGui" then child:Destroy() end
-            end
-
-            local size = TextService:GetTextSize(text, 22, Enum.Font.SourceSans, Vector2.new(220, 1000))
-            local width = math.max(size.X + 50, 70)
-            local height = size.Y + 28
-
-            local billboard = Instance.new("BillboardGui")
-            billboard.Name = "ClassicBubbleGui"
-            billboard.Adornee = head
-            billboard.StudsOffset = Vector3.new(0, 2.5, 0)
-            billboard.SizeOffset = Vector2.new(0, 0.5)
-            billboard.Size = UDim2.new(0, width, 0, height + TAIL_H)
-            billboard.AlwaysOnTop = false
-            billboard.MaxDistance = 100
-
-            local body = Instance.new("Frame")
-            body.Name = "BubbleBody"
-            body.BackgroundColor3 = Color3.new(1, 1, 1)
-            body.BackgroundTransparency = FILL
-            body.BorderSizePixel = 0
-            body.Size = UDim2.new(1, 0, 0, height)
-            body.Parent = billboard
-            local corner = Instance.new("UICorner")
-            corner.CornerRadius = UDim.new(0, 5)
-            corner.Parent = body
-
-            local tail = Instance.new("ImageLabel")
-            tail.Name = "BubbleTail"
-            tail.BackgroundTransparency = 1
-            tail.Image = "rbxassetid://89395716827984"
-            tail.ImageTransparency = FILL
-            tail.Size = UDim2.new(0, TAIL_W, 0, TAIL_H)
-            tail.Position = UDim2.new(0.5, -TAIL_W / 2, 0, height)
-            tail.Parent = billboard
-
-            local label = Instance.new("TextLabel")
-            label.BackgroundTransparency = 1
-            label.Font = Enum.Font.SourceSans
-            label.TextSize = 22
-            label.TextColor3 = Color3.fromRGB(60, 68, 75)
-            label.TextWrapped = true
-            label.Text = text
-            label.Size = UDim2.new(1, 0, 1, 0)
-            label.Parent = body
-
-            billboard.Parent = head
-            ourBubbles[billboard] = true
-            task.delay(LINE_TIME, function()
-                ourBubbles[billboard] = nil
-                if billboard.Parent then billboard:Destroy() end
-            end)
-        end
-
-        table.insert(connections, Chat.Chatted:Connect(function(part, message)
-            if not running or typeof(part) ~= "Instance" or type(message) ~= "string" or message == "" then return end
-            -- a part of a player's character = that player's own chat, which the base draws
-            if part:IsA("BasePart")
-               and (Players:GetPlayerFromCharacter(part.Parent) or Players:GetPlayerFromCharacter(part)) then
-                return
-            end
-            pcall(showLine, part, message)
-        end))
 
         local function cleanup()
             running = false
             for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
             connections = {}
-            -- give Roblox its dialog boxes back
-            for obj, from in pairs(moved) do
-                pcall(function() obj.Parent = from end)
+            -- give Roblox its choice boxes back
+            for box, from in pairs(moved) do
+                pcall(function()
+                    if box.Parent and from and from.Parent then box.Parent = from end
+                end)
             end
             moved = {}
-            for billboard in pairs(ourBubbles) do pcall(function() billboard:Destroy() end) end
-            ourBubbles = {}
             pcall(function() host:Destroy() end)
             if getgenv().DefaultDialogCleanup == cleanup then getgenv().DefaultDialogCleanup = nil end
         end
@@ -1622,8 +1619,8 @@ task.spawn(function()
             -- 2015 early draws its own early 2015 chat bubbles, so no bubble script of ours runs
             -- (the classic one removed its bubbles, any other would add a second set), and
             -- Roblox's own bubbles stay off as for 2014. Dialogs are Roblox's default ones: the
-            -- old (classic) dialogs are turned off, and the default dialog is made visible under
-            -- the 2014 base GUI (its choice box shown, its lines drawn as bubbles).
+            -- old (classic) dialogs are turned off, and the default dialog's choice box (hidden
+            -- by the 2014 base GUI) is shown.
             setNativeBubbles(true)
             if activeBubbleEra then stopBubbleScript(activeBubbleEra) end
             if getgenv().Bubble2017Cleanup then pcall(getgenv().Bubble2017Cleanup) end
