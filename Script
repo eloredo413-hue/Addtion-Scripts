@@ -1,16 +1,20 @@
 --========================================================
 -- COMBINED BLOXY PARADOX LOADER
 -- + Execution Default = 100% Normal (No Auto-Load)
--- + Strict "Confirm" Button Trigger ONLY
+-- + Follows Bloxy's topbar: at its "Confirm", or the saved one when Bloxy loads it by itself
+--   ("skip setup" ticked, or the topbar was confirmed before this script was run)
 -- + Perfect Era Isolation (2010-2014 vs Modern/None)
+-- + Roblox's NPC dialog box kept for every topbar (the 2014 / 2015 / 2016 / 2017 / 2019 GUIs
+--   deleted or hid it): the choices show, and on phones the controls come back after talking
+-- + 2005: no NPC dialogs and no chat bubbles of ours (2005 had neither)
+-- + 2019: the backpack button spaced evenly in the top bar (2019 Gui.lua in this repo)
 -- + Safe Native Dialog Bypass (No overlap, no glitching)
 -- + Player dialog bubbles render perfectly (Folder host)
 -- + Regular Chat Bubbles 100% Untouched
 -- + 2010-2014 classic chat bubbles built in: they stack (older ones above, grey), no fade
 -- + Terrain Hook: "What terrain do you want?" (2013 / 2014 / none) in Bloxy's setup
--- + 2015/2016 use the 2017 chat bubbles (only after Confirm, only when 2015 or 2016 is chosen)
--- + 2015 early keeps its own chat bubbles (no bubble script of ours) and uses Roblox's default dialogs,
---   with their choice box shown under the 2014 base GUI
+-- + 2015/2016 use the 2017 chat bubbles (only when 2015 or 2016 is the topbar)
+-- + 2015 early keeps its own chat bubbles (no bubble script of ours) and uses Roblox's default dialogs
 --========================================================
 
 if getgenv().ClassicDialogCleanup then
@@ -25,7 +29,7 @@ if getgenv().DefaultDialogCleanup then
     pcall(getgenv().DefaultDialogCleanup)
     getgenv().DefaultDialogCleanup = nil
 end
--- running this script again starts from normal: no 2017 bubbles until Confirm
+-- running this script again starts from normal: no 2017 bubbles until the topbar is followed again
 if getgenv().Bubble2017Cleanup then
     pcall(getgenv().Bubble2017Cleanup)
     getgenv().Bubble2017Cleanup = nil
@@ -38,6 +42,73 @@ local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
 local TextService = game:GetService("TextService")
 local Workspace = game:GetService("Workspace")
+
+--========================================================
+-- KEEP ROBLOX'S NPC DIALOG BOX
+-- Roblox's NPC dialog keeps its choice box ("Goodbye!" etc.) in CoreGui.RobloxGui.ControlFrame.
+-- The 2014 base (2014 / 2015 early), 2015 and 2016 GUIs delete ControlFrame, and the 2017 /
+-- 2019 GUIs switch RobloxGui off, so the box was gone or hidden: nothing to pick, and on phones
+-- the controls (Roblox hides them while you choose) never came back. ControlFrame is moved into
+-- a GUI of its own here, before any of those GUIs load: the box stays and shows, above the
+-- hotbar. Roblox's dialog script keeps working as normal (it holds on to ControlFrame itself).
+--========================================================
+local function keepDialogBox()
+    local hui = nil
+    pcall(function() hui = gethui and gethui() end)
+    -- kept already (this script was run before in this server)
+    for _, container in ipairs({ CoreGui, hui }) do
+        local kept = container and container:FindFirstChild("DialogBoxHost")
+        if kept and (kept:FindFirstChild("ControlFrame") or kept:FindFirstChild("DialogFrame")) then
+            return true
+        end
+    end
+
+    local robloxGui = CoreGui:FindFirstChild("RobloxGui")
+    if not robloxGui then return false end
+    -- the dialog box lives in ControlFrame, or straight in RobloxGui when there is none
+    local parts = {}
+    local controlFrame = robloxGui:FindFirstChild("ControlFrame")
+    if controlFrame then
+        table.insert(parts, controlFrame)
+    else
+        for _, name in ipairs({ "DialogFrame", "DialogScriptMessage" }) do
+            local part = robloxGui:FindFirstChild(name)
+            if part then table.insert(parts, part) end
+        end
+    end
+    if #parts == 0 then return false end
+
+    local host = Instance.new("ScreenGui")
+    host.Name = "DialogBoxHost"
+    host.ResetOnSpawn = false
+    host.DisplayOrder = 1000 -- above the topbar GUIs' hotbars
+    pcall(function() host.IgnoreGuiInset = robloxGui.IgnoreGuiInset end)
+    pcall(function() host.ScreenInsets = robloxGui.ScreenInsets end)
+    if not pcall(function() host.Parent = CoreGui end) then
+        host.Parent = hui or Players.LocalPlayer:WaitForChild("PlayerGui")
+    end
+    local moved = 0
+    for _, part in ipairs(parts) do
+        if pcall(function() part.Parent = host end) then moved = moved + 1 end
+    end
+    if moved == 0 then
+        host:Destroy()
+        return false
+    end
+    return true
+end
+
+if not keepDialogBox() then
+    -- Roblox's dialog script may not have set its box up yet: look again for a little while
+    task.spawn(function()
+        for _ = 1, 20 do
+            task.wait(0.5)
+            if keepDialogBox() then return end
+        end
+        warn("[Loader] Roblox's NPC dialog box wasn't found: if a topbar GUI was loaded before this"
+            .. " script, rejoin and run this script first, so NPC dialogs keep their choices")
+    end)
+end
 
 local mainAddons = {
     -- FF Fix Hook goes first: it hooks loadstring itself, so it has to see the real one
@@ -64,18 +135,25 @@ local URL_BUBBLE_2015_2016  = "https://gist.githubusercontent.com/eloredo413-hue
 -- They are used for 2015 and 2016. (The gist above is now only used for 2017-2020, as before.)
 local URL_BUBBLE_2017 = "https://raw.githubusercontent.com/eloredo413-hue/E/ccr-f33d83ed-bgaekc/2017_bubble_chat.lua"
 
--- The 2015 early GUI with the leaderboard kept thin on phones (E2015 Gui.lua in this repo).
--- More guis loads the 2015 early GUI from a link of its own, so before More guis runs that
--- link is swapped for this one (no need to change the More guis gist).
-local URL_E2015_GUI = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/E2015%20Gui.lua"
+-- GUIs More guis loads, swapped for the copies in this repo before More guis runs (no need to
+-- change the More guis gist):
+--   * 2015 early (E2015 Gui.lua): the leaderboard kept thin on phones
+--   * 2019 (2019 Gui.lua): the backpack (and emote) button spaced evenly after the chat icon
+local MORE_GUIS_SWAPS = {
+    URL_2015EARLY = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/E2015%20Gui.lua",
+    URL_2019      = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2019%20Gui.lua",
+}
 
-local function useThinE2015(src)
-    local a, b = string.find(src, 'local URL_2015EARLY%s*=%s*"[^"]*"')
-    if not a then
-        warn("[Loader] More guis: its 2015 early link wasn't found, so it keeps its own")
-        return src
+local function patchMoreGuis(src)
+    for name, url in pairs(MORE_GUIS_SWAPS) do
+        local a, b = string.find(src, "local " .. name .. '%s*=%s*"[^"]*"')
+        if a then
+            src = string.sub(src, 1, a - 1) .. "local " .. name .. ' = "' .. url .. '"' .. string.sub(src, b + 1)
+        else
+            warn("[Loader] More guis: " .. name .. " wasn't found, so it keeps its own link")
+        end
     end
-    return string.sub(src, 1, a - 1) .. 'local URL_2015EARLY = "' .. URL_E2015_GUI .. '"' .. string.sub(src, b + 1)
+    return src
 end
 
 -- patch (optional): changes the downloaded code before it runs
@@ -92,7 +170,7 @@ end
 -- UNCONDITIONAL MAIN ADDONS (Always Load)
 --========================================================
 for i, url in ipairs(mainAddons) do loadUrl(url, "addon" .. i) task.wait(0.1) end
-loadUrl(URL_MORE_GUIS, "More guis", useThinE2015)
+loadUrl(URL_MORE_GUIS, "More guis", patchMoreGuis)
 task.wait(0.5)
 loadUrl(URL_SAFECHAT_HOOK, "SafeChat Hook")
 loadUrl(URL_TERRAIN_HOOK, "Terrain Hook")
@@ -1399,279 +1477,21 @@ task.spawn(function()
         dialogLoaded_Classic = true
     end
 
-    --========================================================
-    -- DEFAULT DIALOGS UNDER THE 2014 BASE GUI (2015 early)
-    -- The 2014 base GUI hides Roblox's GUI (it switches CoreGui.RobloxGui off), and Roblox's
-    -- default dialog choice box ("Sorry, I'm tired" / "Goodbye!") didn't show. The box is found
-    -- by its text in Roblox's GUIs and moved into a GUI that is shown, in the same spot and size,
-    -- above the hotbar. While you talk to an NPC a small note at the top says where it was
-    -- found (or that it wasn't). Nothing else is changed.
-    --========================================================
-    local function startDefaultDialogs()
-        if getgenv().DefaultDialogCleanup then pcall(getgenv().DefaultDialogCleanup) end
-
-        local running = true
-        local connections = {}
-        local moved = {}   -- choice box -> where Roblox had it
-        local dialogs = {} -- the game's Dialogs, to know their choice texts
-
-        local host = Instance.new("ScreenGui")
-        host.Name = "DefaultDialogHost"
-        host.ResetOnSpawn = false
-        host.DisplayOrder = 10000 -- above the 2014 GUI's hotbar and the game's GUIs
-        if not pcall(function() host.Parent = CoreGui end) then
-            host.Parent = (gethui and gethui()) or pg
-        end
-
-        local function trackDialog(obj)
-            if obj:IsA("Dialog") then dialogs[obj] = true end
-        end
-        pcall(function()
-            for _, d in ipairs(Workspace:GetDescendants()) do trackDialog(d) end
-        end)
-        table.insert(connections, Workspace.DescendantAdded:Connect(trackDialog))
-
-        -- texts that only the dialog's choice box shows
-        local function choiceTexts()
-            local texts = { ["Goodbye!"] = true }
-            for dialog in pairs(dialogs) do
-                if dialog.Parent then
-                    pcall(function()
-                        if dialog.GoodbyeDialog ~= "" then texts[dialog.GoodbyeDialog] = true end
-                        for _, c in ipairs(dialog:GetDescendants()) do
-                            if c:IsA("DialogChoice") then
-                                if c.UserDialog ~= "" then texts[c.UserDialog] = true end
-                                if c.GoodbyeDialog ~= "" then texts[c.GoodbyeDialog] = true end
-                            end
-                        end
-                    end)
-                else
-                    dialogs[dialog] = nil
-                end
-            end
-            return texts
-        end
-
-        -- Recreate the frames that held the box (same position / size, nothing drawn), so the
-        -- box lands in exactly the same place on screen.
-        local function placeInHost(box, screen)
-            local chain = {}
-            local p = box.Parent
-            while p and p ~= screen do
-                table.insert(chain, 1, p)
-                p = p.Parent
-            end
-            if p ~= screen then error("not inside " .. screen.Name) end
-            pcall(function() host.IgnoreGuiInset = screen.IgnoreGuiInset end)
-            pcall(function() host.ScreenInsets = screen.ScreenInsets end)
-            local parent, top = host, nil
-            for _, ancestor in ipairs(chain) do
-                local f = Instance.new("Frame")
-                f.Name = ancestor.Name
-                f.BackgroundTransparency = 1
-                f.BorderSizePixel = 0
-                if ancestor:IsA("GuiObject") then
-                    f.AnchorPoint = ancestor.AnchorPoint
-                    f.Position = ancestor.Position
-                    f.Size = ancestor.Size
-                else
-                    f.Size = UDim2.new(1, 0, 1, 0)
-                end
-                f.Parent = parent
-                parent = f
-                top = top or f
-            end
-            box.Parent = parent
-            return top -- nil when the box sat right in the screen GUI
-        end
-
-        local mirrors = {} -- moved box -> the empty frames made to hold it
-
-        local function clean(text)
-            text = tostring(text or ""):gsub("<[^>]->", "") -- rich text tags
-            return (text:gsub("^%s+", ""):gsub("%s+$", ""))
-        end
-
-        -- the NPC's lines (to tell that you're talking to someone)
-        local function promptTexts()
-            local texts = {}
-            for dialog in pairs(dialogs) do
-                if dialog.Parent then
-                    pcall(function()
-                        if dialog.InitialPrompt ~= "" then texts[clean(dialog.InitialPrompt)] = true end
-                        for _, c in ipairs(dialog:GetDescendants()) do
-                            if c:IsA("DialogChoice") and c.ResponseDialog ~= "" then
-                                texts[clean(c.ResponseDialog)] = true
-                            end
-                        end
-                    end)
-                end
-            end
-            return texts
-        end
-
-        local function anyDialogInUse()
-            for dialog in pairs(dialogs) do
-                local ok, inUse = pcall(function() return dialog.InUse end)
-                if ok and inUse then return true end
-            end
-            return false
-        end
-
-        -- On-screen note while you talk to an NPC: where the choice box was found (or that it
-        -- wasn't), so a screenshot shows what is going on. getgenv().DialogHelperNote = false hides it.
-        local note = Instance.new("TextLabel")
-        note.Name = "DialogHelperNote"
-        note.AnchorPoint = Vector2.new(0.5, 0)
-        note.Position = UDim2.new(0.5, 0, 0, 4)
-        note.Size = UDim2.new(0.9, 0, 0, 0)
-        note.AutomaticSize = Enum.AutomaticSize.Y
-        note.BackgroundColor3 = Color3.new(0, 0, 0)
-        note.BackgroundTransparency = 0.35
-        note.TextColor3 = Color3.new(1, 1, 0)
-        note.Font = Enum.Font.Code
-        note.TextSize = 13
-        note.TextWrapped = true
-        note.Visible = false
-        note.Parent = host
-        local lastNote = ""
-        local function setNote(text)
-            if getgenv().DialogHelperNote == false then note.Visible = false return end
-            note.Visible = text ~= ""
-            note.Text = text
-            if text ~= "" and text ~= lastNote then print("[Dialog helper] " .. text) end
-            lastNote = text
-        end
-
-        -- Roblox's GUIs to look in (not this one, not the old classic dialogs)
-        local function screens()
-            local list = {}
-            local function add(container)
-                if not container then return end
-                for _, g in ipairs(container:GetChildren()) do
-                    if g:IsA("LayerCollector") and g ~= host and not string.find(g.Name, "ClassicDialog", 1, true) then
-                        table.insert(list, g)
-                    end
-                end
-            end
-            pcall(add, CoreGui)
-            pcall(function()
-                local hui = gethui and gethui()
-                if hui and hui ~= CoreGui then add(hui) end
-            end)
-            return list
-        end
-
-        local tick = 0
-        local function findBoxes()
-            tick = tick + 1
-            -- a box Roblox has since removed: drop the frames made for it
-            for box, mirror in pairs(mirrors) do
-                if not box:IsDescendantOf(host) then
-                    if mirror then pcall(function() mirror:Destroy() end) end
-                    mirrors[box] = nil
-                    moved[box] = nil
-                end
-            end
-
-            local inUse = anyDialogInUse()
-            -- a full look is only needed while talking; otherwise now and then
-            if not inUse and tick % 4 ~= 0 then return end
-
-            local choices, prompts = choiceTexts(), promptTexts()
-            local cleanChoices = {}
-            for t in pairs(choices) do cleanChoices[clean(t)] = true end
-
-            local found, promptAt = {}, nil
-            for _, screen in ipairs(screens()) do
-                pcall(function()
-                    for _, obj in ipairs(screen:GetDescendants()) do
-                        if obj:IsA("TextLabel") or obj:IsA("TextButton") then
-                            local text = clean(obj.ContentText ~= "" and obj.ContentText or obj.Text)
-                            if cleanChoices[text] then
-                                table.insert(found, { label = obj, screen = screen })
-                            elseif prompts[text] and not promptAt then
-                                promptAt = obj:GetFullName()
-                            end
-                        end
-                    end
-                end)
-            end
-
-            local talking = inUse or promptAt ~= nil
-            local status = {}
-            for _, hit in ipairs(found) do
-                local label, screen = hit.label, hit.screen
-                -- a label whose box was just moved (with an earlier label) is done already
-                if label:IsDescendantOf(screen) then
-                    -- the box = the biggest frame around the text that is still just the dialog
-                    -- (not a big holder with other things in it)
-                    local box = label
-                    while box.Parent and box.Parent ~= screen and box.Parent:IsA("GuiObject")
-                          and #box.Parent:GetDescendants() <= 100 do
-                        box = box.Parent
-                    end
-                    if not moved[box] then
-                        local from = box.Parent
-                        local where = from:GetFullName() .. (screen.Enabled and "" or " (" .. screen.Name .. " switched off)")
-                        local ok, mirror = pcall(placeInHost, box, screen)
-                        if ok then
-                            moved[box] = from
-                            mirrors[box] = mirror or false
-                            table.insert(status, "choices shown (moved from " .. where .. ")")
-                        else
-                            table.insert(status, "choices found in " .. where .. " but couldn't be moved: " .. tostring(mirror))
-                        end
-                    end
-                end
-            end
-            for box in pairs(moved) do
-                if box:IsDescendantOf(host) and #status == 0 then table.insert(status, "choices shown") end
-            end
-
-            if talking then
-                if #status == 0 then
-                    table.insert(status, "talking (" .. (inUse and "dialog in use" or "NPC line seen") .. "), but no choice box"
-                        .. " with 'Goodbye!' or the choice texts was found in Roblox's GUI")
-                end
-                if promptAt then table.insert(status, "NPC line at " .. promptAt) end
-                setNote("Dialog helper (2015 early): " .. table.concat(status, " | "))
-            elseif #status > 0 then
-                setNote("Dialog helper (2015 early): " .. table.concat(status, " | "))
-            else
-                setNote("")
-            end
-        end
-
-        -- the dialog may make its box only when you talk to someone: keep looking
-        task.spawn(function()
-            while running do
-                pcall(findBoxes)
-                task.wait(0.4)
-            end
-        end)
-
-        local function cleanup()
-            running = false
-            for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
-            connections = {}
-            -- give Roblox its choice boxes back
-            for box, from in pairs(moved) do
-                pcall(function()
-                    if box.Parent and from and from.Parent then box.Parent = from end
-                end)
-            end
-            moved = {}
-            pcall(function() host:Destroy() end)
-            if getgenv().DefaultDialogCleanup == cleanup then getgenv().DefaultDialogCleanup = nil end
-        end
-        getgenv().DefaultDialogCleanup = cleanup
-    end
-
-    -- "2015 early" (added by More guis) presses Bloxy's 2014 button for you, so Bloxy saves
-    -- "2014". It is told apart at Confirm by what the topbar list shows ("2015 early  ▼"), or
+    -- Picks that More guis adds press one of Bloxy's own buttons for you, so Bloxy saves that
+    -- year instead ("2015 early" saves "2014", "2005" saves "2013"). At Confirm they are told
+    -- apart by what the topbar list shows ("2015 early  ▼"); only when the list can't be read,
     -- by the More guis pick that is still waiting to load.
-    local confirmedEarly2015 = false
+    local TOPBAR_VARIANTS = {
+        ["2015 early"] = "early2015",
+        ["2005"]       = "y2005",
+    }
+    local PENDING_VARIANTS = {
+        ["2015early"] = "early2015",
+        ["2005"]      = "y2005",
+    }
+    local confirmedVariant = nil     -- era of a More guis pick at the last Confirm, or nil
+    local confirmedVariantName = nil
+    local confirmSeen = false        -- the topbar Confirm was clicked since this script started
 
     local function topbarListText(confirmBtn)
         local frame = confirmBtn and confirmBtn.Parent
@@ -1685,19 +1505,22 @@ task.spawn(function()
         return nil
     end
 
+    local function cleanListText(text)
+        text = string.lower(text or "")
+        text = text:gsub("▼", ""):gsub("▲", "")
+        return (text:gsub("^%s+", ""):gsub("%s+$", ""))
+    end
+
     local function evaluateAndLoad()
         local era, raw = getSelectedEra()
-        if confirmedEarly2015 then
-            -- 2015 early: the 2014 GUI with the 2015 backpack, chat and chat bubbles of its own
-            era, raw = "early2015", "2015 early"
+        if confirmedVariant then
+            era, raw = confirmedVariant, confirmedVariantName
         end
         print("[Loader] topbar choice \"" .. tostring(raw) .. "\" -> era: " .. era)
         getgenv().BloxyEra = era
-        -- the default-dialog helper is only for 2015 early
-        if era ~= "early2015" and getgenv().DefaultDialogCleanup then pcall(getgenv().DefaultDialogCleanup) end
-        -- the bubble script each era runs (none for "none" and for 2015 early)
+        -- the bubble script each era runs (none for "none", 2015 early and 2005)
         local bubbleEra = era
-        if era == "none" or era == "early2015" then bubbleEra = nil end
+        if era == "none" or era == "early2015" or era == "y2005" then bubbleEra = nil end
         desiredBubbleEra = bubbleEra
         if bubbleEra and lastFailedEra == bubbleEra then lastFailedEra = nil end
 
@@ -1730,15 +1553,23 @@ task.spawn(function()
         elseif era == "early2015" then
             -- 2015 early draws its own early 2015 chat bubbles, so no bubble script of ours runs
             -- (the classic one removed its bubbles, any other would add a second set), and
-            -- Roblox's own bubbles stay off as for 2014. Dialogs are Roblox's default ones: the
-            -- old (classic) dialogs are turned off, and the default dialog's choice box (hidden
-            -- by the 2014 base GUI) is shown.
+            -- Roblox's own bubbles stay off as for 2014. Dialogs are Roblox's default ones (their
+            -- choice box is kept at the top of this script).
             setNativeBubbles(true)
             if activeBubbleEra then stopBubbleScript(activeBubbleEra) end
             if getgenv().Bubble2017Cleanup then pcall(getgenv().Bubble2017Cleanup) end
             if getgenv().ClassicDialogCleanup then pcall(getgenv().ClassicDialogCleanup) end
             dialogLoaded_Classic = false
-            if not getgenv().DefaultDialogCleanup then startDefaultDialogs() end
+
+        elseif era == "y2005" then
+            -- 2005: no NPC dialogs and no chat bubbles back then. The 2005 GUI hides Roblox's own
+            -- dialog and chat bubbles, but let the classic dialogs through, so neither the
+            -- classic dialogs nor a bubble script of ours run for it.
+            setNativeBubbles(true)
+            if activeBubbleEra then stopBubbleScript(activeBubbleEra) end
+            if getgenv().Bubble2017Cleanup then pcall(getgenv().Bubble2017Cleanup) end
+            if getgenv().ClassicDialogCleanup then pcall(getgenv().ClassicDialogCleanup) end
+            dialogLoaded_Classic = false
 
         elseif era == "modern" then
             setNativeBubbles(false)
@@ -1753,9 +1584,20 @@ task.spawn(function()
     -- era is the same; it only fixes a reading that was taken before the config was saved).
     local function onConfirm(confirmBtn)
         -- read at the click: Bloxy removes the topbar question right after
-        local listText = string.lower(topbarListText(confirmBtn) or "")
-        confirmedEarly2015 = listText:find("2015 early", 1, true) ~= nil
-            or getgenv().BP_PendingTopbar == "2015early"
+        local listText = topbarListText(confirmBtn)
+        if listText then
+            local name = cleanListText(listText)
+            confirmedVariant = TOPBAR_VARIANTS[name]
+            confirmedVariantName = confirmedVariant and name or nil
+        elseif confirmBtn:FindFirstAncestor("BloxyParadoxProject") then
+            -- Bloxy's Confirm, but its list couldn't be read
+            local pending = getgenv().BP_PendingTopbar
+            confirmedVariant = pending and PENDING_VARIANTS[pending] or nil
+            confirmedVariantName = confirmedVariant and pending or nil
+        else
+            return -- some other script's "confirm" button: not the topbar
+        end
+        confirmSeen = true
         for _, delay in ipairs({ 0.5, 2, 4 }) do
             task.delay(delay, evaluateAndLoad)
         end
@@ -1770,6 +1612,31 @@ task.spawn(function()
             end
         end
     end
+
+    -- Bloxy can load the saved topbar without a Confirm click: with "skip setup" ticked it does
+    -- so as it starts, and the topbar may also have been confirmed before this script was run.
+    -- Then the bubbles and dialogs never followed it. Now, once Bloxy's GUI is up and its topbar
+    -- question isn't on screen, the saved choice is followed too. (Picks that More guis adds
+    -- can't be told apart there: Bloxy saved the year they press, and that is what it loaded.)
+    local function topbarQuestionShown(sg)
+        for _, d in ipairs(sg:GetDescendants()) do
+            if d:IsA("TextLabel") and d.Text == "Which topbar do you prefer?" then return true end
+        end
+        return false
+    end
+
+    task.spawn(function()
+        local sg = pg:WaitForChild("BloxyParadoxProject", 300)
+        if not sg then return end
+        task.wait(3)
+        if confirmSeen or topbarQuestionShown(sg) then return end
+        print("[Loader] Bloxy loaded its saved topbar without a Confirm: following it")
+        for _, delay in ipairs({ 0, 2, 4 }) do
+            task.delay(delay, function()
+                if not confirmSeen then evaluateAndLoad() end
+            end)
+        end
+    end)
 
     local lastHookScan = 0
     RunService.RenderStepped:Connect(function()
