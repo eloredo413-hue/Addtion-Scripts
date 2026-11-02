@@ -9,6 +9,7 @@
 -- + 2010-2014 classic chat bubbles built in: they stack (older ones above, grey), no fade
 -- + Terrain Hook: "What terrain do you want?" (2013 / 2014 / none) in Bloxy's setup
 -- + 2015/2016 use the 2017 chat bubbles (only after Confirm, only when 2015 or 2016 is chosen)
+-- + 2015 early uses those 2015 bubbles too (not the 2014 ones), and keeps the classic dialogs
 --========================================================
 
 if getgenv().ClassicDialogCleanup then
@@ -1377,12 +1378,35 @@ task.spawn(function()
         dialogLoaded_Classic = true
     end
 
+    -- "2015 early" (added by More guis) presses Bloxy's 2014 button for you, so Bloxy saves
+    -- "2014". It is told apart at Confirm by what the topbar list shows ("2015 early  ▼"), or
+    -- by the More guis pick that is still waiting to load.
+    local confirmedEarly2015 = false
+
+    local function topbarListText(confirmBtn)
+        local frame = confirmBtn and confirmBtn.Parent
+        if not frame then return nil end
+        for _, d in ipairs(frame:GetChildren()) do
+            if d:IsA("TextButton") and d ~= confirmBtn then
+                local t = d.Text or ""
+                if t:find("▼", 1, true) or t:find("▲", 1, true) then return t end
+            end
+        end
+        return nil
+    end
+
     local function evaluateAndLoad()
         local era, raw = getSelectedEra()
+        if confirmedEarly2015 then
+            -- 2015 early: the 2014 GUI with the 2015 backpack, and 2015's own chat bubbles
+            era, raw = "early2015", "2015 early"
+        end
         print("[Loader] topbar choice \"" .. tostring(raw) .. "\" -> era: " .. era)
         getgenv().BloxyEra = era
-        desiredBubbleEra = (era ~= "none") and era or nil
-        if lastFailedEra == era then lastFailedEra = nil end
+        -- the bubble script each era runs
+        local bubbleEra = (era == "early2015") and "bubble2017" or era
+        desiredBubbleEra = (era ~= "none") and bubbleEra or nil
+        if lastFailedEra == bubbleEra then lastFailedEra = nil end
 
         if era == "none" then
             if getgenv().ClassicDialogCleanup then pcall(getgenv().ClassicDialogCleanup) end
@@ -1410,6 +1434,16 @@ task.spawn(function()
             dialogLoaded_Classic = false
             task.spawn(startBubbleScript, "bubble2017")
 
+        elseif era == "early2015" then
+            -- 2015 early: 2015's chat bubbles (the 2017 bubbles, like 2015 / 2016) instead of the
+            -- 2014 ones. It is still the 2014 GUI, so the classic dialogs stay.
+            setNativeBubbles(false)
+            task.spawn(startBubbleScript, "bubble2017")
+            if not dialogLoaded_Classic then
+                dialogLoaded_Classic = true
+                task.spawn(injectClassicDialogs)
+            end
+
         elseif era == "modern" then
             setNativeBubbles(false)
             if getgenv().ClassicDialogCleanup then pcall(getgenv().ClassicDialogCleanup) end
@@ -1421,7 +1455,11 @@ task.spawn(function()
     -- Confirm: the era is read from the saved config. The config may be written a moment after
     -- the click, so it is read again a little later (the second reading changes nothing when the
     -- era is the same; it only fixes a reading that was taken before the config was saved).
-    local function onConfirm()
+    local function onConfirm(confirmBtn)
+        -- read at the click: Bloxy removes the topbar question right after
+        local listText = string.lower(topbarListText(confirmBtn) or "")
+        confirmedEarly2015 = listText:find("2015 early", 1, true) ~= nil
+            or getgenv().BP_PendingTopbar == "2015early"
         for _, delay in ipairs({ 0.5, 2, 4 }) do
             task.delay(delay, evaluateAndLoad)
         end
@@ -1432,7 +1470,7 @@ task.spawn(function()
         for _, obj in ipairs(pg:GetDescendants()) do
             if obj:IsA("TextButton") and string.find(string.lower(obj.Text or ""), "confirm", 1, true) and not obj:GetAttribute("BPHookedConfirm") then
                 obj:SetAttribute("BPHookedConfirm", true)
-                obj.MouseButton1Click:Connect(onConfirm)
+                obj.MouseButton1Click:Connect(function() onConfirm(obj) end)
             end
         end
     end
