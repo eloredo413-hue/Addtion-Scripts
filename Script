@@ -11,14 +11,16 @@
 -- + Safe Native Dialog Bypass (No overlap, no glitching)
 -- + Player dialog bubbles render perfectly (Folder host)
 -- + Regular Chat Bubbles 100% Untouched
--- + 2010-2014 classic chat bubbles built in: they stack (older ones above, grey), no fade
+-- + 2011-2014 classic chat bubbles built in: they stack (older ones above, grey), no fade
 -- + Terrain Hook: "What terrain do you want?" (2013 / 2014 / none) in Bloxy's setup
 -- + 2015/2016 use the real 2017 chat bubbles: the bubble chat block of your 2017 GUI script, taken out of it
 --   as it is and run (not a copy); if it shows nothing, Roblox's own bubbles come back
 -- + 2015 early keeps its own chat bubbles (no bubble script of ours) and uses Roblox's default dialogs
 -- + Less lag: no more scans of the whole GUI / workspace many times a second (see SPEED-UPS below,
 --   and Wizard smooth v10, which no longer leaves its hooks on for the whole game)
--- + The 2006 avatar's T-shirt shows again with the 2010-2014 chat bubbles (they only remove bubbles now)
+-- + The 2006 avatar's T-shirt shows again with the 2011-2014 chat bubbles (they only remove bubbles now)
+-- + Chat bubbles by era: 2005 and 2006 have none; 2010 and 2015 early draw their own (no bubble script
+--   of ours runs over them); 2011-2014 / mobile use the built-in 2011-style ones; 2015/2016 the 2017 ones
 --========================================================
 
 if getgenv().ClassicDialogCleanup then
@@ -341,15 +343,18 @@ task.spawn(function()
         return nil
     end
 
-    -- classic    = 2010-2014 / mobile
+    -- classic    = 2011-2014 / mobile (our 2011-style bubbles and dialogs)
+    -- y2010      = 2010 (its GUI draws its own chat bubbles, so none of ours)
     -- bubble2017 = 2015 / 2016 (they use the 2017 bubbles)
     -- modern     = 2017-2020
     -- none       = anything else (no GUI selected): nothing is touched
+    -- (2015 early, 2006 and 2005 are told apart at Confirm: see TOPBAR_VARIANTS below)
     -- 2015 / 2016 win when the text names one of them (a label such as "2016 (2014 style)" is
     -- 2016); the classic years and "mobile" only decide when no 2015 / 2016 is named.
     local function classifyEra(text)
         local s = string.lower(text or "")
         if s:find("2015", 1, true) or s:find("2016", 1, true) then return "bubble2017" end
+        if s:match("^%s*2010%s*$") then return "y2010" end
         if s:find("2010", 1, true) or s:find("2011", 1, true) or s:find("2012", 1, true)
            or s:find("2013", 1, true) or s:find("2014", 1, true) or s:find("mobile", 1, true) then
             return "classic"
@@ -427,7 +432,7 @@ task.spawn(function()
     end
 
     --========================================================
-    -- CLASSIC CHAT BUBBLES (2010-2014 / mobile)
+    -- CLASSIC CHAT BUBBLES (2011-2014 / mobile)
     -- White bubbles over players' heads, built into this loader. A new message goes at the
     -- bottom with the tail; the player's older messages stay stacked above it with grey text.
     -- No fading: bubbles appear and disappear at once, like 2011.
@@ -990,7 +995,7 @@ end
         local failed = false
         local failReason = nil
         local startOk, startError = pcall(function()
-            -- 2010-2014: the classic bubbles are built in (nothing to download)
+            -- 2011-2014: the classic bubbles are built in (nothing to download)
             if era == "classic" then
                 if activeBubbleEra then stopBubbleScript(activeBubbleEra) end
                 bubbleCleanups[era] = { startClassicBubbles() }
@@ -1096,7 +1101,7 @@ end
             -- not tried again until the next Confirm
             lastFailedEra = era
             -- A bubble script that did not start must not leave the game without any bubbles: the
-            -- regular ones (switched off for the 2010-2014 bubbles) come back.
+            -- regular ones (switched off for the 2011-2014 bubbles) come back.
             setNativeBubbles(false)
         end
         if era == "bubble2017" and desiredBubbleEra == era then
@@ -1901,15 +1906,19 @@ end
     end
 
     -- Picks that More guis adds press one of Bloxy's own buttons for you, so Bloxy saves that
-    -- year instead ("2015 early" saves "2014", "2005" saves "2013"). At Confirm they are told
-    -- apart by what the topbar list shows ("2015 early  ▼"); only when the list can't be read,
-    -- by the More guis pick that is still waiting to load.
+    -- year instead ("2015 early" saves "2014", "2006" and "2005" save "2013"). At Confirm they are
+    -- told apart by what the topbar list shows ("2015 early  ▼"); only when the list can't be
+    -- read, by the More guis pick that is still waiting to load. Bloxy's own "2010" is listed
+    -- here too, so it is recognised whatever the saved config says.
     local TOPBAR_VARIANTS = {
         ["2015 early"] = "early2015",
+        ["2010"]       = "y2010",
+        ["2006"]       = "y2006",
         ["2005"]       = "y2005",
     }
     local PENDING_VARIANTS = {
         ["2015early"] = "early2015",
+        ["2006"]      = "y2006",
         ["2005"]      = "y2005",
     }
     local confirmedVariant = nil     -- era of a More guis pick at the last Confirm, or nil
@@ -1941,9 +1950,11 @@ end
         end
         print("[Loader] topbar choice \"" .. tostring(raw) .. "\" -> era: " .. era)
         getgenv().BloxyEra = era
-        -- the bubble script each era runs (none for "none", 2015 early and 2005)
+        -- the bubble script each era runs (none for "none", 2015 early, 2010, 2006 and 2005)
         local bubbleEra = era
-        if era == "none" or era == "early2015" or era == "y2005" then bubbleEra = nil end
+        if era == "none" or era == "early2015" or era == "y2010" or era == "y2006" or era == "y2005" then
+            bubbleEra = nil
+        end
         desiredBubbleEra = bubbleEra
         if bubbleEra and lastFailedEra == bubbleEra then lastFailedEra = nil end
 
@@ -1990,10 +2001,23 @@ end
             if getgenv().ClassicDialogCleanup then pcall(getgenv().ClassicDialogCleanup) end
             dialogLoaded_Classic = false
 
-        elseif era == "y2005" then
-            -- 2005: no NPC dialogs and no chat bubbles back then. The 2005 GUI hides Roblox's own
-            -- dialog and chat bubbles, but let the classic dialogs through, so neither the
-            -- classic dialogs nor a bubble script of ours run for it.
+        elseif era == "y2010" then
+            -- 2010 draws its own chat bubbles (Retro2009ChatBubbles, in PlayerGui). The 2011-style
+            -- bubble engine must not run: it removes every other bubble from the characters, which
+            -- took the 2010 GUI's own away and drew ours instead. Roblox's own bubbles stay off
+            -- (the 2010 GUI turns them off too). The classic dialogs stay as they were.
+            setNativeBubbles(true)
+            if activeBubbleEra then stopBubbleScript(activeBubbleEra) end
+            if getgenv().Bubble2017Cleanup then pcall(getgenv().Bubble2017Cleanup) end
+            if not dialogLoaded_Classic then
+                dialogLoaded_Classic = true
+                task.spawn(injectClassicDialogs)
+            end
+
+        elseif era == "y2006" or era == "y2005" then
+            -- 2006 and 2005: no chat bubbles, no NPC dialogs back then. Their GUIs hide Roblox's own
+            -- dialog and chat bubbles (2006 saves as "2013" in Bloxy, which used to start the 2011
+            -- bubbles over it), so neither the classic dialogs nor a bubble script of ours run.
             setNativeBubbles(true)
             if activeBubbleEra then stopBubbleScript(activeBubbleEra) end
             if getgenv().Bubble2017Cleanup then pcall(getgenv().Bubble2017Cleanup) end
