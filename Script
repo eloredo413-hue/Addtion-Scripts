@@ -7,7 +7,7 @@
 -- + Roblox's NPC dialog box kept for every topbar (the 2014 / 2015 / 2016 / 2017 / 2019 GUIs
 --   deleted or hid it): the choices show, and on phones the controls come back after talking
 -- + 2005: no NPC dialogs and no chat bubbles of ours (2005 had neither)
--- + 2019: the backpack button spaced evenly in the top bar (2019 Gui.lua in this repo)
+-- + More guis = "More gui fix" from the More-guis repo (its own 2019 / 2017 / 2021 GUIs)
 -- + Safe Native Dialog Bypass (No overlap, no glitching)
 -- + Player dialog bubbles render perfectly (Folder host)
 -- + Regular Chat Bubbles 100% Untouched
@@ -157,7 +157,9 @@ local mainAddons = {
     "https://gist.githubusercontent.com/eloredo413-hue/0386978714c4e0c69e9de2415b36ee66/raw/5471dd8099e097c97f210374934382fbc843afaf/Explosion%2520Replace%2520Addon",
 }
 
-local URL_MORE_GUIS         = "https://gist.githubusercontent.com/eloredo413-hue/06060301c474a22d0bcde3387e67bfa3/raw/9c582c3e03cd8f963d96c0ae40df9e2ca39ca983/More%2520guis"
+-- "More gui fix" from the More-guis repo (main branch), so it picks up every fix merged there
+-- without updating this link.
+local URL_MORE_GUIS         = "https://raw.githubusercontent.com/eloredo413-hue/More-guis/main/More%20gui%20fix"
 local URL_SAFECHAT_HOOK     = "https://gist.githubusercontent.com/eloredo413-hue/47847c9c0567c5b365c8bfa249d59190/raw/036418365fc79e40e7dc1d1120fca6de9e4600a0/Safe%2520chat%2520Hook"
 -- adds "What terrain do you want?" (2013 / 2014 / none) to Bloxy's setup, before "old particles"
 local URL_TERRAIN_HOOK      = "https://gist.githubusercontent.com/eloredo413-hue/e6591965831062d75e09aa49f60e2653/raw/dd8b8127a30461a7d0c11a312e8e0dba665fa5f9/Terrian%2520hook"
@@ -167,16 +169,15 @@ local URL_BUBBLE_2015_2016  = "https://gist.githubusercontent.com/eloredo413-hue
 -- GUIs More guis loads, swapped for the copies in this repo before More guis runs (no need to
 -- change the More guis gist):
 --   * 2015 early (E2015 Gui.lua): the leaderboard kept thin on phones
---   * 2019 (2019 Gui.lua): the backpack (and emote) button spaced evenly after the chat icon
+-- (2019 is no longer swapped: More gui fix has a newer 2019 GUI of its own.)
 local MORE_GUIS_SWAPS = {
     URL_2015EARLY = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/E2015%20Gui.lua",
-    URL_2019      = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2019%20Gui.lua",
 }
 
 -- The 2017 GUI script's address: the same one More guis loads for the 2017 topbar (read from
 -- More guis when it is downloaded below; this is the one it has now). The 2015 / 2016 chat
 -- bubbles are the ones in that script.
-local gui2017Url = "https://gist.githubusercontent.com/eloredo413-hue/ad3e7490af84cde1ac7df5c0ab02e3a3/raw/e32854b71f049d1285f088069ebe4b7f51a55cde/2017%2520gui"
+local gui2017Url = "https://gist.githubusercontent.com/eloredo413-hue/de961a66039a384c5c65063af29ec97e/raw/76d3da275f16c758b5c67fb5564c0fe94d0916af/2017%2520gui"
 
 local function patchMoreGuis(src)
     local url2017 = string.match(src, 'local URL_2017%s*=%s*"([^"]*)"')
