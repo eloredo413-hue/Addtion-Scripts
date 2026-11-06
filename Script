@@ -811,7 +811,7 @@ task.spawn(function()
         local PIXELS_PER_SPEED = 5       -- the original: about 7 on a 720p screen
         local MAX_BAR = 300              -- fits a phone screen
         local MIN_BAR = 3                -- so it can be seen at a standstill
-        local BAR_HEIGHT = 10
+        local BAR_HEIGHT = 12
         local EASE = 14                  -- how fast the bar follows (per second)
         local running = true
         local connections = {}
@@ -827,11 +827,45 @@ task.spawn(function()
             return false
         end
 
-        -- a label with a number in it that says "speed" itself, or sits in something called Speed...
-        -- (a GUI named SpeedBar / Speedometer, a Frame called MPH), up to three levels up
-        local function looksLikeSpeedReadout(obj)
+        -- a title label that only says what the number next to it is: "Speed", "MPH", "km/h" ...
+        local TITLE_TEXTS = { speed = true, ["speed:"] = true, spd = true, mph = true, ["km/h"] = true,
+                              kmh = true, kph = true, ["m/s"] = true }
+        local function isTextLabel(obj)
             local class = obj.ClassName
-            if class ~= "TextLabel" and class ~= "TextButton" then return false end
+            return class == "TextLabel" or class == "TextButton"
+        end
+        local function isTitleLabel(obj)
+            if not isTextLabel(obj) then return false end
+            local text = string.lower(obj.Text or "")
+            text = string.gsub(string.gsub(text, "^%s+", ""), "%s+$", "")
+            return TITLE_TEXTS[text] == true
+        end
+        -- a label that is a number, maybe with a unit after it ("46", "46.5", "46 mph")
+        local function isNumberLabel(obj)
+            if not isTextLabel(obj) then return false end
+            local text = obj.Text or ""
+            return #text <= 14 and string.find(text, "^%s*%-?%d") ~= nil
+        end
+        -- the title next to a number label: a sibling, or a sibling of its parent. Returns the title
+        -- and the container that holds both.
+        local function findTitleNear(label)
+            local container = label.Parent
+            for _ = 1, 2 do
+                if not container or container:IsA("PlayerGui") then return nil end
+                for _, sibling in ipairs(container:GetChildren()) do
+                    if sibling ~= label and isTitleLabel(sibling) then return sibling, container end
+                end
+                if container:IsA("LayerCollector") then return nil end
+                container = container.Parent
+            end
+            return nil
+        end
+
+        -- a label with a number in it that says "speed" itself, or sits in something called Speed...
+        -- (a GUI named SpeedBar / Speedometer, a Frame called MPH), up to three levels up; or a number
+        -- with a "Speed" title next to it
+        local function looksLikeSpeedReadout(obj)
+            if not isTextLabel(obj) then return false end
             local text = obj.Text or ""
             if not string.find(text, "%d") then return false end
             if mentionsSpeed(text) or mentionsSpeed(obj.Name) then return true end
@@ -841,7 +875,7 @@ task.spawn(function()
                 if mentionsSpeed(up.Name) then return true end
                 up = up.Parent
             end
-            return false
+            return isNumberLabel(obj) and findTitleNear(obj) ~= nil
         end
 
         -- the game's own speedometer GUIs that are switched off by this script: target -> { prop, gameWants, conn }
@@ -918,17 +952,35 @@ task.spawn(function()
             held = {}
         end
 
-        -- the highest thing named like a speedometer within three levels above the readout (the same
-        -- levels the readout is recognised by), else the readout itself
-        local function speedometerRoot(readout)
-            local top = readout
+        local function propOf(gui) return gui:IsA("LayerCollector") and "Enabled" or "Visible" end
+
+        -- is this GUI small enough to be one gauge, not the whole HUD?
+        local function isSmallWidget(gui)
+            if gui:IsA("LayerCollector") then return #gui:GetDescendants() <= 12 end
+            local camera = workspace.CurrentCamera
+            local view = camera and camera.ViewportSize
+            if not view then return false end
+            local size = gui.AbsoluteSize
+            return size.X > 0 and size.X <= view.X * 0.6 and size.Y <= view.Y * 0.3
+        end
+
+        -- What to switch off for a readout: the highest thing named like a speedometer within three
+        -- levels above it (the same levels the readout is recognised by); else the small container that
+        -- holds it and its "Speed" title (the dial or bar in it goes too); else just the readout and
+        -- its title. Returns a list of { gui, property }.
+        local function speedometerTargets(readout)
+            local top = nil
             local up = readout.Parent
             for _ = 1, 3 do
                 if not up or up:IsA("PlayerGui") then break end
                 if mentionsSpeed(up.Name) then top = up end
                 up = up.Parent
             end
-            return top, top:IsA("LayerCollector") and "Enabled" or "Visible"
+            if top then return { { top, propOf(top) } } end
+            local title, container = findTitleNear(readout)
+            if container and isSmallWidget(container) then return { { container, propOf(container) } } end
+            if title then return { { readout, "Visible" }, { title, "Visible" } } end
+            return { { readout, "Visible" } }
         end
 
         -- GUIs named like a speedometer, whether or not they hold a label this can read
@@ -943,11 +995,28 @@ task.spawn(function()
             return false
         end
 
-        local function switchOffMeters()
+        -- titles = true (only while driving): also a "Speed" / "MPH" title label with a number label next to
+        -- it, and the small container around them (so the bar or dial in it goes too)
+        local function switchOffMeters(titles)
             for _, obj in ipairs(pg:GetDescendants()) do
-                if nameSaysMeter(obj.Name) and not held[obj] and not obj:GetAttribute("ClassicOwned")
+                if not held[obj] and nameSaysMeter(obj.Name) and not obj:GetAttribute("ClassicOwned")
                    and (obj:IsA("GuiObject") or obj:IsA("LayerCollector")) then
-                    holdGame(obj, obj:IsA("LayerCollector") and "Enabled" or "Visible")
+                    holdGame(obj, propOf(obj))
+                elseif titles and not held[obj] and isTitleLabel(obj) then
+                    local container = obj.Parent
+                    for _ = 1, 2 do
+                        if not container or container:IsA("PlayerGui") or held[container] then break end
+                        local hasNumber = false
+                        for _, sibling in ipairs(container:GetChildren()) do
+                            if sibling ~= obj and isNumberLabel(sibling) then hasNumber = true break end
+                        end
+                        if hasNumber then
+                            if isSmallWidget(container) then holdGame(container, propOf(container)) end
+                            break
+                        end
+                        if container:IsA("LayerCollector") then break end
+                        container = container.Parent
+                    end
                 end
             end
         end
@@ -982,8 +1051,9 @@ task.spawn(function()
                     if shown.readout then
                         print("[Speedometer] the game's speed readout: " .. shown.readout:GetFullName() .. " = \"" .. tostring(shown.readout.Text) .. "\"")
                         if shown.readout:IsDescendantOf(pg) then
-                            local target, prop = speedometerRoot(shown.readout)
-                            holdGame(target, prop)
+                            for _, entry in ipairs(speedometerTargets(shown.readout)) do
+                                holdGame(entry[1], entry[2])
+                            end
                         end
                     end
                 end
@@ -992,7 +1062,7 @@ task.spawn(function()
             -- GUIs named like a speedometer: looked for every two seconds while driving
             if shown.clock >= shown.nextMeterScan then
                 shown.nextMeterScan = shown.clock + 2
-                pcall(switchOffMeters)
+                pcall(switchOffMeters, true)
             end
 
             local physical = seat.AssemblyLinearVelocity.Magnitude
@@ -1061,10 +1131,10 @@ task.spawn(function()
             label.Name = "Speed"
             label.AnchorPoint = Vector2.new(0.5, 0)
             label.Position = UDim2.new(0.5, 0, 0, BAR_HEIGHT + 2)
-            label.Size = UDim2.new(0, 160, 0, 16)
+            label.Size = UDim2.new(0, 160, 0, 14)
             label.BackgroundTransparency = 1
             label.Font = Enum.Font.Legacy
-            label.TextSize = 14
+            label.TextSize = 11
             label.TextColor3 = BLUE
             label.Text = "Speed: 0"
             label.Parent = holder
