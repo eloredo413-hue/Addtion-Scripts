@@ -143,6 +143,11 @@ end
 local URL_WIZARD_SMOOTH    = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Wizard%20smooth.lua"
 local URL_WIZARD_SMOOTH_V9 = "https://gist.githubusercontent.com/eloredo413-hue/c9757141d957bb07793f812ea5c63601/raw/a16efa62bb2fa1dac7736a6d06870ac74c944f30/Wizard%2520smooth"
 
+-- Explosion picker (Explsion in the Explsions-Wizard repo): its 2006 explosion stays neon red even
+-- with Hammer stuff 1's "Plastic" materials on. If it can't be downloaded, the old gist is used.
+local URL_EXPLOSION        = "https://raw.githubusercontent.com/eloredo413-hue/Explsions-Wizard/main/Explsion"
+local URL_EXPLOSION_GIST   = "https://gist.githubusercontent.com/eloredo413-hue/0386978714c4e0c69e9de2415b36ee66/raw/5471dd8099e097c97f210374934382fbc843afaf/Explosion%2520Replace%2520Addon"
+
 local mainAddons = {
     -- FF Fix Hook goes first: it hooks loadstring itself, so it has to see the real one
     -- before the other hooks below wrap it.
@@ -154,7 +159,7 @@ local mainAddons = {
     URL_WIZARD_SMOOTH,
     "https://gist.githubusercontent.com/eloredo413-hue/f156101652b68d2fdcbbeae4dc0481d6/raw/028c65e676eda5d90f9c3a0595347b102df2a0b9/2010%2520hook",
     "https://gist.githubusercontent.com/eloredo413-hue/6ec77a9b2884b534cd09f653a0fe023d/raw/94075a70190110e81a9c4153c340b19f3c903790/Old%2520physics%2520camera%2520addon",
-    "https://gist.githubusercontent.com/eloredo413-hue/0386978714c4e0c69e9de2415b36ee66/raw/5471dd8099e097c97f210374934382fbc843afaf/Explosion%2520Replace%2520Addon",
+    URL_EXPLOSION,
 }
 
 -- the More guis gist (a fixed version: to update it, change this link)
@@ -311,6 +316,10 @@ for i, url in ipairs(mainAddons) do
     if why == "download" and url == URL_WIZARD_SMOOTH then
         warn("[Loader] Wizard smooth v10 couldn't be downloaded: using v9")
         loadUrl(URL_WIZARD_SMOOTH_V9, "Wizard smooth v9")
+    end
+    if why == "download" and url == URL_EXPLOSION then
+        warn("[Loader] The explosion picker couldn't be downloaded from its repo: using the gist")
+        loadUrl(URL_EXPLOSION_GIST, "Explosion Replace Addon (gist)")
     end
     task.wait(0.1)
 end
