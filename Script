@@ -785,7 +785,11 @@ task.spawn(function()
     --   * Only when the game has a speed readout of its own on: a visible label that reads like a speed
     --     ("Speed: 46", "46 MPH", "120 km/h", or a number in a label called Speed ...), in your GUI or on
     --     the car you are sitting in. A game without one gets no speedometer. When there is one, the
-    --     number shown is the game's own number (so the units match), else the car's speed.
+    --     number shown is the game's own number (so the units match), else the car's speed, and this
+    --     one takes the place of the game's own speedometer in your GUI: that one is switched off while
+    --     this is up and back on when it goes (a dashboard on the car is left alone).
+    --   * What it found (or didn't) is printed to the console. getgenv().SpeedometerAlways = true shows
+    --     it even in a game without a readout, to try it.
     --   * Only while you are sitting in a VehicleSeat (another seat only once it moves).
     --   * Only 2010-2014 have it: nothing before 2010, and from 2015 on the normal GUI.
     -- Redrawn every frame and the bar eases toward its width, so it moves smoothly. On purpose
@@ -806,28 +810,42 @@ task.spawn(function()
         local display = nil      -- { gui, bar, label, seat, beat, clock, readout, nextCheck, width, shownNumber }
 
         -- is this label a speed readout, and is it on screen?
+        local SPEED_WORDS = { "speed", "mph", "km/h", "kmh", "kph", "m/s", "studs/s", "velocity", "spd" }
+        local function mentionsSpeed(text)
+            text = string.lower(text or "")
+            for _, word in ipairs(SPEED_WORDS) do
+                if string.find(text, word, 1, true) then return true end
+            end
+            return false
+        end
+
+        -- a label with a number in it that says "speed" itself, or sits in something called Speed...
+        -- (a GUI named SpeedBar / Speedometer, a Frame called MPH), up to three levels up
         local function looksLikeSpeedReadout(obj)
             local class = obj.ClassName
             if class ~= "TextLabel" and class ~= "TextButton" then return false end
-            local text = string.lower(obj.Text or "")
+            local text = obj.Text or ""
             if not string.find(text, "%d") then return false end
-            if string.find(text, "speed", 1, true) or string.find(text, "mph", 1, true)
-               or string.find(text, "km/h", 1, true) or string.find(text, "kmh", 1, true)
-               or string.find(text, "kph", 1, true) or string.find(text, "studs/s", 1, true) then
-                return true
+            if mentionsSpeed(text) or mentionsSpeed(obj.Name) then return true end
+            local up = obj.Parent
+            for _ = 1, 3 do
+                if not up or up:IsA("PlayerGui") then break end
+                if mentionsSpeed(up.Name) then return true end
+                up = up.Parent
             end
-            local name = string.lower(obj.Name)
-            return string.find(name, "speed", 1, true) ~= nil or string.find(name, "mph", 1, true) ~= nil
-                or string.find(name, "kmh", 1, true) ~= nil
+            return false
         end
 
-        local function isOnScreen(obj)
+        -- skip: the game's speedometer that this script hid itself (its own Visible / Enabled is ours)
+        local function isOnScreen(obj, skip)
             local current = obj
             while current and current ~= game do
-                if current:IsA("GuiObject") then
-                    if not current.Visible then return false end
-                elseif current:IsA("LayerCollector") then
-                    if not current.Enabled then return false end
+                if current ~= skip then
+                    if current:IsA("GuiObject") then
+                        if not current.Visible then return false end
+                    elseif current:IsA("LayerCollector") then
+                        if not current.Enabled then return false end
+                    end
                 end
                 current = current.Parent
             end
@@ -851,10 +869,55 @@ task.spawn(function()
             return nil
         end
 
+        -- The old speedometer takes the place of the game's own: the game's speedometer (the readout and
+        -- the GUI around it that is named like a speedometer) is switched off while ours is up, and
+        -- switched back on when ours goes. Only a readout in the player's GUI is switched off, not a
+        -- dashboard on the car. If the game switches it on again it is switched off again.
+        local function speedometerRoot(readout)
+            -- the highest thing named like a speedometer within three levels above the readout (the
+            -- same levels the readout is recognised by), else the readout itself
+            local top = readout
+            local up = readout.Parent
+            for _ = 1, 3 do
+                if not up or up:IsA("PlayerGui") then break end
+                if mentionsSpeed(up.Name) then top = up end
+                up = up.Parent
+            end
+            return top, top:IsA("LayerCollector") and "Enabled" or "Visible"
+        end
+
+        local function restoreGame(shown)
+            local held = shown.suppressed
+            if not held then return end
+            shown.suppressed = nil
+            pcall(function() held.conn:Disconnect() end)
+            pcall(function() held.target[held.prop] = held.gameWants end)
+        end
+
+        local function suppressGame(shown)
+            restoreGame(shown)
+            local readout = shown.readout
+            if not readout or not readout:IsDescendantOf(pg) then return end
+            local ok = pcall(function()
+                local target, prop = speedometerRoot(readout)
+                local held = { target = target, prop = prop, gameWants = target[prop] }
+                held.conn = target:GetPropertyChangedSignal(prop):Connect(function()
+                    if target[prop] == true then
+                        held.gameWants = true
+                        target[prop] = false        -- the game switched it on again
+                    end
+                end)
+                shown.suppressed = held
+                target[prop] = false
+            end)
+            if not ok then shown.suppressed = nil end
+        end
+
         local function hide()
             if not display then return end
             local shown = display
             display = nil
+            restoreGame(shown)
             pcall(function() shown.beat:Disconnect() end)
             pcall(function() shown.gui:Destroy() end)
         end
@@ -873,17 +936,27 @@ task.spawn(function()
             -- the game's readout: looked for every two seconds while there is none, and checked every
             -- half second while there is one (it can be switched off, or the game can remove it)
             if shown.clock >= shown.nextCheck then
-                if shown.readout and not (shown.readout.Parent and isOnScreen(shown.readout)) then
+                if shown.readout and not (shown.readout.Parent
+                   and isOnScreen(shown.readout, shown.suppressed and shown.suppressed.target)) then
+                    restoreGame(shown)
                     shown.readout = nil
                 end
                 if not shown.readout then
                     shown.readout = findReadout(seat)
+                    if shown.readout then
+                        print("[Speedometer] the game's speed readout: " .. shown.readout:GetFullName() .. " = \"" .. tostring(shown.readout.Text) .. "\"")
+                        suppressGame(shown)
+                        if shown.suppressed then
+                            print("[Speedometer] the game's own speedometer is switched off while this one is up: " .. shown.suppressed.target:GetFullName())
+                        end
+                    end
                 end
                 shown.nextCheck = shown.clock + (shown.readout and 0.5 or 2)
             end
 
             local physical = seat.AssemblyLinearVelocity.Magnitude
-            local on = shown.readout ~= nil and (seat:IsA("VehicleSeat") or physical > 3)
+            local always = getgenv().SpeedometerAlways == true      -- to try it in a game without a readout
+            local on = (shown.readout ~= nil or always) and (seat:IsA("VehicleSeat") or physical > 3)
             if shown.gui.Enabled ~= on then
                 shown.gui.Enabled = on
                 shown.justShown = on
@@ -892,7 +965,7 @@ task.spawn(function()
 
             -- the game's number if it has one, else the car's speed
             local speed = physical
-            local number = tonumber(string.match(shown.readout.Text or "", "%d+%.?%d*"))
+            local number = shown.readout and tonumber(string.match(shown.readout.Text or "", "%d+%.?%d*"))
             if number then speed = number end
 
             local target = barWidthFor(speed)
@@ -961,6 +1034,8 @@ task.spawn(function()
                             readout = nil, width = 0, shownNumber = nil, justShown = false }
             shown.beat = RunService.RenderStepped:Connect(frame)
             display = shown
+            print("[Speedometer] sitting in " .. seat:GetFullName() .. " (" .. seat.ClassName .. "): looking for the game's speed readout"
+                .. " (no readout, no speedometer; getgenv().SpeedometerAlways = true shows it anyway)")
             frame(0)
         end
 
