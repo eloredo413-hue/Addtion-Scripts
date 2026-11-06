@@ -19,7 +19,7 @@
 -- + Less lag: no more scans of the whole GUI / workspace many times a second (see SPEED-UPS below,
 --   and Wizard smooth v10, which no longer leaves its hooks on for the whole game)
 -- + The 2006 avatar's T-shirt shows again with the 2011-2014 chat bubbles (they only remove bubbles now)
--- + Old-style speedometer (a blue bar over the car you drive) for 2010-2014 only
+-- + Old-style speedometer (a blue bar) for 2010-2014; the game's own speedometer only from 2015 on
 -- + Chat bubbles by era: 2005 and 2006 have none; 2010 and 2015 early draw their own (no bubble script
 --   of ours runs over them); 2011-2014 / mobile use the built-in 2011-style ones; 2015/2016 the 2017 ones
 --========================================================
@@ -776,30 +776,35 @@ task.spawn(function()
     end
 
     --========================================================
-    -- OLD-STYLE SPEEDOMETER (2010-2014)
+    -- OLD-STYLE SPEEDOMETER (2010-2014), AND NO MODERN ONE BEFORE 2015
     -- A solid blue bar with "Speed: 46" under it, as in the old car HUD of https://youtu.be/HgcfN5V0I-4.
     -- From frames of a screen recording of it: the bar is plain blue, no background, always at the same
     -- place on the screen (centred, a little below the middle), and its width grows with the speed,
     -- roughly 7 pixels for every point of speed on a 720p screen; the text is small, plain blue, no
     -- outline, centred under it. It is a screen GUI, not attached to the player or the car.
-    --   * It always shows while you are driving. If the game has a speed readout of its own on (a
-    --     visible label that reads like a speed: "Speed: 46", "46 MPH", "120 km/h", or a number in a
-    --     label called Speed ..., in your GUI or on the car), the number shown is the game's own number
-    --     (so the units match) and this one takes the place of the game's speedometer in your GUI: that
-    --     one is switched off while this is up and back on when it goes (a dashboard on the car is
-    --     left alone). Without one (or with the game's GUI hidden by "hide game GUI") it shows the
-    --     car's own speed. getgenv().SpeedometerOnlyWithGameReadout = true makes it show only when the
-    --     game has a readout.
+    --   * The game's own (modern) speedometer only shows from 2015 on. In every era up to 2014 it is
+    --     switched off (and kept off if the game switches it on again): the readout and the GUI around
+    --     it that is named like a speedometer, and any GUI named like one (Speedometer, SpeedoFrame ...).
+    --     A dashboard on the car is left alone. 2015 and later get the game's own back untouched.
+    --   * 2010-2014 (2010, 2011-2014, mobile) get this old one in its place, while driving: whatever the
+    --     game has. If the game has a visible speed readout, its number is shown (so the units match),
+    --     else the car's own speed. 2005 and 2006 have no speedometer at all.
+    --   * Only while you are sitting in a VehicleSeat (another seat once it moves).
     --   * "Hide game GUI" leaves it alone (it is in the hidden-UI container, and is told to keep it).
     --   * What it found is printed to the console.
-    --   * Only while you are sitting in a VehicleSeat (another seat only once it moves).
-    --   * Only 2010-2014 have it: nothing before 2010, and from 2015 on the normal GUI.
     -- Redrawn every frame and the bar eases toward its width, so it moves smoothly. On purpose
     -- different from the original: the bar stops growing at MAX_BAR pixels, so it fits a phone screen
     -- (the original kept getting wider; about 5 pixels per point of speed instead of about 7).
     --========================================================
-    local function startSpeedometer()
-        if getgenv().SpeedometerCleanup then return end   -- already on
+    -- mode: "show" = the old speedometer, and the game's own switched off; "hideOnly" = only the game's
+    -- own switched off (2005 / 2006: no speedometer at all)
+    local function startSpeedometer(mode)
+        mode = mode or "show"
+        if getgenv().SpeedometerCleanup then
+            if getgenv().SpeedometerMode == mode then return end   -- already on, the same way
+            pcall(getgenv().SpeedometerCleanup)
+        end
+        local showOurs = mode == "show"
 
         local LocalPlayer = Players.LocalPlayer
         local BLUE = Color3.fromRGB(0, 0, 255)
@@ -839,11 +844,14 @@ task.spawn(function()
             return false
         end
 
-        -- skip: the game's speedometer that this script hid itself (its own Visible / Enabled is ours)
-        local function isOnScreen(obj, skip)
+        -- the game's own speedometer GUIs that are switched off by this script: target -> { prop, gameWants, conn }
+        local held = {}
+
+        -- (a GUI this script switched off is still "on screen" as far as the game is concerned)
+        local function isOnScreen(obj)
             local current = obj
             while current and current ~= game do
-                if current ~= skip then
+                if not held[current] then
                     if current:IsA("GuiObject") then
                         if not current.Visible then return false end
                     elseif current:IsA("LayerCollector") then
@@ -872,13 +880,47 @@ task.spawn(function()
             return nil
         end
 
-        -- The old speedometer takes the place of the game's own: the game's speedometer (the readout and
-        -- the GUI around it that is named like a speedometer) is switched off while ours is up, and
-        -- switched back on when ours goes. Only a readout in the player's GUI is switched off, not a
-        -- dashboard on the car. If the game switches it on again it is switched off again.
+        -- The game's own speedometer is switched off for as long as this runs (every era up to 2014), also
+        -- when you are not in a car, and switched off again if the game switches it on. When this stops
+        -- (a 2015 or later topbar) the game's own comes back: if you are in a car it is switched on.
+        local function holdGame(target, prop)
+            if held[target] then return false end
+            local up = target.Parent
+            while up and up ~= game do          -- something inside one already held is covered by it
+                if held[up] then return false end
+                up = up.Parent
+            end
+            local ok = pcall(function()
+                local entry = { prop = prop, gameWants = target[prop] }
+                entry.conn = target:GetPropertyChangedSignal(prop):Connect(function()
+                    if target[prop] == true then
+                        entry.gameWants = true
+                        target[prop] = false        -- the game switched it on again
+                    end
+                end)
+                held[target] = entry
+                target[prop] = false
+            end)
+            if ok then
+                print("[Speedometer] the game's own speedometer is switched off: " .. target:GetFullName())
+            end
+            return ok
+        end
+
+        local function releaseGame()
+            local character = LocalPlayer.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            local seated = humanoid ~= nil and humanoid.SeatPart ~= nil
+            for target, entry in pairs(held) do
+                pcall(function() entry.conn:Disconnect() end)
+                pcall(function() target[entry.prop] = entry.gameWants and seated end)
+            end
+            held = {}
+        end
+
+        -- the highest thing named like a speedometer within three levels above the readout (the same
+        -- levels the readout is recognised by), else the readout itself
         local function speedometerRoot(readout)
-            -- the highest thing named like a speedometer within three levels above the readout (the
-            -- same levels the readout is recognised by), else the readout itself
             local top = readout
             local up = readout.Parent
             for _ = 1, 3 do
@@ -889,38 +931,31 @@ task.spawn(function()
             return top, top:IsA("LayerCollector") and "Enabled" or "Visible"
         end
 
-        local function restoreGame(shown)
-            local held = shown.suppressed
-            if not held then return end
-            shown.suppressed = nil
-            pcall(function() held.conn:Disconnect() end)
-            pcall(function() held.target[held.prop] = held.gameWants end)
+        -- GUIs named like a speedometer, whether or not they hold a label this can read
+        local METER_WORDS = { "speedo", "speedmeter", "speed meter", "speed_meter", "speedgauge", "speed gauge", "speed_gauge" }
+        local METER_EXACT = { mph = true, kmh = true, kph = true }
+        local function nameSaysMeter(name)
+            name = string.lower(name)
+            if METER_EXACT[name] then return true end
+            for _, word in ipairs(METER_WORDS) do
+                if string.find(name, word, 1, true) then return true end
+            end
+            return false
         end
 
-        local function suppressGame(shown)
-            restoreGame(shown)
-            local readout = shown.readout
-            if not readout or not readout:IsDescendantOf(pg) then return end
-            local ok = pcall(function()
-                local target, prop = speedometerRoot(readout)
-                local held = { target = target, prop = prop, gameWants = target[prop] }
-                held.conn = target:GetPropertyChangedSignal(prop):Connect(function()
-                    if target[prop] == true then
-                        held.gameWants = true
-                        target[prop] = false        -- the game switched it on again
-                    end
-                end)
-                shown.suppressed = held
-                target[prop] = false
-            end)
-            if not ok then shown.suppressed = nil end
+        local function switchOffMeters()
+            for _, obj in ipairs(pg:GetDescendants()) do
+                if nameSaysMeter(obj.Name) and not held[obj] and not obj:GetAttribute("ClassicOwned")
+                   and (obj:IsA("GuiObject") or obj:IsA("LayerCollector")) then
+                    holdGame(obj, obj:IsA("LayerCollector") and "Enabled" or "Visible")
+                end
+            end
         end
 
         local function hide()
             if not display then return end
             local shown = display
             display = nil
-            restoreGame(shown)
             pcall(function() shown.beat:Disconnect() end)
             pcall(function() shown.gui:Destroy() end)
         end
@@ -939,28 +974,31 @@ task.spawn(function()
             -- the game's readout: looked for every two seconds while there is none, and checked every
             -- half second while there is one (it can be switched off, or the game can remove it)
             if shown.clock >= shown.nextCheck then
-                if shown.readout and not (shown.readout.Parent
-                   and isOnScreen(shown.readout, shown.suppressed and shown.suppressed.target)) then
-                    restoreGame(shown)
+                if shown.readout and not (shown.readout.Parent and isOnScreen(shown.readout)) then
                     shown.readout = nil
                 end
                 if not shown.readout then
                     shown.readout = findReadout(seat)
                     if shown.readout then
                         print("[Speedometer] the game's speed readout: " .. shown.readout:GetFullName() .. " = \"" .. tostring(shown.readout.Text) .. "\"")
-                        suppressGame(shown)
-                        if shown.suppressed then
-                            print("[Speedometer] the game's own speedometer is switched off while this one is up: " .. shown.suppressed.target:GetFullName())
+                        if shown.readout:IsDescendantOf(pg) then
+                            local target, prop = speedometerRoot(shown.readout)
+                            holdGame(target, prop)
                         end
                     end
                 end
                 shown.nextCheck = shown.clock + (shown.readout and 0.5 or 2)
             end
+            -- GUIs named like a speedometer: looked for every two seconds while driving
+            if shown.clock >= shown.nextMeterScan then
+                shown.nextMeterScan = shown.clock + 2
+                pcall(switchOffMeters)
+            end
 
             local physical = seat.AssemblyLinearVelocity.Magnitude
             -- always, unless it was asked to follow the game's readout only
             local needsReadout = getgenv().SpeedometerOnlyWithGameReadout == true
-            local on = (shown.readout ~= nil or not needsReadout) and (seat:IsA("VehicleSeat") or physical > 3)
+            local on = showOurs and (shown.readout ~= nil or not needsReadout) and (seat:IsA("VehicleSeat") or physical > 3)
             if shown.gui.Enabled ~= on then
                 shown.gui.Enabled = on
                 shown.justShown = on
@@ -1039,11 +1077,11 @@ task.spawn(function()
                 if hider and hider.Keep then hider.Keep(gui) end
             end)
 
-            local shown = { gui = gui, bar = bar, label = label, seat = seat, clock = 0, nextCheck = 0,
+            local shown = { gui = gui, bar = bar, label = label, seat = seat, clock = 0, nextCheck = 0, nextMeterScan = 0,
                             readout = nil, width = 0, shownNumber = nil, justShown = false }
             shown.beat = RunService.RenderStepped:Connect(frame)
             display = shown
-            print("[Speedometer] shown for " .. seat:GetFullName() .. " (" .. seat.ClassName .. "); it uses the game's speed readout if it has one, else the car's speed")
+            print("[Speedometer] " .. (showOurs and "shown" or "(no speedometer in this era)") .. " for " .. seat:GetFullName() .. " (" .. seat.ClassName .. ")")
             frame(0)
         end
 
@@ -1086,10 +1124,17 @@ task.spawn(function()
             for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
             connections = {}
             hide()
-            if getgenv().SpeedometerCleanup == cleanup then getgenv().SpeedometerCleanup = nil end
+            releaseGame()
+            if getgenv().SpeedometerCleanup == cleanup then
+                getgenv().SpeedometerCleanup = nil
+                getgenv().SpeedometerMode = nil
+            end
         end
         getgenv().SpeedometerCleanup = cleanup
-        print("[Loader] speedometer on (2010-2014)")
+        getgenv().SpeedometerMode = mode
+        -- the game's speedometer GUIs that are already there
+        pcall(switchOffMeters)
+        print("[Loader] " .. (showOurs and "old speedometer on (2010-2014)" or "no speedometer (2005 / 2006)") .. ": the game's own speedometer is switched off")
     end
 
     local function stopSpeedometer()
@@ -2298,10 +2343,14 @@ end
             if getgenv().Bubble2017Cleanup then pcall(getgenv().Bubble2017Cleanup) end
         end
 
-        -- the old speedometer is for 2010-2014 only (the classic eras and 2010); every other era stops it
+        -- The game's own (modern) speedometer only shows from 2015 on. Up to 2014 it is switched off:
+        -- 2010-2014 get the old speedometer in its place, 2005 / 2006 have none.
         if era == "classic" or era == "y2010" then
-            local ok, err = pcall(startSpeedometer)
+            local ok, err = pcall(startSpeedometer, "show")
             if not ok then warn("[Loader] the speedometer didn't start: " .. tostring(err)) end
+        elseif era == "y2006" or era == "y2005" then
+            local ok, err = pcall(startSpeedometer, "hideOnly")
+            if not ok then warn("[Loader] the speedometer hider didn't start: " .. tostring(err)) end
         else
             stopSpeedometer()
         end
