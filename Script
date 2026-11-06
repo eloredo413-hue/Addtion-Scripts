@@ -782,10 +782,12 @@ task.spawn(function()
     -- place on the screen (centred, a little below the middle), and its width grows with the speed,
     -- roughly 7 pixels for every point of speed on a 720p screen; the text is small, plain blue, no
     -- outline, centred under it. It is a screen GUI, not attached to the player or the car.
-    --   * The game's own (modern) speedometer only shows from 2015 on. In every era up to 2014 it is
-    --     switched off (and kept off if the game switches it on again): the readout and the GUI around
-    --     it that is named like a speedometer, and any GUI named like one (Speedometer, SpeedoFrame ...).
-    --     A dashboard on the car is left alone. 2015 and later get the game's own back untouched.
+    --   * The modern speedometer only shows from 2015 on. In every era up to 2014 it is switched off
+    --     (and kept off if it is switched on again): Roblox's own vehicle speed display (the "Speed 0"
+    --     with a segmented bar at the bottom, CoreGui.RobloxGui.VehicleHudFrame), the game's own
+    --     readout and the GUI around it that is named like a speedometer, and any GUI named like one
+    --     (Speedometer, SpeedoFrame ...). A dashboard on the car is left alone. 2015 and later get
+    --     the modern one back untouched.
     --   * 2010-2014 (2010, 2011-2014, mobile) get this old one in its place, while driving: whatever the
     --     game has. If the game has a visible speed readout, its number is shown (so the units match),
     --     else the car's own speed. 2005 and 2006 have no speedometer at all.
@@ -995,6 +997,31 @@ task.spawn(function()
             return false
         end
 
+        -- Roblox's own vehicle speed display (the "Speed 0" with a segmented bar at the bottom of the screen
+        -- that shows whenever you sit in a VehicleSeat): its CoreScript VehicleHud makes
+        -- CoreGui.RobloxGui.VehicleHudFrame and switches it on when you sit down and off when you leave.
+        -- It is not the game's GUI, so nothing in PlayerGui reaches it. Switched off (and kept off) here.
+        local vehicleHudHeld = false
+        local function switchOffVehicleHud()
+            local robloxGui = CoreGui:FindFirstChild("RobloxGui")
+            if not robloxGui then return end
+            local frame = robloxGui:FindFirstChild("VehicleHudFrame")
+            if not frame then
+                -- another name for it: a frame with the speed bar and the speed text in it
+                for _, child in ipairs(robloxGui:GetChildren()) do
+                    if child:FindFirstChild("SpeedBarClippingFrame")
+                       or (child:FindFirstChild("SpeedText") and child:FindFirstChild("SpeedLabel")) then
+                        frame = child
+                        break
+                    end
+                end
+            end
+            if frame then
+                if not held[frame] then holdGame(frame, "Visible") end
+                vehicleHudHeld = held[frame] ~= nil
+            end
+        end
+
         -- titles = true (only while driving): also a "Speed" / "MPH" title label with a number label next to
         -- it, and the small container around them (so the bar or dial in it goes too)
         local function switchOffMeters(titles)
@@ -1063,6 +1090,7 @@ task.spawn(function()
             if shown.clock >= shown.nextMeterScan then
                 shown.nextMeterScan = shown.clock + 2
                 pcall(switchOffMeters, true)
+                pcall(switchOffVehicleHud)
             end
 
             local physical = seat.AssemblyLinearVelocity.Magnitude
@@ -1183,6 +1211,7 @@ task.spawn(function()
             while running do
                 task.wait(0.5)
                 if not running then break end
+                if not vehicleHudHeld then pcall(switchOffVehicleHud) end   -- until it has been found
                 local character = LocalPlayer.Character
                 local humanoid = character and character:FindFirstChildOfClass("Humanoid")
                 if humanoid then onSeat(humanoid) else hide() end
@@ -1202,8 +1231,9 @@ task.spawn(function()
         end
         getgenv().SpeedometerCleanup = cleanup
         getgenv().SpeedometerMode = mode
-        -- the game's speedometer GUIs that are already there
+        -- the game's speedometer GUIs that are already there, and Roblox's own vehicle speed display
         pcall(switchOffMeters)
+        pcall(switchOffVehicleHud)
         print("[Loader] " .. (showOurs and "old speedometer on (2010-2014)" or "no speedometer (2005 / 2006)") .. ": the game's own speedometer is switched off")
     end
 
