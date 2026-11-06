@@ -1,4 +1,4 @@
--- [[ 2013 MOBILE GUI (Addtion-Scripts copy) - fix: vehicles can be driven (Roblox's own touch controls come back while seated) ]]
+-- [[ 2013 MOBILE GUI (Addtion-Scripts copy) - fix: the 2013 joystick now drives vehicles (fed into Roblox's control module); no stuck jump ]]
 --[[
     =========================================================
     PART 1: SERVICES, SETTINGS & PRELOADING
@@ -83,14 +83,11 @@ local function eliminateNativeMenuCompletely()
 end
 eliminateNativeMenuCompletely()
 
--- true while Roblox's own touch controls are given back (sitting in a vehicle, see VEHICLES below)
-local useRobloxControls = false
-
 -- Persistent Modern Touch UI Hider (Preserves Backpack/Inventory)
 task.spawn(function()
     while true do
         local modernTouch = PlayerGui:FindFirstChild("TouchGui")
-        if modernTouch and modernTouch.Enabled and not useRobloxControls then
+        if modernTouch and modernTouch.Enabled then 
             modernTouch.Enabled = false 
         end
         task.wait(0.5)
@@ -244,11 +241,91 @@ JumpButton.InputEnded:Connect(function(input)
     end
 end)
 
+-- VEHICLES (fix, part 1): this joystick replaces Roblox's touch controls, and it only called
+-- LocalPlayer:Move(), which walks a character. A car is driven by the game's vehicle code, which reads
+-- Roblox's real controls (the control module), so with only this joystick nothing happened. The joystick
+-- is now fed into the control module itself: when it asks the active controller for the move vector it
+-- gets this stick's. Cars (VehicleSeat or the game's own) then react exactly as to Roblox's own controls,
+-- while the 2013 controls stay the ones on screen. The control module also does the walking then.
+-- Nothing is swapped or hidden, so no button can be left held down by it.
+local lastConsulted = -1
+local function controlsAreFed()
+    return os.clock() - lastConsulted < 0.25
+end
+
+do
+    local controls = nil
+    local fedController = nil
+    local nextLook = 0
+
+    local function findControls()
+        if controls then return controls end
+        local ok, found = pcall(function()
+            local scripts = LocalPlayer:FindFirstChild("PlayerScripts")
+            local module = scripts and scripts:FindFirstChild("PlayerModule")
+            if not module then return nil end
+            return require(module):GetControls()
+        end)
+        if ok and type(found) == "table" then controls = found end
+        return controls
+    end
+
+    RunService.RenderStepped:Connect(function()
+        if not controls then
+            -- Roblox's controls may not exist yet: look again every two seconds
+            local now = os.clock()
+            if now < nextLook then return end
+            nextLook = now + 2
+            if not findControls() then return end
+        end
+        local controller = controls.activeController
+        if controller and controller ~= fedController then
+            -- a new active controller (touch, keyboard, ...): the stick is fed into that one too
+            pcall(function()
+                local original = controller.GetMoveVector
+                if type(original) ~= "function" then return end
+                controller.GetMoveVector = function(self, ...)
+                    if walkSpeedFactor > 0 and moveVector.Magnitude > 0 then
+                        lastConsulted = os.clock()
+                        return moveVector * walkSpeedFactor
+                    end
+                    return original(self, ...)
+                end
+                fedController = controller
+            end)
+        end
+    end)
+end
+
+-- Nothing may stay held that is not: a touch that ended without this GUI hearing about it (a finger that
+-- slid off, a GUI that was hidden for a moment) used to leave the jump button pressed down.
+local function releaseJump()
+    jumpTouchObject = nil
+    isJumpButtonDown = false
+    JumpButton.ImageRectOffset = Vector2.new(176, 222)
+end
+local function releaseStick()
+    moveTouchObject = nil
+    moveVector = Vector3.new(0,0,0)
+    walkSpeedFactor = 0
+    JoystickStick.Position = UDim2.new(0.5, 0, 0.5, 0)
+end
+local function touchIsOver(touch)
+    return touch.UserInputState == Enum.UserInputState.End or touch.UserInputState == Enum.UserInputState.Cancel
+end
+UserInputService.InputEnded:Connect(function(input)
+    if input == jumpTouchObject then releaseJump() end
+end)
+
 RunService.RenderStepped:Connect(function()
+    if jumpTouchObject and touchIsOver(jumpTouchObject) then releaseJump() end
+    if moveTouchObject and touchIsOver(moveTouchObject) then releaseStick() end
+
     local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
     if not hum then return end
 
-    if moveVector.Magnitude > 0 then
+    -- (when the control module is being fed the stick, it does the moving itself)
+    if moveVector.Magnitude > 0 and not controlsAreFed() then
         LocalPlayer:Move(moveVector * walkSpeedFactor, true)
     end
     
@@ -265,13 +342,10 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- VEHICLES (fallback, for when Roblox's touch controls cannot be given back, see below): the joystick above only called LocalPlayer:Move(), which walks a character but
--- does nothing for a car. A VehicleSeat is driven by its Throttle / Steer, and only Roblox's own
--- touch controls (turned off by this GUI) set those. So while sitting in a VehicleSeat the stick now
--- sets them itself, the way Roblox's controls do: stick up = forward, down = brake / reverse,
--- left / right = steer. It runs just after Roblox's control step, so it wins that frame, and it
--- only writes while the stick is held (keyboard / gamepad driving is left alone). Letting go of
--- the stick, or getting out, puts the throttle and steering back to 0 so the car doesn't drive off.
+-- VEHICLES (fix, part 2, only if part 1 cannot work): when the control module is not asking for this
+-- stick (a game without Roblox's control module), a VehicleSeat is driven directly: stick up = forward,
+-- down = brake / reverse, left / right = steer. It runs just after Roblox's control step and only while
+-- the stick is held. Letting go, or getting out, puts the throttle and steering back to 0.
 do
     local STEP_NAME = "Legacy2013VehicleDrive"
     local drivenSeat = nil
@@ -292,13 +366,12 @@ do
         local seat = hum and hum.SeatPart
         if seat and not seat:IsA("VehicleSeat") then seat = nil end
 
-        -- got out of the car (or into another one): the old one stops
         if drivenSeat and drivenSeat ~= seat then
             releaseSeat(drivenSeat)
             drivenSeat = nil
         end
 
-        if seat and walkSpeedFactor > 0 then
+        if seat and walkSpeedFactor > 0 and not controlsAreFed() then
             local stick = moveVector * walkSpeedFactor
             pcall(function()
                 seat.ThrottleFloat = -stick.Z
@@ -309,53 +382,6 @@ do
             releaseSeat(drivenSeat)
             drivenSeat = nil
         end
-    end)
-end
-
--- VEHICLES (the real fix): this GUI replaces Roblox's touch controls with its own joystick, which only
--- walks a character. A car is driven by the game's own vehicle code, which reads Roblox's real controls
--- (the control module / the touch thumbstick), so with only this joystick nothing happens. So while you
--- are sitting, Roblox's own touch controls are given back, exactly as in a normal Roblox game, and this
--- joystick and jump button are hidden; as soon as you get out, the 2013 controls return. (Roblox's own
--- jump button is how you get out of the seat meanwhile.) If the game has no Roblox touch controls to
--- give back, this joystick stays and drives VehicleSeat cars by itself (the part above).
--- HAND_BACK_IN_ANY_SEAT = false would do it for VehicleSeat cars only, not for custom seats / chairs.
-do
-    local HAND_BACK_IN_ANY_SEAT = true
-    local handedBack = false
-
-    local function setHandedBack(on)
-        if on == handedBack then return end
-        handedBack = on
-        useRobloxControls = on
-        local touchGui = PlayerGui:FindFirstChild("TouchGui")
-        if on then
-            -- let go of this joystick, so nothing keeps pushing
-            moveTouchObject = nil
-            jumpTouchObject = nil
-            isJumpButtonDown = false
-            moveVector = Vector3.new(0, 0, 0)
-            walkSpeedFactor = 0
-            JoystickStick.Position = UDim2.new(0.5, 0, 0.5, 0)
-            JumpButton.ImageRectOffset = Vector2.new(176, 222)
-            touchScreenGui.Enabled = false
-            if touchGui then touchGui.Enabled = true end
-        else
-            touchScreenGui.Enabled = true
-            if touchGui then touchGui.Enabled = false end
-        end
-    end
-
-    RunService.RenderStepped:Connect(function()
-        local character = LocalPlayer.Character
-        local hum = character and character:FindFirstChildOfClass("Humanoid")
-        local seat = hum and hum.SeatPart
-        local want = false
-        if seat and (HAND_BACK_IN_ANY_SEAT or seat:IsA("VehicleSeat")) then
-            -- only when there are Roblox touch controls to give back
-            want = PlayerGui:FindFirstChild("TouchGui") ~= nil
-        end
-        setHandedBack(want)
     end)
 end
 
