@@ -19,6 +19,7 @@
 -- + Less lag: no more scans of the whole GUI / workspace many times a second (see SPEED-UPS below,
 --   and Wizard smooth v10, which no longer leaves its hooks on for the whole game)
 -- + The 2006 avatar's T-shirt shows again with the 2011-2014 chat bubbles (they only remove bubbles now)
+-- + Old-style speedometer (a blue bar over the car you drive) for 2010-2014 only
 -- + Chat bubbles by era: 2005 and 2006 have none; 2010 and 2015 early draw their own (no bubble script
 --   of ours runs over them); 2011-2014 / mobile use the built-in 2011-style ones; 2015/2016 the 2017 ones
 --========================================================
@@ -39,6 +40,10 @@ end
 if getgenv().Bubble2017Cleanup then
     pcall(getgenv().Bubble2017Cleanup)
     getgenv().Bubble2017Cleanup = nil
+end
+if getgenv().SpeedometerCleanup then
+    pcall(getgenv().SpeedometerCleanup)
+    getgenv().SpeedometerCleanup = nil
 end
 getgenv().BloxyEraLoopId = nil
 
@@ -768,6 +773,138 @@ task.spawn(function()
         end
         getgenv().ClassicBubbleCleanup = cleanup
         return cleanup
+    end
+
+    --========================================================
+    -- OLD-STYLE SPEEDOMETER (2010-2014)
+    -- A solid blue bar floats over the car you are driving, with "Speed: 46" under it, as in the old car
+    -- HUD of https://youtu.be/HgcfN5V0I-4 (checked on frames of a screen recording of it: the bar is
+    -- plain blue, no background, centred over the car, and its width grows with the speed, roughly 7
+    -- pixels for every point of speed on a 720p screen; the text is small, plain blue, centred under
+    -- it). Differences, on purpose: the bar stops growing at MAX_BAR pixels, so it fits a phone
+    -- screen (the original just kept getting wider), and the text has a faint outline so it can be
+    -- read on a dark car. Only 2010-2014 have it: nothing before 2010, and from 2015 on the normal
+    -- GUI. It shows in VehicleSeats, and in other seats once they move (cars with a seat of their
+    -- own). Pixel sizes, so it reads the same on any screen. Speed is in studs per second.
+    --========================================================
+    local function startSpeedometer()
+        if getgenv().SpeedometerCleanup then return end   -- already on
+
+        local LocalPlayer = Players.LocalPlayer
+        local BLUE = Color3.fromRGB(0, 0, 255)
+        local PIXELS_PER_SPEED = 5       -- the original: about 7 on a 720p screen
+        local MAX_BAR = 300              -- fits a phone screen
+        local BAR_HEIGHT = 10
+        local running = true
+        local connections = {}
+        local display = nil      -- { gui, bar, label, seat, beat, sinceUpdate }
+
+        local function hide()
+            if not display then return end
+            local shown = display
+            display = nil
+            pcall(function() shown.beat:Disconnect() end)
+            pcall(function() shown.gui:Destroy() end)
+        end
+
+        local function update()
+            local shown = display
+            if not shown then return end
+            local seat = shown.seat
+            if not seat.Parent then hide() return end
+            local speed = seat.AssemblyLinearVelocity.Magnitude
+            -- a plain seat (a bench, a ride) only shows once it is really moving
+            shown.gui.Enabled = seat:IsA("VehicleSeat") or speed > 3
+            shown.label.Text = string.format("Speed: %d", math.floor(speed + 0.5))
+            shown.bar.Size = UDim2.new(0, math.clamp(speed * PIXELS_PER_SPEED, 0, MAX_BAR), 0, BAR_HEIGHT)
+        end
+
+        local function show(seat)
+            if display and display.seat == seat then return end
+            hide()
+
+            local gui = Instance.new("BillboardGui")
+            gui.Name = "ClassicSpeedometer"
+            gui.Adornee = seat
+            gui.Size = UDim2.new(0, MAX_BAR + 20, 0, 32)
+            gui.StudsOffsetWorldSpace = Vector3.new(0, 3.5, 0)
+            gui.AlwaysOnTop = true
+            gui.MaxDistance = math.huge
+            gui.LightInfluence = 0
+            gui:SetAttribute("ClassicOwned", true)
+
+            local bar = Instance.new("Frame")
+            bar.Name = "Bar"
+            bar.AnchorPoint = Vector2.new(0.5, 0)
+            bar.Position = UDim2.new(0.5, 0, 0, 0)
+            bar.Size = UDim2.new(0, 0, 0, BAR_HEIGHT)
+            bar.BackgroundColor3 = BLUE
+            bar.BorderSizePixel = 0
+            bar.Parent = gui
+
+            local label = Instance.new("TextLabel")
+            label.Name = "Speed"
+            label.AnchorPoint = Vector2.new(0.5, 0)
+            label.Position = UDim2.new(0.5, 0, 0, BAR_HEIGHT + 2)
+            label.Size = UDim2.new(0, 160, 0, 16)
+            label.BackgroundTransparency = 1
+            label.Font = Enum.Font.Legacy
+            label.TextSize = 14
+            label.TextColor3 = BLUE
+            label.TextStrokeColor3 = Color3.fromRGB(255, 255, 255)
+            label.TextStrokeTransparency = 0.6
+            label.Text = "Speed: 0"
+            label.Parent = gui
+
+            if not pcall(function() gui.Parent = CoreGui end) then gui.Parent = pg end
+
+            local shown = { gui = gui, bar = bar, label = label, seat = seat, sinceUpdate = 0 }
+            -- 20 times a second is plenty for a number and a bar
+            shown.beat = RunService.Heartbeat:Connect(function(dt)
+                shown.sinceUpdate = shown.sinceUpdate + (dt or 0)
+                if shown.sinceUpdate < 0.05 then return end
+                shown.sinceUpdate = 0
+                update()
+            end)
+            display = shown
+            update()
+        end
+
+        local function onSeat(humanoid)
+            local seat = humanoid.SeatPart
+            if running and seat then show(seat) else hide() end
+        end
+
+        local function bindCharacter(character)
+            task.spawn(function()
+                local humanoid = character:FindFirstChildOfClass("Humanoid") or character:WaitForChild("Humanoid", 10)
+                if not running or not humanoid then return end
+                table.insert(connections, humanoid:GetPropertyChangedSignal("SeatPart"):Connect(function()
+                    onSeat(humanoid)
+                end))
+                onSeat(humanoid)
+            end)
+        end
+
+        table.insert(connections, LocalPlayer.CharacterAdded:Connect(function(character)
+            hide()
+            bindCharacter(character)
+        end))
+        if LocalPlayer.Character then bindCharacter(LocalPlayer.Character) end
+
+        local function cleanup()
+            running = false
+            for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
+            connections = {}
+            hide()
+            if getgenv().SpeedometerCleanup == cleanup then getgenv().SpeedometerCleanup = nil end
+        end
+        getgenv().SpeedometerCleanup = cleanup
+        print("[Loader] speedometer on (2010-2014)")
+    end
+
+    local function stopSpeedometer()
+        if getgenv().SpeedometerCleanup then pcall(getgenv().SpeedometerCleanup) end
     end
 
     --========================================================
@@ -1970,6 +2107,14 @@ end
             -- leaving 2015 / 2016: the 2017 bubbles stop
             if activeBubbleEra == "bubble2017" then stopBubbleScript("bubble2017") end
             if getgenv().Bubble2017Cleanup then pcall(getgenv().Bubble2017Cleanup) end
+        end
+
+        -- the old speedometer is for 2010-2014 only (the classic eras and 2010); every other era stops it
+        if era == "classic" or era == "y2010" then
+            local ok, err = pcall(startSpeedometer)
+            if not ok then warn("[Loader] the speedometer didn't start: " .. tostring(err)) end
+        else
+            stopSpeedometer()
         end
 
         if era == "none" then
