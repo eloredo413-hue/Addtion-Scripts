@@ -445,7 +445,14 @@ task.spawn(function()
         local BUBBLE_NAME = "__CLASSIC_2011_BUBBLE"
         local MAX_DISTANCE = 75
         local DOT_DISTANCE = 52          -- farther than this: the newest bubble shows "..."
-        local LIFETIME = 20              -- seconds a message stays up
+        -- How long a message stays up is Roblox's own rule from its bubble chat script (BubbleChat.lua):
+        -- your own messages 8 s (a short one) to 15 s (75 characters or more), other players' 12 to
+        -- 20 s. It used to be 20 s for everything, the longest of those. No fade, like 2011.
+        local function bubbleLifetime(text, isSelf)
+            local t = math.min(#text / 75, 1)
+            if isSelf then return 8 + 7 * t end
+            return 12 + 8 * t
+        end
         local MAX_BUBBLES = 3            -- messages shown at once per player
         local BUBBLE_GAP = 2
         local FONT_SIZE = 20
@@ -683,7 +690,7 @@ task.spawn(function()
             frame.Parent = stack.gui
             layout(stack)
 
-            task.delay(LIFETIME, function() removeEntry(stack, entry) end)
+            task.delay(bubbleLifetime(text, player == Players.LocalPlayer), function() removeEntry(stack, entry) end)
         end
 
         local function receiveMessage(player, text)
