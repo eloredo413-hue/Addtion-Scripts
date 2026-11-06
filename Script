@@ -782,14 +782,16 @@ task.spawn(function()
     -- place on the screen (centred, a little below the middle), and its width grows with the speed,
     -- roughly 7 pixels for every point of speed on a 720p screen; the text is small, plain blue, no
     -- outline, centred under it. It is a screen GUI, not attached to the player or the car.
-    --   * Only when the game has a speed readout of its own on: a visible label that reads like a speed
-    --     ("Speed: 46", "46 MPH", "120 km/h", or a number in a label called Speed ...), in your GUI or on
-    --     the car you are sitting in. A game without one gets no speedometer. When there is one, the
-    --     number shown is the game's own number (so the units match), else the car's speed, and this
-    --     one takes the place of the game's own speedometer in your GUI: that one is switched off while
-    --     this is up and back on when it goes (a dashboard on the car is left alone).
-    --   * What it found (or didn't) is printed to the console. getgenv().SpeedometerAlways = true shows
-    --     it even in a game without a readout, to try it.
+    --   * It always shows while you are driving. If the game has a speed readout of its own on (a
+    --     visible label that reads like a speed: "Speed: 46", "46 MPH", "120 km/h", or a number in a
+    --     label called Speed ..., in your GUI or on the car), the number shown is the game's own number
+    --     (so the units match) and this one takes the place of the game's speedometer in your GUI: that
+    --     one is switched off while this is up and back on when it goes (a dashboard on the car is
+    --     left alone). Without one (or with the game's GUI hidden by "hide game GUI") it shows the
+    --     car's own speed. getgenv().SpeedometerOnlyWithGameReadout = true makes it show only when the
+    --     game has a readout.
+    --   * "Hide game GUI" leaves it alone (it is in the hidden-UI container, and is told to keep it).
+    --   * What it found is printed to the console.
     --   * Only while you are sitting in a VehicleSeat (another seat only once it moves).
     --   * Only 2010-2014 have it: nothing before 2010, and from 2015 on the normal GUI.
     -- Redrawn every frame and the bar eases toward its width, so it moves smoothly. On purpose
@@ -803,6 +805,7 @@ task.spawn(function()
         local BLUE = Color3.fromRGB(0, 0, 255)
         local PIXELS_PER_SPEED = 5       -- the original: about 7 on a 720p screen
         local MAX_BAR = 300              -- fits a phone screen
+        local MIN_BAR = 3                -- so it can be seen at a standstill
         local BAR_HEIGHT = 10
         local EASE = 14                  -- how fast the bar follows (per second)
         local running = true
@@ -923,7 +926,7 @@ task.spawn(function()
         end
 
         local function barWidthFor(speed)
-            return math.clamp(speed * PIXELS_PER_SPEED, 0, MAX_BAR)
+            return math.clamp(speed * PIXELS_PER_SPEED, MIN_BAR, MAX_BAR)
         end
 
         local function frame(dt)
@@ -955,8 +958,9 @@ task.spawn(function()
             end
 
             local physical = seat.AssemblyLinearVelocity.Magnitude
-            local always = getgenv().SpeedometerAlways == true      -- to try it in a game without a readout
-            local on = (shown.readout ~= nil or always) and (seat:IsA("VehicleSeat") or physical > 3)
+            -- always, unless it was asked to follow the game's readout only
+            local needsReadout = getgenv().SpeedometerOnlyWithGameReadout == true
+            local on = (shown.readout ~= nil or not needsReadout) and (seat:IsA("VehicleSeat") or physical > 3)
             if shown.gui.Enabled ~= on then
                 shown.gui.Enabled = on
                 shown.justShown = on
@@ -1029,13 +1033,17 @@ task.spawn(function()
 
             local parentGui = (gethui and gethui()) or CoreGui
             if not pcall(function() gui.Parent = parentGui end) then gui.Parent = pg end
+            -- "hide game GUI" must not take this one away
+            pcall(function()
+                local hider = getgenv().GameGuiHider
+                if hider and hider.Keep then hider.Keep(gui) end
+            end)
 
             local shown = { gui = gui, bar = bar, label = label, seat = seat, clock = 0, nextCheck = 0,
                             readout = nil, width = 0, shownNumber = nil, justShown = false }
             shown.beat = RunService.RenderStepped:Connect(frame)
             display = shown
-            print("[Speedometer] sitting in " .. seat:GetFullName() .. " (" .. seat.ClassName .. "): looking for the game's speed readout"
-                .. " (no readout, no speedometer; getgenv().SpeedometerAlways = true shows it anyway)")
+            print("[Speedometer] shown for " .. seat:GetFullName() .. " (" .. seat.ClassName .. "); it uses the game's speed readout if it has one, else the car's speed")
             frame(0)
         end
 
@@ -1060,6 +1068,18 @@ task.spawn(function()
             bindCharacter(character)
         end))
         if LocalPlayer.Character then bindCharacter(LocalPlayer.Character) end
+
+        -- every half second: is the player in a seat? (in case an event was missed, or the character
+        -- was replaced); this is two property reads
+        task.spawn(function()
+            while running do
+                task.wait(0.5)
+                if not running then break end
+                local character = LocalPlayer.Character
+                local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                if humanoid then onSeat(humanoid) else hide() end
+            end
+        end)
 
         local function cleanup()
             running = false
