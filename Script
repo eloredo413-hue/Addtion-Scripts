@@ -777,15 +777,20 @@ task.spawn(function()
 
     --========================================================
     -- OLD-STYLE SPEEDOMETER (2010-2014)
-    -- A solid blue bar floats over the car you are driving, with "Speed: 46" under it, as in the old car
-    -- HUD of https://youtu.be/HgcfN5V0I-4 (checked on frames of a screen recording of it: the bar is
-    -- plain blue, no background, centred over the car, and its width grows with the speed, roughly 7
-    -- pixels for every point of speed on a 720p screen; the text is small, plain blue, centred under
-    -- it). Differences, on purpose: the bar stops growing at MAX_BAR pixels, so it fits a phone
-    -- screen (the original just kept getting wider), and the text has a faint outline so it can be
-    -- read on a dark car. Only 2010-2014 have it: nothing before 2010, and from 2015 on the normal
-    -- GUI. It shows in VehicleSeats, and in other seats once they move (cars with a seat of their
-    -- own). Pixel sizes, so it reads the same on any screen. Speed is in studs per second.
+    -- A solid blue bar with "Speed: 46" under it, as in the old car HUD of https://youtu.be/HgcfN5V0I-4.
+    -- From frames of a screen recording of it: the bar is plain blue, no background, always at the same
+    -- place on the screen (centred, a little below the middle), and its width grows with the speed,
+    -- roughly 7 pixels for every point of speed on a 720p screen; the text is small, plain blue, no
+    -- outline, centred under it. It is a screen GUI, not attached to the player or the car.
+    --   * Only when the game has a speed readout of its own on: a visible label that reads like a speed
+    --     ("Speed: 46", "46 MPH", "120 km/h", or a number in a label called Speed ...), in your GUI or on
+    --     the car you are sitting in. A game without one gets no speedometer. When there is one, the
+    --     number shown is the game's own number (so the units match), else the car's speed.
+    --   * Only while you are sitting in a VehicleSeat (another seat only once it moves).
+    --   * Only 2010-2014 have it: nothing before 2010, and from 2015 on the normal GUI.
+    -- Redrawn every frame and the bar eases toward its width, so it moves smoothly. On purpose
+    -- different from the original: the bar stops growing at MAX_BAR pixels, so it fits a phone screen
+    -- (the original kept getting wider; about 5 pixels per point of speed instead of about 7).
     --========================================================
     local function startSpeedometer()
         if getgenv().SpeedometerCleanup then return end   -- already on
@@ -795,9 +800,56 @@ task.spawn(function()
         local PIXELS_PER_SPEED = 5       -- the original: about 7 on a 720p screen
         local MAX_BAR = 300              -- fits a phone screen
         local BAR_HEIGHT = 10
+        local EASE = 14                  -- how fast the bar follows (per second)
         local running = true
         local connections = {}
-        local display = nil      -- { gui, bar, label, seat, beat, sinceUpdate }
+        local display = nil      -- { gui, bar, label, seat, beat, clock, readout, nextCheck, width, shownNumber }
+
+        -- is this label a speed readout, and is it on screen?
+        local function looksLikeSpeedReadout(obj)
+            local class = obj.ClassName
+            if class ~= "TextLabel" and class ~= "TextButton" then return false end
+            local text = string.lower(obj.Text or "")
+            if not string.find(text, "%d") then return false end
+            if string.find(text, "speed", 1, true) or string.find(text, "mph", 1, true)
+               or string.find(text, "km/h", 1, true) or string.find(text, "kmh", 1, true)
+               or string.find(text, "kph", 1, true) or string.find(text, "studs/s", 1, true) then
+                return true
+            end
+            local name = string.lower(obj.Name)
+            return string.find(name, "speed", 1, true) ~= nil or string.find(name, "mph", 1, true) ~= nil
+                or string.find(name, "kmh", 1, true) ~= nil
+        end
+
+        local function isOnScreen(obj)
+            local current = obj
+            while current and current ~= game do
+                if current:IsA("GuiObject") then
+                    if not current.Visible then return false end
+                elseif current:IsA("LayerCollector") then
+                    if not current.Enabled then return false end
+                end
+                current = current.Parent
+            end
+            -- a GUI that was taken out of the game is not on screen either
+            return current == game
+        end
+
+        -- the game's own speed readout: in the player's GUI, or on the car (a dashboard)
+        local function findReadout(seat)
+            local roots = { pg }
+            local car = seat:FindFirstAncestorOfClass("Model")
+            if car then table.insert(roots, car) end
+            for _, root in ipairs(roots) do
+                for _, obj in ipairs(root:GetDescendants()) do
+                    if looksLikeSpeedReadout(obj) and isOnScreen(obj)
+                       and not (display and obj:IsDescendantOf(display.gui)) then
+                        return obj
+                    end
+                end
+            end
+            return nil
+        end
 
         local function hide()
             if not display then return end
@@ -807,31 +859,79 @@ task.spawn(function()
             pcall(function() shown.gui:Destroy() end)
         end
 
-        local function update()
+        local function barWidthFor(speed)
+            return math.clamp(speed * PIXELS_PER_SPEED, 0, MAX_BAR)
+        end
+
+        local function frame(dt)
             local shown = display
             if not shown then return end
             local seat = shown.seat
             if not seat.Parent then hide() return end
-            local speed = seat.AssemblyLinearVelocity.Magnitude
-            -- a plain seat (a bench, a ride) only shows once it is really moving
-            shown.gui.Enabled = seat:IsA("VehicleSeat") or speed > 3
-            shown.label.Text = string.format("Speed: %d", math.floor(speed + 0.5))
-            shown.bar.Size = UDim2.new(0, math.clamp(speed * PIXELS_PER_SPEED, 0, MAX_BAR), 0, BAR_HEIGHT)
+            shown.clock = shown.clock + dt
+
+            -- the game's readout: looked for every two seconds while there is none, and checked every
+            -- half second while there is one (it can be switched off, or the game can remove it)
+            if shown.clock >= shown.nextCheck then
+                if shown.readout and not (shown.readout.Parent and isOnScreen(shown.readout)) then
+                    shown.readout = nil
+                end
+                if not shown.readout then
+                    shown.readout = findReadout(seat)
+                end
+                shown.nextCheck = shown.clock + (shown.readout and 0.5 or 2)
+            end
+
+            local physical = seat.AssemblyLinearVelocity.Magnitude
+            local on = shown.readout ~= nil and (seat:IsA("VehicleSeat") or physical > 3)
+            if shown.gui.Enabled ~= on then
+                shown.gui.Enabled = on
+                shown.justShown = on
+            end
+            if not on then return end
+
+            -- the game's number if it has one, else the car's speed
+            local speed = physical
+            local number = tonumber(string.match(shown.readout.Text or "", "%d+%.?%d*"))
+            if number then speed = number end
+
+            local target = barWidthFor(speed)
+            if shown.justShown then
+                shown.width = target          -- no growing from nothing when it appears
+                shown.justShown = false
+            else
+                shown.width = shown.width + (target - shown.width) * (1 - math.exp(-EASE * dt))
+            end
+            shown.bar.Size = UDim2.new(0, shown.width, 0, BAR_HEIGHT)
+
+            local rounded = math.floor(speed + 0.5)
+            if rounded ~= shown.shownNumber then
+                shown.shownNumber = rounded
+                shown.label.Text = "Speed: " .. rounded
+            end
         end
 
         local function show(seat)
             if display and display.seat == seat then return end
             hide()
 
-            local gui = Instance.new("BillboardGui")
+            -- a screen GUI, always in the same place: not attached to the player or the car
+            local gui = Instance.new("ScreenGui")
             gui.Name = "ClassicSpeedometer"
-            gui.Adornee = seat
-            gui.Size = UDim2.new(0, MAX_BAR + 20, 0, 32)
-            gui.StudsOffsetWorldSpace = Vector3.new(0, 3.5, 0)
-            gui.AlwaysOnTop = true
-            gui.MaxDistance = math.huge
-            gui.LightInfluence = 0
+            gui.ResetOnSpawn = false
+            gui.IgnoreGuiInset = true
+            gui.DisplayOrder = 5
+            gui.Enabled = false
             gui:SetAttribute("ClassicOwned", true)
+
+            local holder = Instance.new("Frame")
+            holder.Name = "Holder"
+            holder.AnchorPoint = Vector2.new(0.5, 0)
+            holder.Position = UDim2.new(0.5, 0, 0.55, 0)
+            holder.Size = UDim2.new(0, MAX_BAR + 20, 0, 32)
+            holder.BackgroundTransparency = 1
+            holder.BorderSizePixel = 0
+            holder.Parent = gui
 
             local bar = Instance.new("Frame")
             bar.Name = "Bar"
@@ -840,7 +940,7 @@ task.spawn(function()
             bar.Size = UDim2.new(0, 0, 0, BAR_HEIGHT)
             bar.BackgroundColor3 = BLUE
             bar.BorderSizePixel = 0
-            bar.Parent = gui
+            bar.Parent = holder
 
             local label = Instance.new("TextLabel")
             label.Name = "Speed"
@@ -851,23 +951,17 @@ task.spawn(function()
             label.Font = Enum.Font.Legacy
             label.TextSize = 14
             label.TextColor3 = BLUE
-            label.TextStrokeColor3 = Color3.fromRGB(255, 255, 255)
-            label.TextStrokeTransparency = 0.6
             label.Text = "Speed: 0"
-            label.Parent = gui
+            label.Parent = holder
 
-            if not pcall(function() gui.Parent = CoreGui end) then gui.Parent = pg end
+            local parentGui = (gethui and gethui()) or CoreGui
+            if not pcall(function() gui.Parent = parentGui end) then gui.Parent = pg end
 
-            local shown = { gui = gui, bar = bar, label = label, seat = seat, sinceUpdate = 0 }
-            -- 20 times a second is plenty for a number and a bar
-            shown.beat = RunService.Heartbeat:Connect(function(dt)
-                shown.sinceUpdate = shown.sinceUpdate + (dt or 0)
-                if shown.sinceUpdate < 0.05 then return end
-                shown.sinceUpdate = 0
-                update()
-            end)
+            local shown = { gui = gui, bar = bar, label = label, seat = seat, clock = 0, nextCheck = 0,
+                            readout = nil, width = 0, shownNumber = nil, justShown = false }
+            shown.beat = RunService.RenderStepped:Connect(frame)
             display = shown
-            update()
+            frame(0)
         end
 
         local function onSeat(humanoid)
