@@ -7,7 +7,7 @@
 -- + Roblox's NPC dialog box kept for every topbar (the 2014 / 2015 / 2016 / 2017 / 2019 GUIs
 --   deleted or hid it): the choices show, and on phones the controls come back after talking
 -- + 2005: no NPC dialogs and no chat bubbles of ours (2005 had neither)
--- + More guis = the More guis gist (its own 2019 / 2017 / 2021 / 2023 old GUIs)
+-- + More guis = "More gui fix" from the More-guis repo (its own 2019 / 2017 / 2021 / 2023 old GUIs)
 -- + Safe Native Dialog Bypass (No overlap, no glitching)
 -- + Player dialog bubbles render perfectly (Folder host)
 -- + Regular Chat Bubbles 100% Untouched
@@ -157,8 +157,9 @@ local mainAddons = {
     "https://gist.githubusercontent.com/eloredo413-hue/35defa7ccbdf161211e5c5459224a3f8/raw/1029162caac368de2c5236a5bff84bd39fe8a672/Explosion%2520Replace%2520Addon",
 }
 
--- the More guis gist (a fixed version: to update it, change this link)
-local URL_MORE_GUIS         = "https://gist.githubusercontent.com/eloredo413-hue/c0f61297079ba26bf5978f4467ca1980/raw/0fc8b8a5f67c292e413fbeee696e0ccccc0effa4/More%2520guis"
+-- "More gui fix" from the More-guis repo (main branch), so it picks up every fix merged there
+-- without updating this link.
+local URL_MORE_GUIS         = "https://raw.githubusercontent.com/eloredo413-hue/More-guis/refs/heads/main/More%20gui%20fix"
 local URL_SAFECHAT_HOOK     = "https://gist.githubusercontent.com/eloredo413-hue/47847c9c0567c5b365c8bfa249d59190/raw/036418365fc79e40e7dc1d1120fca6de9e4600a0/Safe%2520chat%2520Hook"
 -- adds "What terrain do you want?" (2013 / 2014 / none) to Bloxy's setup, before "old particles"
 local URL_TERRAIN_HOOK      = "https://gist.githubusercontent.com/eloredo413-hue/e6591965831062d75e09aa49f60e2653/raw/dd8b8127a30461a7d0c11a312e8e0dba665fa5f9/Terrian%2520hook"
@@ -168,7 +169,7 @@ local URL_BUBBLE_2015_2016  = "https://gist.githubusercontent.com/eloredo413-hue
 -- GUIs More guis loads, swapped for the copies in this repo before More guis runs (no need to
 -- change the More guis gist):
 --   * 2015 early (E2015 Gui.lua): the leaderboard kept thin on phones
--- (2019 is not swapped: the More guis gist has a 2019 GUI of its own.)
+-- (2019 is not swapped: More gui fix has a 2019 GUI of its own.)
 local MORE_GUIS_SWAPS = {
     URL_2015EARLY = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/E2015%20Gui.lua",
 }
