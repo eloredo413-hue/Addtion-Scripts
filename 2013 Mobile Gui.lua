@@ -1,4 +1,4 @@
--- [[ 2013 MOBILE GUI (Addtion-Scripts copy) - fix: the on-screen joystick now drives vehicles (VehicleSeat) ]]
+-- [[ 2013 MOBILE GUI (Addtion-Scripts copy) - fix: vehicles can be driven (Roblox's own touch controls come back while seated) ]]
 --[[
     =========================================================
     PART 1: SERVICES, SETTINGS & PRELOADING
@@ -83,11 +83,14 @@ local function eliminateNativeMenuCompletely()
 end
 eliminateNativeMenuCompletely()
 
+-- true while Roblox's own touch controls are given back (sitting in a vehicle, see VEHICLES below)
+local useRobloxControls = false
+
 -- Persistent Modern Touch UI Hider (Preserves Backpack/Inventory)
 task.spawn(function()
     while true do
         local modernTouch = PlayerGui:FindFirstChild("TouchGui")
-        if modernTouch and modernTouch.Enabled then 
+        if modernTouch and modernTouch.Enabled and not useRobloxControls then
             modernTouch.Enabled = false 
         end
         task.wait(0.5)
@@ -262,7 +265,7 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- VEHICLES (fix): the joystick above only called LocalPlayer:Move(), which walks a character but
+-- VEHICLES (fallback, for when Roblox's touch controls cannot be given back, see below): the joystick above only called LocalPlayer:Move(), which walks a character but
 -- does nothing for a car. A VehicleSeat is driven by its Throttle / Steer, and only Roblox's own
 -- touch controls (turned off by this GUI) set those. So while sitting in a VehicleSeat the stick now
 -- sets them itself, the way Roblox's controls do: stick up = forward, down = brake / reverse,
@@ -306,6 +309,53 @@ do
             releaseSeat(drivenSeat)
             drivenSeat = nil
         end
+    end)
+end
+
+-- VEHICLES (the real fix): this GUI replaces Roblox's touch controls with its own joystick, which only
+-- walks a character. A car is driven by the game's own vehicle code, which reads Roblox's real controls
+-- (the control module / the touch thumbstick), so with only this joystick nothing happens. So while you
+-- are sitting, Roblox's own touch controls are given back, exactly as in a normal Roblox game, and this
+-- joystick and jump button are hidden; as soon as you get out, the 2013 controls return. (Roblox's own
+-- jump button is how you get out of the seat meanwhile.) If the game has no Roblox touch controls to
+-- give back, this joystick stays and drives VehicleSeat cars by itself (the part above).
+-- HAND_BACK_IN_ANY_SEAT = false would do it for VehicleSeat cars only, not for custom seats / chairs.
+do
+    local HAND_BACK_IN_ANY_SEAT = true
+    local handedBack = false
+
+    local function setHandedBack(on)
+        if on == handedBack then return end
+        handedBack = on
+        useRobloxControls = on
+        local touchGui = PlayerGui:FindFirstChild("TouchGui")
+        if on then
+            -- let go of this joystick, so nothing keeps pushing
+            moveTouchObject = nil
+            jumpTouchObject = nil
+            isJumpButtonDown = false
+            moveVector = Vector3.new(0, 0, 0)
+            walkSpeedFactor = 0
+            JoystickStick.Position = UDim2.new(0.5, 0, 0.5, 0)
+            JumpButton.ImageRectOffset = Vector2.new(176, 222)
+            touchScreenGui.Enabled = false
+            if touchGui then touchGui.Enabled = true end
+        else
+            touchScreenGui.Enabled = true
+            if touchGui then touchGui.Enabled = false end
+        end
+    end
+
+    RunService.RenderStepped:Connect(function()
+        local character = LocalPlayer.Character
+        local hum = character and character:FindFirstChildOfClass("Humanoid")
+        local seat = hum and hum.SeatPart
+        local want = false
+        if seat and (HAND_BACK_IN_ANY_SEAT or seat:IsA("VehicleSeat")) then
+            -- only when there are Roblox touch controls to give back
+            want = PlayerGui:FindFirstChild("TouchGui") ~= nil
+        end
+        setHandedBack(want)
     end)
 end
 
