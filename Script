@@ -159,7 +159,7 @@ local mainAddons = {
     URL_WIZARD_SMOOTH,
     "https://gist.githubusercontent.com/eloredo413-hue/f156101652b68d2fdcbbeae4dc0481d6/raw/028c65e676eda5d90f9c3a0595347b102df2a0b9/2010%2520hook",
     "https://gist.githubusercontent.com/eloredo413-hue/6ec77a9b2884b534cd09f653a0fe023d/raw/94075a70190110e81a9c4153c340b19f3c903790/Old%2520physics%2520camera%2520addon",
-    "https://gist.githubusercontent.com/eloredo413-hue/35defa7ccbdf161211e5c5459224a3f8/raw/1029162caac368de2c5236a5bff84bd39fe8a672/Explosion%2520Replace%2520Addon",
+    "https://gist.githubusercontent.com/eloredo413-hue/85e4840f74edb2acaf0845da534c3d18/raw/e1de3a906c34929de562bc36aea179fa0e4eb7fe/Explosion%2520Replace%2520Addon",
 }
 
 -- "More gui fix" from the More-guis repo (main branch), so it picks up every fix merged there
