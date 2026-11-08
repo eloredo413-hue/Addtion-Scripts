@@ -65,6 +65,7 @@ end
 local function cleanup()
 	if destroyed then return end
 	destroyed = true
+	BPGenv.BPClimbing = nil
 	disconnectAll()
 	unbindAll()
 	cleanupCharacterObjects()
@@ -72,7 +73,9 @@ end
 
 _G.__RetroMasterCleanup = cleanup
 
-local FALLBACK_CLIMB_ANIMATION = "rbxassetid://165167632"
+-- Roblox's own default climb animations (R6 / R15): playable in every game
+local R6_CLIMB_ANIMATION = "rbxassetid://180436334"
+local R15_CLIMB_ANIMATION = "rbxassetid://507765644"
 
 -- 2006 physics climbing: a 1-stud box just in front of the feet; any part in it that is not big
 -- (average size and height under MAX_CLIMB_PART) can be climbed while you walk into it.
@@ -82,6 +85,8 @@ local CLIMB_UP_SPEED = 13       -- upward kick each frame while climbing
 local CLIMB_PUSH_SPEED = 24     -- push into the part
 local CLIMB_SIDE_DAMP = 0.8     -- sideways speed kept each frame while climbing
 local XZ = Vector3.new(1, 0, 1)
+
+local FALLBACK_CLIMB_ANIMATION = R6_CLIMB_ANIMATION
 
 local function setupCharacter(char)
 	if destroyed or not char then return end
@@ -152,6 +157,7 @@ local function setupCharacter(char)
 
 	local fallbackAnimation = Instance.new("Animation")
 	fallbackAnimation.Name = "RetroFallbackClimb"
+	FALLBACK_CLIMB_ANIMATION = (humanoid.RigType == Enum.HumanoidRigType.R15) and R15_CLIMB_ANIMATION or R6_CLIMB_ANIMATION
 	fallbackAnimation.AnimationId = FALLBACK_CLIMB_ANIMATION
 	table.insert(CharacterObjects, fallbackAnimation)
 
@@ -476,6 +482,8 @@ local function setupCharacter(char)
 		end
 
 		climbWanted = walkingIntoPart or humanoid:GetState() == Enum.HumanoidStateType.Climbing
+		-- (2007 Animation.lua reads this to show its climbing pose, not its falling one)
+		BPGenv.BPClimbing = climbWanted or nil
 		climbActive = walkingIntoPart or releasing
 			or humanoid:GetState() == Enum.HumanoidStateType.Climbing
 
@@ -492,6 +500,17 @@ local function setupCharacter(char)
 		else
 			climbLift.Parent = nil
 			climbGyro.Parent = nil
+		end
+	end))
+
+	-- The physics step can flip the state to Freefall between two frames, and every animation
+	-- script (Bloxy's 2008 / 2006 / 2014 ones included) shows what the last state was: falling.
+	-- So after the physics step the Climbing state is put back while the climb is on.
+	addConnection(RunService.Heartbeat:Connect(function()
+		if destroyed or not char.Parent or humanoid.Health <= 0 then return end
+		if climbWanted and not releasing and humanoid:GetState() ~= Enum.HumanoidStateType.Climbing
+			and not cantClimbNow() then
+			humanoid:ChangeState(Enum.HumanoidStateType.Climbing)
 		end
 	end))
 
@@ -525,6 +544,7 @@ local function setupCharacter(char)
 		if fallbackTrack then pcall(function() fallbackTrack:Stop(0) end) end
 		climbLift.Parent = nil
 		climbGyro.Parent = nil
+		BPGenv.BPClimbing = nil
 	end))
 
 	print("[Retro Master] Character system loaded (2006 climbing).")
