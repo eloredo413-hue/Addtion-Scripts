@@ -20,6 +20,7 @@
 --   and Wizard smooth v10, which no longer leaves its hooks on for the whole game)
 -- + The 2006 avatar's T-shirt shows again with the 2011-2014 chat bubbles (they only remove bubbles now)
 -- + Old-style speedometer (a blue bar) for 2010-2014; the game's own speedometer only from 2015 on
+-- + 2008 (More guis): treated like 2010, so no bubble script of ours runs over it (it has no chat bubbles)
 -- + Chat bubbles by era: 2005 and 2006 have none; 2010 and 2015 early draw their own (no bubble script
 --   of ours runs over them); 2011-2014 / mobile use the built-in 2011-style ones; 2015/2016 the 2017 ones
 --========================================================
@@ -350,11 +351,12 @@ task.spawn(function()
     end
 
     -- classic    = 2011-2014 / mobile (our 2011-style bubbles and dialogs)
-    -- y2010      = 2010 (its GUI draws its own chat bubbles, so none of ours)
+    -- y2010      = 2010 (its GUI draws its own chat bubbles, so none of ours), and 2008 (the 2010
+    --              GUI without chat bubbles: none of ours either)
     -- bubble2017 = 2015 / 2016 (they use the 2017 bubbles)
     -- modern     = 2017-2020
     -- none       = anything else (no GUI selected): nothing is touched
-    -- (2015 early, 2006 and 2005 are told apart at Confirm: see TOPBAR_VARIANTS below)
+    -- (2015 early, 2008, 2006 and 2005 are told apart at Confirm: see TOPBAR_VARIANTS below)
     -- 2015 / 2016 win when the text names one of them (a label such as "2016 (2014 style)" is
     -- 2016); the classic years and "mobile" only decide when no 2015 / 2016 is named.
     local function classifyEra(text)
@@ -2385,18 +2387,20 @@ end
     end
 
     -- Picks that More guis adds press one of Bloxy's own buttons for you, so Bloxy saves that
-    -- year instead ("2015 early" saves "2014", "2006" and "2005" save "2013"). At Confirm they are
+    -- year instead ("2015 early" saves "2014", "2008", "2006" and "2005" save "2013"). At Confirm they are
     -- told apart by what the topbar list shows ("2015 early  ▼"); only when the list can't be
     -- read, by the More guis pick that is still waiting to load. Bloxy's own "2010" is listed
     -- here too, so it is recognised whatever the saved config says.
     local TOPBAR_VARIANTS = {
         ["2015 early"] = "early2015",
         ["2010"]       = "y2010",
+        ["2008"]       = "y2010", -- the 2010 GUI without chat bubbles: no bubbles of ours over it
         ["2006"]       = "y2006",
         ["2005"]       = "y2005",
     }
     local PENDING_VARIANTS = {
         ["2015early"] = "early2015",
+        ["2008"]      = "y2010",
         ["2006"]      = "y2006",
         ["2005"]      = "y2005",
     }
