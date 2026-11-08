@@ -330,6 +330,9 @@ local function setupCharacter(char)
 		return position.Y, math.clamp(math.abs(position.Y - origin.Y), -1, 1)
 	end
 
+	-- true while the 2006 climbing below is at work (set there, read here a frame later)
+	local climbActive = false
+
 	local lastLevel = getFloorLevel()
 	local hipRenderName = "RetroHipHeight_" .. tostring(math.random(10000, 99999))
 	table.insert(RenderNames, hipRenderName)
@@ -341,6 +344,13 @@ local function setupCharacter(char)
 		end
 		dt = math.min(0.1, dt)
 		if humanoid.SeatPart then
+			humanoid.HipHeight = 0
+			lastLevel = getFloorLevel()
+			return
+		end
+		-- The 2006 physics keeps the hip height at 0 while climbing; floating up with the climb
+		-- kick would lift the feet-level search above the part being climbed.
+		if climbActive then
 			humanoid.HipHeight = 0
 			lastLevel = getFloorLevel()
 			return
@@ -471,12 +481,18 @@ local function setupCharacter(char)
 		local moveDir = humanoid.MoveDirection
 		local moving = moveDir.Magnitude > 0.01
 
-		-- Start (and keep) climbing while walking into a small part.
-		if moving and not releasing and not cantClimbNow() and climbablePartAhead() then
+		-- Start (and keep) climbing while walking into a small part. The kick goes on every frame
+		-- you walk into it, exactly as in the 2006 physics (while the Climbing state is switched
+		-- off after letting go, the state change does nothing but the kick still lifts you).
+		local walkingIntoPart = moving and not cantClimbNow() and climbablePartAhead()
+		if walkingIntoPart then
 			humanoid:ChangeState(Enum.HumanoidStateType.Climbing)
 			torso.AssemblyLinearVelocity = torso.AssemblyLinearVelocity * (XZ * CLIMB_SIDE_DAMP)
 				+ Vector3.new(0, CLIMB_UP_SPEED, 0)
 		end
+
+		climbActive = walkingIntoPart or releasing
+			or humanoid:GetState() == Enum.HumanoidStateType.Climbing
 
 		if humanoid:GetState() == Enum.HumanoidStateType.Climbing then
 			if moveDir.Magnitude < 0.1 then
@@ -503,7 +519,10 @@ local function setupCharacter(char)
 	-- "Climbing" (for the fallback climb animation and the turning below) follows the state.
 	addConnection(humanoid.StateChanged:Connect(function(_, newState)
 		local isClimbing = (newState == Enum.HumanoidStateType.Climbing)
-		if climbing.Value ~= isClimbing then climbing.Value = isClimbing end
+		if climbing.Value ~= isClimbing then
+			climbing.Value = isClimbing
+			if isClimbing then print("[Retro Master] Climbing (2006 climbing).") end
+		end
 	end))
 
 	local function onToolAdded(child)
@@ -523,7 +542,7 @@ local function setupCharacter(char)
 		climbGyro.Parent = nil
 	end))
 
-	print("[Retro Master] Character system loaded.")
+	print("[Retro Master] Character system loaded (2006 climbing).")
 end
 
 if LocalPlayer.Character then task.spawn(setupCharacter, LocalPlayer.Character) end
