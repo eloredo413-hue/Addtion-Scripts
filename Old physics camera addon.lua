@@ -73,9 +73,6 @@ end
 
 _G.__RetroMasterCleanup = cleanup
 
--- Roblox's own default climb animations (R6 / R15): playable in every game
-local R6_CLIMB_ANIMATION = "rbxassetid://180436334"
-local R15_CLIMB_ANIMATION = "rbxassetid://507765644"
 
 -- 2006 physics climbing: a 1-stud box just in front of the feet; any part in it that is not big
 -- (average size and height under MAX_CLIMB_PART) can be climbed while you walk into it.
@@ -83,10 +80,9 @@ local CLIMB_BOX = Vector3.new(1, 1, 1)
 local MAX_CLIMB_PART = 3.5
 local CLIMB_UP_SPEED = 13       -- upward kick each frame while climbing
 local CLIMB_PUSH_SPEED = 24     -- push into the part
+local MAX_FALL_TO_GRAB = 8      -- falling faster than this: no grabbing
 local CLIMB_SIDE_DAMP = 0.8     -- sideways speed kept each frame while climbing
 local XZ = Vector3.new(1, 0, 1)
-
-local FALLBACK_CLIMB_ANIMATION = R6_CLIMB_ANIMATION
 
 local function setupCharacter(char)
 	if destroyed or not char then return end
@@ -148,88 +144,10 @@ local function setupCharacter(char)
 		humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, true)
 	end)
 
-	local animator = humanoid:FindFirstChildOfClass("Animator")
-	if not animator then
-		animator = Instance.new("Animator")
-		animator.Name = "RetroClimbingAnimator"
-		animator.Parent = humanoid
-	end
-
-	local fallbackAnimation = Instance.new("Animation")
-	fallbackAnimation.Name = "RetroFallbackClimb"
-	FALLBACK_CLIMB_ANIMATION = (humanoid.RigType == Enum.HumanoidRigType.R15) and R15_CLIMB_ANIMATION or R6_CLIMB_ANIMATION
-	fallbackAnimation.AnimationId = FALLBACK_CLIMB_ANIMATION
-	table.insert(CharacterObjects, fallbackAnimation)
-
-	local fallbackTrack
-	pcall(function()
-		fallbackTrack = animator:LoadAnimation(fallbackAnimation)
-		fallbackTrack.Priority = Enum.AnimationPriority.Action4
-		fallbackTrack.Looped = true
-	end)
-
-	local function getAnimationId(track)
-		if not track then return "" end
-		local a = track.Animation
-		if not a then return "" end
-		local id = a.AnimationId
-		if not id then return "" end
-		return tostring(id):lower()
-	end
-
-	local function isFallback(track)
-		if not track then return false end
-		return getAnimationId(track) == FALLBACK_CLIMB_ANIMATION:lower()
-	end
-
-	local function findCustomClimbAnimation()
-		local tracks
-		pcall(function() tracks = animator:GetPlayingAnimationTracks() end)
-		if not tracks then return nil end
-		for _, track in ipairs(tracks) do
-			if track and track.IsPlaying and track ~= fallbackTrack and not isFallback(track) then
-				return track
-			end
-		end
-		return nil
-	end
-
-	local fallbackStartedByUs = false
+	-- No climb animation of our own is played any more: it was Roblox's modern one, which showed up
+	-- over whichever animation you picked in the wizard. The climbing state is kept up instead (below),
+	-- so the animation you picked plays ITS OWN climbing animation.
 	local climbWanted = false -- true while the 2006 climbing is at work
-	local function stopFallback()
-		if fallbackTrack and fallbackTrack.IsPlaying then
-			pcall(function() fallbackTrack:Stop(0.1) end)
-		end
-		fallbackStartedByUs = false
-	end
-	local function startFallback()
-		if not fallbackTrack then return end
-		-- Hammer stuff 2's old avatar / "2007" animation move the joints themselves; a climb
-		-- animation over them would fight it.
-		if BPGenv.BPProceduralAnimation then return end
-		if not fallbackTrack.IsPlaying then
-			pcall(function() fallbackTrack:Play(0.1) end)
-			fallbackStartedByUs = true
-		end
-	end
-
-	-- The climb animation plays whenever the 2006 climbing is at work (set below, every frame), at the
-	-- highest animation priority, so the falling / jumping animation can't show over it. (It used to
-	-- wait for "no other animation playing", which the falling animation always satisfied.)
-	local animationRenderName = "RetroClimbAnimationDetector_" .. tostring(math.random(10000, 99999))
-	table.insert(RenderNames, animationRenderName)
-	RunService:BindToRenderStep(animationRenderName, 410, function()
-		if destroyed or not char.Parent or humanoid.Health <= 0 then
-			pcall(function() RunService:UnbindFromRenderStep(animationRenderName) end)
-			return
-		end
-		if not fallbackTrack then return end
-		if climbWanted and not BPGenv.BPProceduralAnimation then
-			if not fallbackTrack.IsPlaying then startFallback() end
-		elseif fallbackStartedByUs and fallbackTrack.IsPlaying then
-			stopFallback()
-		end
-	end)
 
 	local lastFallSpeed = 0
 	addConnection(RunService.Heartbeat:Connect(function()
@@ -474,11 +392,16 @@ local function setupCharacter(char)
 		-- Start (and keep) climbing while walking into a small part. The kick goes on every frame
 		-- you walk into it, exactly as in the 2006 physics (while the Climbing state is switched
 		-- off after letting go, the state change does nothing but the kick still lifts you).
-		local walkingIntoPart = moving and not cantClimbNow() and climbablePartAhead()
+		local velocity = torso.AssemblyLinearVelocity
+		-- (not while letting go, and not in a real fall: dropping past a wall must not grab it)
+		local walkingIntoPart = moving and not releasing and velocity.Y > -MAX_FALL_TO_GRAB
+			and not cantClimbNow() and climbablePartAhead()
 		if walkingIntoPart then
 			humanoid:ChangeState(Enum.HumanoidStateType.Climbing)
-			torso.AssemblyLinearVelocity = torso.AssemblyLinearVelocity * (XZ * CLIMB_SIDE_DAMP)
-				+ Vector3.new(0, CLIMB_UP_SPEED, 0)
+			-- the kick sets the upward speed instead of adding to it every frame, so it can't build up
+			-- into being flung upwards
+			torso.AssemblyLinearVelocity = Vector3.new(velocity.X * CLIMB_SIDE_DAMP,
+				math.max(velocity.Y, CLIMB_UP_SPEED), velocity.Z * CLIMB_SIDE_DAMP)
 		end
 
 		climbWanted = walkingIntoPart or humanoid:GetState() == Enum.HumanoidStateType.Climbing
@@ -541,7 +464,6 @@ local function setupCharacter(char)
 	addConnection(char.ChildAdded:Connect(onToolAdded))
 
 	addConnection(humanoid.Died:Connect(function()
-		if fallbackTrack then pcall(function() fallbackTrack:Stop(0) end) end
 		climbLift.Parent = nil
 		climbGyro.Parent = nil
 		BPGenv.BPClimbing = nil
