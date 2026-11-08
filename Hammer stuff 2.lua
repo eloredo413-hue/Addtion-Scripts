@@ -1,5 +1,5 @@
 -- [[ (Addtion-Scripts copy: Remove Pro keeps shadows) HEALTH ESP + REMOVE PRO + CLASSIC OUTLINE + LENS FLARE + AVATAR DROPDOWN (OLD / 2006)
---    + CLASSIC FACE + COLOR LIMITER DROPDOWN (2012 / 2006 / 2005) + HIDE GAME GUI + LEGACY LIGHTING
+--    + ANIMATION DROPDOWN (2007) + CLASSIC FACE + COLOR LIMITER DROPDOWN (2012 / 2006 / 2005) + HIDE GAME GUI + LEGACY LIGHTING
 --    + OLD DECAL RENDERING BUTTON ]]
 -- Execute Hammer stuff 1 first, then this.
 
@@ -56,6 +56,7 @@ task.spawn(function()
 		isOldAvatarEnabled   = config.isOldAvatarEnabled or false,
 		isClassicFaceEnabled = config.isClassicFaceEnabled or false,
 		is2006AvatarEnabled  = config.is2006AvatarEnabled or false,
+		is2007AnimationEnabled = config.is2007AnimationEnabled or false,
 		is2012ColorsEnabled  = config.is2012ColorsEnabled or false,
 		is2006ColorsEnabled  = config.is2006ColorsEnabled or false,
 		is2005ColorsEnabled  = config.is2005ColorsEnabled or false,
@@ -826,13 +827,367 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
+	-- 4B. 2007 ANIMATION ENGINE (the old avatar's animation, on its own)
+	-- The old Animate script's procedural R6 animation: Motor6D shoulders and hips swing
+	-- (arms out when standing, swinging when running, arms up when jumping or falling,
+	-- legs forward when seated, arms up the ladder when climbing, tool slash and lunge).
+	-- "old avatar" and the "2007" animation option both run on it; it stays on while at
+	-- least one of them is on. R6 characters only.
+	------------------------------------------------------------
+	local motion = {
+		listeners = {},       -- function(running) called when the engine starts / stops
+		keepAnimateOff = nil, -- optional function() -> true: leave the game's Animate disabled when stopping
+	}
+	do
+		local holders = {}     -- who asked for it ("old avatar", "2007")
+		local running = false
+		local cleanup = {}     -- the engine's own connections
+		local localConns = {}  -- [character] = connections of the local player's loop
+		local tracked = {}     -- other players' characters: [character] = entry
+		local localJoints = {} -- [character] = the local character's four joints
+		local genv = (getgenv and getgenv()) or _G
+
+		function motion.isRunning()
+			return running
+		end
+
+		local function disconnectAll(list)
+			for _, c in ipairs(list) do
+				pcall(function() c:Disconnect() end)
+			end
+			table.clear(list)
+		end
+
+		local function runLocalCharacter(char)
+			local humanoid = char:WaitForChild("Humanoid", 10)
+			local torso = char:WaitForChild("Torso", 10)
+			if not humanoid or not torso then return end
+
+			local defaultAnimate = char:FindFirstChild("Animate")
+			if defaultAnimate then defaultAnimate.Disabled = true end
+
+			for _, track in ipairs(humanoid:GetPlayingAnimationTracks()) do
+				track:Stop()
+			end
+
+			local RightShoulder = torso:WaitForChild("Right Shoulder", 10)
+			local LeftShoulder = torso:WaitForChild("Left Shoulder", 10)
+			local RightHip = torso:WaitForChild("Right Hip", 10)
+			local LeftHip = torso:WaitForChild("Left Hip", 10)
+			if not (RightShoulder and LeftShoulder and RightHip and LeftHip) then return end
+
+			-- Stopped (or respawned) while we were waiting for the character.
+			if not running or not char.Parent or localConns[char] then return end
+
+			local pose = "Standing"
+			local toolAnim = "None"
+			local toolAnimTime = 0
+			local jumpMaxLimbVelocity = 0.75
+
+			local function moveJump()
+				RightShoulder.MaxVelocity = jumpMaxLimbVelocity
+				LeftShoulder.MaxVelocity = jumpMaxLimbVelocity
+				RightShoulder:SetDesiredAngle(3.14)
+				LeftShoulder:SetDesiredAngle(-3.14)
+				RightHip:SetDesiredAngle(0)
+				LeftHip:SetDesiredAngle(0)
+			end
+
+			local function moveFreeFall()
+				RightShoulder.MaxVelocity = jumpMaxLimbVelocity
+				LeftShoulder.MaxVelocity = jumpMaxLimbVelocity
+				RightShoulder:SetDesiredAngle(3.14)
+				LeftShoulder:SetDesiredAngle(-3.14)
+				RightHip:SetDesiredAngle(0)
+				LeftHip:SetDesiredAngle(0)
+			end
+
+			local function moveSit()
+				RightShoulder.MaxVelocity = 0.15
+				LeftShoulder.MaxVelocity = 0.15
+				RightShoulder:SetDesiredAngle(1.57)
+				LeftShoulder:SetDesiredAngle(-1.57)
+				RightHip:SetDesiredAngle(1.57)
+				LeftHip:SetDesiredAngle(-1.57)
+			end
+
+			local function getTool()
+				for _, kid in ipairs(char:GetChildren()) do
+					if kid:IsA("Tool") then return kid end
+				end
+				return nil
+			end
+
+			local function getToolAnim(tool)
+				for _, c in ipairs(tool:GetChildren()) do
+					if c.Name == "toolanim" and c:IsA("StringValue") then return c end
+				end
+				return nil
+			end
+
+			local function animateTool()
+				if (toolAnim == "None") then RightShoulder:SetDesiredAngle(1.57) return end
+				if (toolAnim == "Slash") then RightShoulder.MaxVelocity = 0.5; RightShoulder:SetDesiredAngle(0) return end
+				if (toolAnim == "Lunge") then
+					RightShoulder.MaxVelocity = 0.5; LeftShoulder.MaxVelocity = 0.5; RightHip.MaxVelocity = 0.5; LeftHip.MaxVelocity = 0.5
+					RightShoulder:SetDesiredAngle(1.57); LeftShoulder:SetDesiredAngle(1.0); RightHip:SetDesiredAngle(1.57); LeftHip:SetDesiredAngle(1.0)
+					return
+				end
+			end
+
+			local function move(time)
+				if (pose == "Jumping") then moveJump() return end
+				if (pose == "FreeFall") then moveFreeFall() return end
+				if (pose == "Seated") then moveSit() return end
+
+				local amplitude = 0.1
+				local frequency = 1
+				local climbFudge = 0
+
+				if (pose == "Running") then
+					if (RightShoulder.CurrentAngle > 1.5 or RightShoulder.CurrentAngle < -1.5) then
+						RightShoulder.MaxVelocity = jumpMaxLimbVelocity
+					else
+						RightShoulder.MaxVelocity = 0.15
+					end
+					if (LeftShoulder.CurrentAngle > 1.5 or LeftShoulder.CurrentAngle < -1.5) then
+						LeftShoulder.MaxVelocity = jumpMaxLimbVelocity
+					else
+						LeftShoulder.MaxVelocity = 0.15
+					end
+					amplitude = 1
+					frequency = 9
+				elseif (pose == "Climbing") then
+					RightShoulder.MaxVelocity = 0.5; LeftShoulder.MaxVelocity = 0.5
+					amplitude = 1; frequency = 9; climbFudge = 3.14
+				end
+
+				local desiredAngle = amplitude * math.sin(time * frequency)
+				RightShoulder:SetDesiredAngle(desiredAngle + climbFudge)
+				LeftShoulder:SetDesiredAngle(desiredAngle - climbFudge)
+				RightHip:SetDesiredAngle(-desiredAngle)
+				LeftHip:SetDesiredAngle(-desiredAngle)
+
+				local tool = getTool()
+				if tool then
+					local animObj = getToolAnim(tool)
+					if animObj then
+						toolAnim = animObj.Value
+						animObj:Destroy()
+						toolAnimTime = time + .3
+					end
+					if time > toolAnimTime then toolAnimTime = 0; toolAnim = "None" end
+					animateTool()
+				else
+					toolAnim = "None"
+					toolAnimTime = 0
+				end
+			end
+
+			local conns = {}
+			localConns[char] = conns
+			localJoints[char] = { RightShoulder, LeftShoulder, RightHip, LeftHip }
+
+			table.insert(conns, humanoid.Running:Connect(function(speed) pose = (speed > 0) and "Running" or "Standing" end))
+			table.insert(conns, humanoid.Died:Connect(function() pose = "Dead" end))
+			table.insert(conns, humanoid.Jumping:Connect(function() pose = "Jumping" end))
+			table.insert(conns, humanoid.Climbing:Connect(function() pose = "Climbing" end))
+			table.insert(conns, humanoid.GettingUp:Connect(function() pose = "GettingUp" end))
+			table.insert(conns, humanoid.FreeFalling:Connect(function() pose = "FreeFall" end))
+			table.insert(conns, humanoid.FallingDown:Connect(function() pose = "FallingDown" end))
+			table.insert(conns, humanoid.Seated:Connect(function() pose = "Seated" end))
+			table.insert(conns, humanoid.PlatformStanding:Connect(function() pose = "PlatformStanding" end))
+			table.insert(conns, humanoid.Swimming:Connect(function(speed) pose = (speed > 0) and "Running" or "Standing" end))
+
+			table.insert(conns, RunService.RenderStepped:Connect(function()
+				if char and char.Parent and humanoid.Health > 0 then
+					move(os.clock())
+				end
+			end))
+
+			table.insert(conns, char.AncestryChanged:Connect(function(_, p)
+				if not p then
+					disconnectAll(conns)
+					if localConns[char] == conns then localConns[char] = nil end
+					localJoints[char] = nil
+				end
+			end))
+		end
+
+		local function setupOther(char)
+			if not char then return end
+			local hum = char:WaitForChild("Humanoid", 10)
+			local torso = char:WaitForChild("Torso", 10)
+			if not hum or not torso then return end
+
+			local anim = char:FindFirstChild("Animate")
+			if anim then anim.Disabled = true end
+
+			for _, t in ipairs(hum:GetPlayingAnimationTracks()) do t:Stop(0) end
+
+			local rS = torso:WaitForChild("Right Shoulder", 10)
+			local lS = torso:WaitForChild("Left Shoulder", 10)
+			local rH = torso:WaitForChild("Right Hip", 10)
+			local lH = torso:WaitForChild("Left Hip", 10)
+			if not (rS and lS and rH and lH) then return end
+
+			-- Stopped (or respawned) while we were waiting for the character.
+			if not running or not char.Parent or tracked[char] then return end
+
+			local entry = {
+				char = char, hum = hum,
+				rS = rS, lS = lS, rH = rH, lH = lH,
+				pose = "Standing", conns = {}
+			}
+
+			table.insert(entry.conns, hum.AnimationPlayed:Connect(function(t) t:Stop(0) end))
+			table.insert(entry.conns, hum.Running:Connect(function(s) entry.pose = (s > 0) and "Running" or "Standing" end))
+			table.insert(entry.conns, hum.Jumping:Connect(function() entry.pose = "Jumping" end))
+			table.insert(entry.conns, hum.FreeFalling:Connect(function() entry.pose = "FreeFall" end))
+			table.insert(entry.conns, hum.Seated:Connect(function() entry.pose = "Seated" end))
+			table.insert(entry.conns, hum.Climbing:Connect(function() entry.pose = "Climbing" end))
+
+			table.insert(entry.conns, char.AncestryChanged:Connect(function(_, p)
+				if not p then
+					disconnectAll(entry.conns)
+					tracked[char] = nil
+				end
+			end))
+
+			tracked[char] = entry
+		end
+
+		-- Other players' characters, all driven from one RenderStepped.
+		local function othersStep()
+			local t = os.clock()
+			for char, data in pairs(tracked) do
+				if char.Parent and data.hum and data.hum.Health > 0 then
+					local pose = data.pose
+					local rS, lS, rH, lH = data.rS, data.lS, data.rH, data.lH
+
+					if pose == "Jumping" or pose == "FreeFall" then
+						rS.MaxVelocity = 0.75; lS.MaxVelocity = 0.75
+						rS:SetDesiredAngle(3.14); lS:SetDesiredAngle(-3.14); rH:SetDesiredAngle(0); lH:SetDesiredAngle(0)
+					elseif pose == "Seated" then
+						rS.MaxVelocity = 0.15; lS.MaxVelocity = 0.15
+						rS:SetDesiredAngle(1.57); lS:SetDesiredAngle(-1.57); rH:SetDesiredAngle(1.57); lH:SetDesiredAngle(-1.57)
+					else
+						local amp, freq, climb = 0.1, 1, 0
+						if pose == "Running" then
+							rS.MaxVelocity = 0.15; lS.MaxVelocity = 0.15; amp = 1; freq = 9
+						elseif pose == "Climbing" then
+							rS.MaxVelocity = 0.5; lS.MaxVelocity = 0.5; amp = 1; freq = 9; climb = 3.14
+						end
+						local ang = amp * math.sin(t * freq)
+						rS:SetDesiredAngle(ang + climb)
+						lS:SetDesiredAngle(ang - climb)
+						rH:SetDesiredAngle(-ang)
+						lH:SetDesiredAngle(-ang)
+					end
+				else
+					disconnectAll(data.conns)
+					tracked[char] = nil
+				end
+			end
+		end
+
+		local function handlePlayer(plr)
+			if not plr then return end
+
+			local function onCharacter(character)
+				task.spawn(function()
+					if not running then return end
+					if plr == player then
+						runLocalCharacter(character)
+					else
+						setupOther(character)
+					end
+				end)
+			end
+
+			if plr.Character then task.spawn(onCharacter, plr.Character) end
+			table.insert(cleanup, plr.CharacterAdded:Connect(onCharacter))
+		end
+
+		local function shutdown()
+			running = false
+			genv.BPProceduralAnimation = nil
+
+			-- Let the joints settle back to straight instead of staying in the last pose.
+			local joints = {}
+			for _, list in pairs(localJoints) do table.insert(joints, list) end
+			for _, data in pairs(tracked) do table.insert(joints, { data.rS, data.lS, data.rH, data.lH }) end
+			for _, list in ipairs(joints) do
+				for _, joint in ipairs(list) do
+					pcall(function()
+						joint.MaxVelocity = 0.5
+						joint:SetDesiredAngle(0)
+					end)
+				end
+			end
+
+			disconnectAll(cleanup)
+			for _, conns in pairs(localConns) do disconnectAll(conns) end
+			table.clear(localConns)
+			table.clear(localJoints)
+			for _, data in pairs(tracked) do disconnectAll(data.conns) end
+			table.clear(tracked)
+
+			local keepOff = motion.keepAnimateOff and motion.keepAnimateOff()
+			if not keepOff then
+				for _, plr in ipairs(Players:GetPlayers()) do
+					local char = plr.Character
+					local animate = char and char:FindFirstChild("Animate")
+					if animate then animate.Disabled = false end
+				end
+			end
+
+			for _, fn in ipairs(motion.listeners) do pcall(fn, false) end
+		end
+
+		-- owner: who wants the animation ("old avatar" or "2007")
+		function motion.start(owner)
+			if holders[owner] then return end
+			holders[owner] = true
+			if running then return end
+			running = true
+			-- Tells Old physics camera addon not to play its climb animation over this one.
+			genv.BPProceduralAnimation = true
+
+			table.insert(cleanup, RunService.RenderStepped:Connect(othersStep))
+			for _, plr in ipairs(Players:GetPlayers()) do
+				pcall(handlePlayer, plr)
+			end
+			table.insert(cleanup, Players.PlayerAdded:Connect(function(plr) pcall(handlePlayer, plr) end))
+
+			for _, fn in ipairs(motion.listeners) do pcall(fn, true) end
+		end
+
+		function motion.stop(owner)
+			if not holders[owner] then return end
+			holders[owner] = nil
+			if next(holders) ~= nil then return end
+			shutdown()
+		end
+	end
+
+	function actions.apply2007Animation()
+		motion.start("2007")
+		print("[2007 Animation] On: the old avatar's animation for all R6 players.")
+	end
+
+	function actions.restore2007Animation()
+		motion.stop("2007")
+		print("[2007 Animation] Off.")
+	end
+
+	------------------------------------------------------------
 	-- 5. OLD AVATAR (RETRO SUITE 2006) LOGIC
 	------------------------------------------------------------
 	do
 		local retroState = {
 			active = false,
 			cleanup = {},
-			otherTracked = {},
 			headModel = nil,
 			bodyModel = nil,
 			isSnappingColor = {}
@@ -1091,207 +1446,12 @@ task.spawn(function()
 			snapColorsNow(character)
 		end
 
-		local function runLocalCharacter(char)
-			local humanoid = char:WaitForChild("Humanoid", 10)
-			local torso = char:WaitForChild("Torso", 10)
-			if not humanoid or not torso then return end
-
-			local defaultAnimate = char:FindFirstChild("Animate")
-			if defaultAnimate then defaultAnimate.Disabled = true end
-
-			for _, track in ipairs(humanoid:GetPlayingAnimationTracks()) do
-				track:Stop()
-			end
-
-			local RightShoulder = torso:WaitForChild("Right Shoulder", 10)
-			local LeftShoulder = torso:WaitForChild("Left Shoulder", 10)
-			local RightHip = torso:WaitForChild("Right Hip", 10)
-			local LeftHip = torso:WaitForChild("Left Hip", 10)
-			if not (RightShoulder and LeftShoulder and RightHip and LeftHip) then return end
-
-			local pose = "Standing"
-			local toolAnim = "None"
-			local toolAnimTime = 0
-			local jumpMaxLimbVelocity = 0.75
-
-			local function moveJump()
-				RightShoulder.MaxVelocity = jumpMaxLimbVelocity
-				LeftShoulder.MaxVelocity = jumpMaxLimbVelocity
-				RightShoulder:SetDesiredAngle(3.14)
-				LeftShoulder:SetDesiredAngle(-3.14)
-				RightHip:SetDesiredAngle(0)
-				LeftHip:SetDesiredAngle(0)
-			end
-
-			local function moveFreeFall()
-				RightShoulder.MaxVelocity = jumpMaxLimbVelocity
-				LeftShoulder.MaxVelocity = jumpMaxLimbVelocity
-				RightShoulder:SetDesiredAngle(3.14)
-				LeftShoulder:SetDesiredAngle(-3.14)
-				RightHip:SetDesiredAngle(0)
-				LeftHip:SetDesiredAngle(0)
-			end
-
-			local function moveSit()
-				RightShoulder.MaxVelocity = 0.15
-				LeftShoulder.MaxVelocity = 0.15
-				RightShoulder:SetDesiredAngle(1.57)
-				LeftShoulder:SetDesiredAngle(-1.57)
-				RightHip:SetDesiredAngle(1.57)
-				LeftHip:SetDesiredAngle(-1.57)
-			end
-
-			local function getTool()
-				for _, kid in ipairs(char:GetChildren()) do
-					if kid:IsA("Tool") then return kid end
-				end
-				return nil
-			end
-
-			local function getToolAnim(tool)
-				for _, c in ipairs(tool:GetChildren()) do
-					if c.Name == "toolanim" and c:IsA("StringValue") then return c end
-				end
-				return nil
-			end
-
-			local function animateTool()
-				if (toolAnim == "None") then RightShoulder:SetDesiredAngle(1.57) return end
-				if (toolAnim == "Slash") then RightShoulder.MaxVelocity = 0.5; RightShoulder:SetDesiredAngle(0) return end
-				if (toolAnim == "Lunge") then
-					RightShoulder.MaxVelocity = 0.5; LeftShoulder.MaxVelocity = 0.5; RightHip.MaxVelocity = 0.5; LeftHip.MaxVelocity = 0.5
-					RightShoulder:SetDesiredAngle(1.57); LeftShoulder:SetDesiredAngle(1.0); RightHip:SetDesiredAngle(1.57); LeftHip:SetDesiredAngle(1.0)
-					return
-				end
-			end
-
-			local function move(time)
-				if (pose == "Jumping") then moveJump() return end
-				if (pose == "FreeFall") then moveFreeFall() return end
-				if (pose == "Seated") then moveSit() return end
-
-				local amplitude = 0.1
-				local frequency = 1
-				local climbFudge = 0
-
-				if (pose == "Running") then
-					if (RightShoulder.CurrentAngle > 1.5 or RightShoulder.CurrentAngle < -1.5) then
-						RightShoulder.MaxVelocity = jumpMaxLimbVelocity
-					else  
-						RightShoulder.MaxVelocity = 0.15
-					end
-					if (LeftShoulder.CurrentAngle > 1.5 or LeftShoulder.CurrentAngle < -1.5) then
-						LeftShoulder.MaxVelocity = jumpMaxLimbVelocity
-					else  
-						LeftShoulder.MaxVelocity = 0.15
-					end
-					amplitude = 1
-					frequency = 9
-				elseif (pose == "Climbing") then
-					RightShoulder.MaxVelocity = 0.5; LeftShoulder.MaxVelocity = 0.5
-					amplitude = 1; frequency = 9; climbFudge = 3.14
-				end
-
-				local desiredAngle = amplitude * math.sin(time * frequency)
-				RightShoulder:SetDesiredAngle(desiredAngle + climbFudge)
-				LeftShoulder:SetDesiredAngle(desiredAngle - climbFudge)
-				RightHip:SetDesiredAngle(-desiredAngle)
-				LeftHip:SetDesiredAngle(-desiredAngle)
-
-				local tool = getTool()
-				if tool then
-					local animObj = getToolAnim(tool)
-					if animObj then
-						toolAnim = animObj.Value
-						animObj:Destroy()
-						toolAnimTime = time + .3
-					end
-					if time > toolAnimTime then toolAnimTime = 0; toolAnim = "None" end
-					animateTool()
-				else
-					toolAnim = "None"
-					toolAnimTime = 0
-				end
-			end
-
-			local conns = {}
-			table.insert(conns, humanoid.Running:Connect(function(speed) pose = (speed > 0) and "Running" or "Standing" end))
-			table.insert(conns, humanoid.Died:Connect(function() pose = "Dead" end))
-			table.insert(conns, humanoid.Jumping:Connect(function() pose = "Jumping" end))
-			table.insert(conns, humanoid.Climbing:Connect(function() pose = "Climbing" end))
-			table.insert(conns, humanoid.GettingUp:Connect(function() pose = "GettingUp" end))
-			table.insert(conns, humanoid.FreeFalling:Connect(function() pose = "FreeFall" end))
-			table.insert(conns, humanoid.FallingDown:Connect(function() pose = "FallingDown" end))
-			table.insert(conns, humanoid.Seated:Connect(function() pose = "Seated" end))
-			table.insert(conns, humanoid.PlatformStanding:Connect(function() pose = "PlatformStanding" end))
-			table.insert(conns, humanoid.Swimming:Connect(function(speed) pose = (speed > 0) and "Running" or "Standing" end))
-
-			table.insert(conns, RunService.RenderStepped:Connect(function()
-				if char and char.Parent and humanoid.Health > 0 then
-					move(os.clock())
-				end
-			end))
-
-			table.insert(conns, char.AncestryChanged:Connect(function(_, p)
-				if not p then
-					for _, c in ipairs(conns) do c:Disconnect() end
-				end
-			end))
-
-			for _, c in ipairs(conns) do table.insert(retroState.cleanup, c) end
-		end
-
-		local function setupOther(char)
-			if not char then return end
-			local hum = char:WaitForChild("Humanoid", 10)
-			local torso = char:WaitForChild("Torso", 10)
-			if not hum or not torso then return end
-
-			local anim = char:FindFirstChild("Animate")
-			if anim then anim.Disabled = true end
-
-			for _, t in ipairs(hum:GetPlayingAnimationTracks()) do t:Stop(0) end
-
-			local rS = torso:WaitForChild("Right Shoulder", 10)
-			local lS = torso:WaitForChild("Left Shoulder", 10)
-			local rH = torso:WaitForChild("Right Hip", 10)
-			local lH = torso:WaitForChild("Left Hip", 10)
-			if not (rS and lS and rH and lH) then return end
-
-			local entry = {
-				char = char, hum = hum,
-				rS = rS, lS = lS, rH = rH, lH = lH,
-				pose = "Standing", conns = {}
-			}
-
-			table.insert(entry.conns, hum.AnimationPlayed:Connect(function(t) t:Stop(0) end))
-			table.insert(entry.conns, hum.Running:Connect(function(s) entry.pose = (s > 0) and "Running" or "Standing" end))
-			table.insert(entry.conns, hum.Jumping:Connect(function() entry.pose = "Jumping" end))
-			table.insert(entry.conns, hum.FreeFalling:Connect(function() entry.pose = "FreeFall" end))
-			table.insert(entry.conns, hum.Seated:Connect(function() entry.pose = "Seated" end))
-			table.insert(entry.conns, hum.Climbing:Connect(function() entry.pose = "Climbing" end))
-
-			table.insert(entry.conns, char.AncestryChanged:Connect(function(_, p)
-				if not p then
-					for _, c in ipairs(entry.conns) do c:Disconnect() end
-					retroState.otherTracked[char] = nil
-				end
-			end))
-
-			retroState.otherTracked[char] = entry
-		end
-
 		local function handlePlayer(targetPlayer)
 			if not targetPlayer then return end
 
 			local function onCharacter(character)
 				task.spawn(function()
 					applyFullRetroAvatar(character)
-					if targetPlayer == player then
-						runLocalCharacter(character)
-					else
-						setupOther(character)
-					end
 					setupCustomAudio(character)
 				end)
 
@@ -1344,39 +1504,8 @@ task.spawn(function()
 				if bObjs then retroState.bodyModel = bObjs[1] end
 			end)
 
-			local othersRender = RunService.RenderStepped:Connect(function()
-				local t = os.clock()
-				for char, data in pairs(retroState.otherTracked) do
-					if char.Parent and data.hum and data.hum.Health > 0 then
-						local pose = data.pose
-						local rS, lS, rH, lH = data.rS, data.lS, data.rH, data.lH
-
-						if pose == "Jumping" or pose == "FreeFall" then
-							rS.MaxVelocity = 0.75; lS.MaxVelocity = 0.75
-							rS:SetDesiredAngle(3.14); lS:SetDesiredAngle(-3.14); rH:SetDesiredAngle(0); lH:SetDesiredAngle(0)
-						elseif pose == "Seated" then
-							rS.MaxVelocity = 0.15; lS.MaxVelocity = 0.15
-							rS:SetDesiredAngle(1.57); lS:SetDesiredAngle(-1.57); rH:SetDesiredAngle(1.57); lH:SetDesiredAngle(-1.57)
-						else
-							local amp, freq, climb = 0.1, 1, 0
-							if pose == "Running" then
-								rS.MaxVelocity = 0.15; lS.MaxVelocity = 0.15; amp = 1; freq = 9
-							elseif pose == "Climbing" then
-								rS.MaxVelocity = 0.5; lS.MaxVelocity = 0.5; amp = 1; freq = 9; climb = 3.14
-							end
-							local ang = amp * math.sin(t * freq)
-							rS:SetDesiredAngle(ang + climb)
-							lS:SetDesiredAngle(ang - climb)
-							rH:SetDesiredAngle(-ang)
-							lH:SetDesiredAngle(-ang)
-						end
-					else
-						for _, c in ipairs(data.conns) do c:Disconnect() end
-						retroState.otherTracked[char] = nil
-					end
-				end
-			end)
-			table.insert(retroState.cleanup, othersRender)
+			-- The old avatar's animation (shared with the "2007" animation option).
+			motion.start("old avatar")
 
 			for _, plr in ipairs(Players:GetPlayers()) do
 				pcall(handlePlayer, plr)
@@ -1398,19 +1527,10 @@ task.spawn(function()
 			end
 			table.clear(retroState.cleanup)
 
-			for _, data in pairs(retroState.otherTracked) do
-				for _, c in ipairs(data.conns) do c:Disconnect() end
-			end
-			table.clear(retroState.otherTracked)
 			table.clear(retroState.isSnappingColor)
 
-			for _, plr in ipairs(Players:GetPlayers()) do
-				local char = plr.Character
-				if char then
-					local animate = char:FindFirstChild("Animate")
-					if animate then animate.Disabled = false end
-				end
-			end
+			-- Stops the animation too, unless the "2007" animation option is still on.
+			motion.stop("old avatar")
 			print("[Old Avatar] Disabled.")
 		end
 	end
@@ -1969,27 +2089,54 @@ task.spawn(function()
 			end
 		end
 
-		local function injectClassicAnimations(character, charConns, isCurrent)
+		-- Turns one player's retro animations off (the "2007" animation takes over, or the
+		-- character is being replaced).
+		local function stopEntryAnimations(entry)
+			local stop = entry.stopAnimations
+			entry.stopAnimations = nil
+			if stop then pcall(stop) end
+		end
+
+		local function injectClassicAnimations(character, charConns, isCurrent, entry)
+			-- The "2007" animation (the old avatar's) is on: it plays instead of these. They come
+			-- back when it is turned off (see the listener below).
+			if motion.isRunning() or entry.stopAnimations or entry.startingAnimations then return end
+			entry.startingAnimations = true
+
 			local humanoid = character:WaitForChild("Humanoid", 8)
-			if not humanoid then return end
+			if not humanoid then entry.startingAnimations = nil; return end
 
 			local animator = humanoid:WaitForChild("Animator", 5)
-			if not isCurrent() then return end
+			if not isCurrent() or motion.isRunning() then entry.startingAnimations = nil; return end
 			if not animator then
 				animator = Instance.new("Animator")
 				animator.Parent = humanoid
 			end
+			entry.startingAnimations = nil
 
 			local animateScript = character:FindFirstChild("Animate")
 			if animateScript and animateScript:IsA("LocalScript") then animateScript.Disabled = true end
 
-			table.insert(charConns, character.ChildAdded:Connect(function(child)
+			local animConns = {}
+			local currentTrack, currentAnimId
+
+			entry.stopAnimations = function()
+				for _, c in ipairs(animConns) do
+					pcall(function() c:Disconnect() end)
+				end
+				table.clear(animConns)
+				if currentTrack then
+					pcall(function() currentTrack:Stop(0); currentTrack:Destroy() end)
+					currentTrack = nil
+				end
+				currentAnimId = nil
+			end
+
+			table.insert(animConns, character.ChildAdded:Connect(function(child)
 				if child.Name == "Animate" and child:IsA("LocalScript") then
 					task.defer(function() child.Disabled = true end)
 				end
 			end))
-
-			local currentTrack, currentAnimId
 
 			local function playRetroAnim(animId, priority)
 				if not animId or not character.Parent or humanoid.Health <= 0 then return end
@@ -2022,22 +2169,22 @@ task.spawn(function()
 			stopDefaultTracks()
 
 			local ids = avState.movementIds
-			table.insert(charConns, animator.AnimationPlayed:Connect(function(track)
+			table.insert(animConns, animator.AnimationPlayed:Connect(function(track)
 				if track ~= currentTrack then pcall(function() track:Stop(0) end) end
 			end))
-			table.insert(charConns, humanoid.Running:Connect(function(speed)
+			table.insert(animConns, humanoid.Running:Connect(function(speed)
 				stopDefaultTracks()
 				playRetroAnim(speed > 0.5 and ids.Walk or ids.Idle)
 			end))
-			table.insert(charConns, humanoid.Jumping:Connect(function()
+			table.insert(animConns, humanoid.Jumping:Connect(function()
 				stopDefaultTracks()
 				playRetroAnim(ids.Jump)
 			end))
-			table.insert(charConns, humanoid.FreeFalling:Connect(function()
+			table.insert(animConns, humanoid.FreeFalling:Connect(function()
 				stopDefaultTracks()
 				playRetroAnim(ids.Fall)
 			end))
-			table.insert(charConns, humanoid.Climbing:Connect(function(speed)
+			table.insert(animConns, humanoid.Climbing:Connect(function(speed)
 				stopDefaultTracks()
 				playRetroAnim(ids.Climb)
 				if currentTrack then pcall(function() currentTrack:AdjustSpeed(speed / 10) end) end
@@ -2045,6 +2192,24 @@ task.spawn(function()
 
 			playRetroAnim(ids.Idle)
 		end
+
+		-- The "2007" animation takes the animations over while it is on and gives them back
+		-- when it is turned off.
+		table.insert(motion.listeners, function(on)
+			if not avState.active then return end
+			for _, entry in pairs(avState.players) do
+				if on then
+					stopEntryAnimations(entry)
+				else
+					local char, isCurrent = entry.animCharacter, entry.animIsCurrent
+					if char and char.Parent and isCurrent and isCurrent() then
+						task.spawn(pcall, injectClassicAnimations, char, entry.animCharConns, isCurrent, entry)
+					end
+				end
+			end
+		end)
+		-- Turning the engine off must not re-enable the game's Animate under the retro animations.
+		motion.keepAnimateOff = function() return avState.active end
 
 		local function setupPlayer(targetPlayer)
 			if not avState.active or not targetPlayer or not targetPlayer.Parent then return end
@@ -2056,6 +2221,8 @@ task.spawn(function()
 					pcall(function() c:Disconnect() end)
 				end
 				entry.charConns = {}
+				stopEntryAnimations(entry)
+				entry.animCharacter, entry.animCharConns, entry.animIsCurrent = nil, nil, nil
 			end
 			avState.players[targetPlayer] = entry
 
@@ -2081,7 +2248,8 @@ task.spawn(function()
 					if not isCurrent() then return end
 
 					pcall(applyFullRetroAvatar, character, palette)
-					pcall(injectClassicAnimations, character, charConns, isCurrent)
+					entry.animCharacter, entry.animCharConns, entry.animIsCurrent = character, charConns, isCurrent
+					pcall(injectClassicAnimations, character, charConns, isCurrent, entry)
 				end)
 
 				task.spawn(function()
@@ -2165,8 +2333,9 @@ task.spawn(function()
 						end)
 					end
 
+					-- (the "2007" animation keeps the game's Animate off while it is on)
 					local animate = char:FindFirstChild("Animate")
-					if animate then animate.Disabled = false end
+					if animate and not motion.isRunning() then animate.Disabled = false end
 
 					local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
 					local logo = torso and torso:FindFirstChild("Retro2006LogoGui")
@@ -3142,14 +3311,14 @@ task.spawn(function()
 	-- closing dropdowns) never pushes things further down than they belong.
 	local ROW_HEIGHT = 30
 	local startY     = destroyBtn.Position.Y.Offset
-	local decalBtnY  = startY + 9 * ROW_HEIGHT + 10
+	local decalBtnY  = startY + 10 * ROW_HEIGHT + 10
 
 	-- Ran before: start where our first row already is, not at the (already moved)
 	-- destroy button.
 	local previousFirstRow = scroll:FindFirstChild("HealthESPContainer")
 	if previousFirstRow then
 		startY = previousFirstRow.Position.Y.Offset
-		decalBtnY = startY + 9 * ROW_HEIGHT + 10
+		decalBtnY = startY + 10 * ROW_HEIGHT + 10
 	end
 
 	local spacer = scroll:FindFirstChild("BPBottomSpacer")
@@ -3435,12 +3604,33 @@ task.spawn(function()
 		}
 	})
 
+	createDropdown({
+		containerName = "AnimationDropdownContainer",
+		arrowName     = "AnimationDropdownArrow",
+		helpName      = "AnimationDropdownHelpButton",
+		label         = "animation",
+		yPos          = startY + 5 * ROW_HEIGHT,
+		helpText      = "Press the arrow to pick which animation the characters use. It works on its own (any avatar) and also with the 2006 avatar, whose own animations it replaces while it is on. R6 characters only.",
+		options = {
+			{
+				containerName = "Animation2007Container",
+				checkboxName  = "Animation2007Checkbox",
+				helpName      = "Animation2007HelpButton",
+				label         = "2007",
+				stateKey      = "is2007AnimationEnabled",
+				onEnable      = actions.apply2007Animation,
+				onDisable     = actions.restore2007Animation,
+				helpText      = "The old avatar's animation on its own: the old Animate script's procedural R6 motion (arms out when standing, swinging arms and legs when running, arms up when jumping or falling, legs forward when seated, climbing arms, tool slash and lunge) for all players. The game's own Animate is switched off while this is on and comes back when you untick it."
+			},
+		}
+	})
+
 	createAddonRow({
 		containerName = "ClassicFaceContainer",
 		checkboxName  = "ClassicFaceCheckbox",
 		helpName      = "ClassicFaceHelpButton",
 		label         = "classic face",
-		yPos          = startY + 5 * ROW_HEIGHT,
+		yPos          = startY + 6 * ROW_HEIGHT,
 		stateKey      = "isClassicFaceEnabled",
 		onEnable      = actions.applyClassicFace,
 		onDisable     = actions.restoreClassicFace,
@@ -3452,7 +3642,7 @@ task.spawn(function()
 		arrowName     = "ColorLimiterDropdownArrow",
 		helpName      = "ColorLimiterDropdownHelpButton",
 		label         = "color limiter",
-		yPos          = startY + 6 * ROW_HEIGHT,
+		yPos          = startY + 7 * ROW_HEIGHT,
 		helpText      = "Press the arrow to pick a color era. Every non-character part gets snapped to that era's palette. Only one can be on at a time.",
 		options = {
 			{
@@ -3496,7 +3686,7 @@ task.spawn(function()
 		checkboxName  = "HideGameGuiCheckbox",
 		helpName      = "HideGameGuiHelpButton",
 		label         = "hide game GUI",
-		yPos          = startY + 7 * ROW_HEIGHT,
+		yPos          = startY + 8 * ROW_HEIGHT,
 		stateKey      = "isHideGameGuiEnabled",
 		onEnable      = actions.applyHideGameGui,
 		onDisable     = actions.restoreHideGameGui,
@@ -3508,7 +3698,7 @@ task.spawn(function()
 		checkboxName  = "LegacyLightingCheckbox",
 		helpName      = "LegacyLightingHelpButton",
 		label         = "legacy lighting",
-		yPos          = startY + 8 * ROW_HEIGHT,
+		yPos          = startY + 9 * ROW_HEIGHT,
 		stateKey      = "isLegacyLightingEnabled",
 		onEnable      = actions.applyLegacyLighting,
 		onDisable     = actions.restoreLegacyLighting,
@@ -3645,6 +3835,7 @@ task.spawn(function()
 	if state.isLensFlareEnabled then task.spawn(actions.applyLensFlare) end
 	if state.isOldAvatarEnabled then task.spawn(actions.applyOldAvatar)
 	elseif state.is2006AvatarEnabled then task.spawn(actions.apply2006Avatar) end
+	if state.is2007AnimationEnabled then task.spawn(actions.apply2007Animation) end
 	if state.isClassicFaceEnabled then task.spawn(actions.applyClassicFace) end
 	if state.is2012ColorsEnabled then task.spawn(actions.apply2012Colors)
 	elseif state.is2006ColorsEnabled then task.spawn(actions.apply2006Colors)
