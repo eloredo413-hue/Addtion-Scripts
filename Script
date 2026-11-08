@@ -13,6 +13,7 @@
 -- + Regular Chat Bubbles 100% Untouched
 -- + 2011-2014 classic chat bubbles built in: they stack (older ones above, grey), no fade
 -- + Terrain Hook: "What terrain do you want?" (2013 / 2014 / none) in Bloxy's setup
+-- + 2007 Animation: "2007" next to 2008 / 2006 / 2014 / Normal in Bloxy's "Choose your animations" (R6)
 -- + 2015/2016 use the real 2017 chat bubbles: the bubble chat block of your 2017 GUI script, taken out of it
 --   as it is and run (not a copy); if it shows nothing, Roblox's own bubbles come back
 -- + 2015 early keeps its own chat bubbles (no bubble script of ours) and uses Roblox's default dialogs
@@ -166,6 +167,8 @@ local mainAddons = {
 -- "More guis" gist (a pinned copy: change this link to update it).
 local URL_MORE_GUIS         = "https://gist.githubusercontent.com/eloredo413-hue/4aac0bc41207ca96d85235d1d07dd234/raw/917476c48b64151bc5ee9a27700dab7ea2080134/More%2520guis"
 local URL_SAFECHAT_HOOK     = "https://gist.githubusercontent.com/eloredo413-hue/47847c9c0567c5b365c8bfa249d59190/raw/036418365fc79e40e7dc1d1120fca6de9e4600a0/Safe%2520chat%2520Hook"
+-- adds "2007" (the old avatar's animation) to Bloxy's "Choose your animations" step (2007 Animation.lua in this repo)
+local URL_ANIM_2007         = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2007%20Animation.lua"
 -- adds "What terrain do you want?" (2013 / 2014 / none) to Bloxy's setup, before "old particles"
 local URL_TERRAIN_HOOK      = "https://gist.githubusercontent.com/eloredo413-hue/e6591965831062d75e09aa49f60e2653/raw/dd8b8127a30461a7d0c11a312e8e0dba665fa5f9/Terrian%2520hook"
 local URL_HAMMER_2          = "https://gist.githubusercontent.com/eloredo413-hue/6c698a269da0afe65e71117cfbc80dc5/raw/17cbd297cbbf4871aee04d2a8741a5438be23a91/Hammer%2520stuff%25202"
@@ -324,6 +327,7 @@ loadUrl(URL_MORE_GUIS, "More guis", patchMoreGuis)
 task.wait(0.5)
 loadUrl(URL_SAFECHAT_HOOK, "SafeChat Hook")
 loadUrl(URL_TERRAIN_HOOK, "Terrain Hook")
+loadUrl(URL_ANIM_2007, "2007 Animation")
 task.wait(1)
 loadUrl(URL_HAMMER_2, "Hammer stuff 2")
 
