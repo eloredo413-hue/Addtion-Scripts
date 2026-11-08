@@ -62,6 +62,8 @@ task.spawn(function()
 		isOldDecalEnabled    = config.isOldDecalEnabled or false,
 		isHideGameGuiEnabled    = config.isHideGameGuiEnabled or false,
 		isLegacyLightingEnabled = config.isLegacyLightingEnabled or false,
+		isOldCameraSoundEnabled = config.isOldCameraSoundEnabled or false,
+		isOldPartSoundsEnabled  = config.isOldPartSoundsEnabled or false,
 	}
 
 	-- Hammer stuff 1 (and the base GUI) save to the same file, so re-read it first and
@@ -2934,6 +2936,68 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
+	-- 12. OLD CAMERA SOUND + OLD PARTS CLATTERING SOUNDS (LOADSTRING)
+	-- Each gist is downloaded once and run once. They have no off switch of their own,
+	-- so a one-line check is added to each: unticking mutes it (and ticking again unmutes).
+	------------------------------------------------------------
+	do
+		local genv = (getgenv and getgenv()) or _G
+
+		local function makeSoundOption(tag, url, flag, patchFn)
+			local loaded, loading = false, false
+			local function enable()
+				genv[flag] = nil
+				if loaded or loading then
+					print("[" .. tag .. "] Enabled.")
+					return
+				end
+				loading = true
+				local ok, err = pcall(function()
+					local src = game:HttpGet(url)
+					src = patchFn(src)
+					loadstring(src)()
+				end)
+				loading = false
+				if ok then
+					loaded = true
+					print("[" .. tag .. "] Loaded via loadstring.")
+				else
+					warn("[" .. tag .. "] Loadstring failed: " .. tostring(err))
+				end
+			end
+			local function disable()
+				genv[flag] = true
+				print("[" .. tag .. "] Disabled" .. (loaded and " (muted)." or "."))
+			end
+			return enable, disable
+		end
+
+		local function replaceOnce(src, old, new)
+			local a, b = string.find(src, old, 1, true)
+			if not a then return src end
+			return string.sub(src, 1, a - 1) .. new .. string.sub(src, b + 1)
+		end
+
+		actions.applyOldCameraSound, actions.restoreOldCameraSound = makeSoundOption(
+			"Old Camera Sound",
+			"https://gist.githubusercontent.com/eloredo413-hue/c05d381096487925901673670bced908/raw/8eb68872b09204cc7190fcf79bab167bbb31cd56/Old%2520camera%2520sound",
+			"BPOldCameraSoundOff",
+			function(src)
+				return replaceOnce(src, "RunService.Heartbeat:Connect(function()",
+					"RunService.Heartbeat:Connect(function()\n    if getgenv().BPOldCameraSoundOff then lastDistance = nil return end")
+			end)
+
+		actions.applyOldPartSounds, actions.restoreOldPartSounds = makeSoundOption(
+			"Old Part Sounds",
+			"https://gist.githubusercontent.com/eloredo413-hue/63a6cd9da469ff1659287fda43c8649a/raw/4e90245c65c9f3cf8b4cfb924f517a5012cd317c/Old%2520parts%2520clattering%2520sounds",
+			"BPOldPartSoundsOff",
+			function(src)
+				return replaceOnce(src, "local function playSound(fileName, volume, parent)",
+					"local function playSound(fileName, volume, parent)\n    if getgenv().BPOldPartSoundsOff then return end")
+			end)
+	end
+
+	------------------------------------------------------------
 	-- 10. HIDE GAME GUI (LOADSTRING HOOK)
 	-- The GUI Hider gist hides the game's own ScreenGuis (TopbarPlus,
 	-- HUDs, shop buttons) and leaves Bloxy Paradox and the era GUIs alone.
@@ -3142,14 +3206,14 @@ task.spawn(function()
 	-- closing dropdowns) never pushes things further down than they belong.
 	local ROW_HEIGHT = 30
 	local startY     = destroyBtn.Position.Y.Offset
-	local decalBtnY  = startY + 9 * ROW_HEIGHT + 10
+	local decalBtnY  = startY + 11 * ROW_HEIGHT + 10
 
 	-- Ran before: start where our first row already is, not at the (already moved)
 	-- destroy button.
 	local previousFirstRow = scroll:FindFirstChild("HealthESPContainer")
 	if previousFirstRow then
 		startY = previousFirstRow.Position.Y.Offset
-		decalBtnY = startY + 9 * ROW_HEIGHT + 10
+		decalBtnY = startY + 11 * ROW_HEIGHT + 10
 	end
 
 	local spacer = scroll:FindFirstChild("BPBottomSpacer")
@@ -3515,6 +3579,30 @@ task.spawn(function()
 		helpText      = "2017 OldGraphics lighting: Compatibility technology, no bloom, blur, sun rays, depth of field or atmosphere, and flat grey colors. Untick to put the original lighting back."
 	})
 
+	createAddonRow({
+		containerName = "OldCameraSoundContainer",
+		checkboxName  = "OldCameraSoundCheckbox",
+		helpName      = "OldCameraSoundHelpButton",
+		label         = "camera sound",
+		yPos          = startY + 9 * ROW_HEIGHT,
+		stateKey      = "isOldCameraSoundEnabled",
+		onEnable      = actions.applyOldCameraSound,
+		onDisable     = actions.restoreOldCameraSound,
+		helpText      = "The old camera zoom tick: a click sound for every 1.5 studs the camera zooms in or out. Untick to mute it."
+	})
+
+	createAddonRow({
+		containerName = "OldPartSoundsContainer",
+		checkboxName  = "OldPartSoundsCheckbox",
+		helpName      = "OldPartSoundsHelpButton",
+		label         = "part sounds",
+		yPos          = startY + 10 * ROW_HEIGHT,
+		stateKey      = "isOldPartSoundsEnabled",
+		onEnable      = actions.applyOldPartSounds,
+		onDisable     = actions.restoreOldPartSounds,
+		helpText      = "The old clattering sounds when parts hit each other (a classic sound pack, saved in your executor's ClassicSounds folder the first time). Loose parts and dead characters only. Untick to mute it."
+	})
+
 	------------------------------------------------------------
 	-- OLD DECAL RENDERING BUTTON
 	------------------------------------------------------------
@@ -3652,6 +3740,8 @@ task.spawn(function()
 	if state.isOldDecalEnabled then task.spawn(actions.applyOldDecal) end
 	if state.isHideGameGuiEnabled then task.spawn(actions.applyHideGameGui) end
 	if state.isLegacyLightingEnabled then task.spawn(actions.applyLegacyLighting) end
+	if state.isOldCameraSoundEnabled then task.spawn(actions.applyOldCameraSound) end
+	if state.isOldPartSoundsEnabled then task.spawn(actions.applyOldPartSounds) end
 
 	print("[Addon] All options loaded into GUI.")
 end)
