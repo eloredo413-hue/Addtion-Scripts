@@ -168,7 +168,7 @@ local URL_MORE_GUIS         = "https://gist.githubusercontent.com/eloredo413-hue
 local URL_SAFECHAT_HOOK     = "https://gist.githubusercontent.com/eloredo413-hue/47847c9c0567c5b365c8bfa249d59190/raw/036418365fc79e40e7dc1d1120fca6de9e4600a0/Safe%2520chat%2520Hook"
 -- adds "What terrain do you want?" (2013 / 2014 / none) to Bloxy's setup, before "old particles"
 local URL_TERRAIN_HOOK      = "https://gist.githubusercontent.com/eloredo413-hue/e6591965831062d75e09aa49f60e2653/raw/dd8b8127a30461a7d0c11a312e8e0dba665fa5f9/Terrian%2520hook"
-local URL_HAMMER_2          = "https://gist.githubusercontent.com/eloredo413-hue/480460dbd8512106ba261da41d350e8c/raw/9fea2c5cf62b5b80a2b54f7fb3782d1258d819be/Hammer%2520stuff%25202"
+local URL_HAMMER_2          = "https://gist.githubusercontent.com/eloredo413-hue/6c698a269da0afe65e71117cfbc80dc5/raw/17cbd297cbbf4871aee04d2a8741a5438be23a91/Hammer%2520stuff%25202"
 local URL_BUBBLE_2015_2016  = "https://gist.githubusercontent.com/eloredo413-hue/f37d62b43e7435cd46dd495b5ed1bcfc/raw/b4ae511afdec2e92e9b956a8ddc4803d9929d0da/Chat%2520bubble%2520fix"
 
 -- GUIs More guis loads, swapped for the copies in this repo before More guis runs (no need to
