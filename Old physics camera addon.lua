@@ -158,7 +158,7 @@ local function setupCharacter(char)
 	local fallbackTrack
 	pcall(function()
 		fallbackTrack = animator:LoadAnimation(fallbackAnimation)
-		fallbackTrack.Priority = Enum.AnimationPriority.Action
+		fallbackTrack.Priority = Enum.AnimationPriority.Action4
 		fallbackTrack.Looped = true
 	end)
 
@@ -189,6 +189,7 @@ local function setupCharacter(char)
 	end
 
 	local fallbackStartedByUs = false
+	local climbWanted = false -- true while the 2006 climbing is at work
 	local function stopFallback()
 		if fallbackTrack and fallbackTrack.IsPlaying then
 			pcall(function() fallbackTrack:Stop(0.1) end)
@@ -206,25 +207,9 @@ local function setupCharacter(char)
 		end
 	end
 
-	local function updateClimbAnimation()
-		if destroyed or not char.Parent or humanoid.Health <= 0 then return end
-		if not climbing.Value then
-			if fallbackStartedByUs then stopFallback() end
-			return
-		end
-		task.defer(function()
-			if destroyed or not char.Parent or humanoid.Health <= 0 or not climbing.Value then return end
-			local customTrack = findCustomClimbAnimation()
-			if customTrack then
-				stopFallback()
-				return
-			end
-			startFallback()
-		end)
-	end
-
-	addConnection(climbing.Changed:Connect(updateClimbAnimation))
-
+	-- The climb animation plays whenever the 2006 climbing is at work (set below, every frame), at the
+	-- highest animation priority, so the falling / jumping animation can't show over it. (It used to
+	-- wait for "no other animation playing", which the falling animation always satisfied.)
 	local animationRenderName = "RetroClimbAnimationDetector_" .. tostring(math.random(10000, 99999))
 	table.insert(RenderNames, animationRenderName)
 	RunService:BindToRenderStep(animationRenderName, 410, function()
@@ -232,12 +217,11 @@ local function setupCharacter(char)
 			pcall(function() RunService:UnbindFromRenderStep(animationRenderName) end)
 			return
 		end
-		if not climbing.Value then return end
-		local customTrack = findCustomClimbAnimation()
-		if customTrack then
-			if fallbackTrack and fallbackTrack.IsPlaying then stopFallback() end
-		else
-			if fallbackTrack and not fallbackTrack.IsPlaying then startFallback() end
+		if not fallbackTrack then return end
+		if climbWanted and not BPGenv.BPProceduralAnimation then
+			if not fallbackTrack.IsPlaying then startFallback() end
+		elseif fallbackStartedByUs and fallbackTrack.IsPlaying then
+			stopFallback()
 		end
 	end)
 
@@ -491,6 +475,7 @@ local function setupCharacter(char)
 				+ Vector3.new(0, CLIMB_UP_SPEED, 0)
 		end
 
+		climbWanted = walkingIntoPart or humanoid:GetState() == Enum.HumanoidStateType.Climbing
 		climbActive = walkingIntoPart or releasing
 			or humanoid:GetState() == Enum.HumanoidStateType.Climbing
 
