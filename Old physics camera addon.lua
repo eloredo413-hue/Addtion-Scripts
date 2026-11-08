@@ -80,6 +80,10 @@ local CLIMB_BOX = Vector3.new(1, 1, 1)
 local MAX_CLIMB_PART = 3.5
 local CLIMB_UP_SPEED = 13       -- upward kick each frame while climbing
 local CLIMB_PUSH_SPEED = 24     -- push into the part
+local TOP_OUT_TIME = 0.4        -- seconds after the last grab in which you are still topping out
+local TOP_OUT_MIN_RISE = 1.5    -- studs climbed before the top-out hop counts
+local TOP_OUT_SPEED = 14        -- hop forward over the top
+local TOP_OUT_UP = 9            -- ...and a little up
 local MAX_FALL_TO_GRAB = 8      -- falling faster than this: no grabbing
 local CLIMB_SIDE_DAMP = 0.8     -- sideways speed kept each frame while climbing
 local XZ = Vector3.new(1, 0, 1)
@@ -148,6 +152,7 @@ local function setupCharacter(char)
 	-- over whichever animation you picked in the wizard. The climbing state is kept up instead (below),
 	-- so the animation you picked plays ITS OWN climbing animation.
 	local climbWanted = false -- true while the 2006 climbing is at work
+	local grabStartY, lastGrab = nil, 0 -- where the current climb began, and when a part was last in front
 
 	local lastFallSpeed = 0
 	addConnection(RunService.Heartbeat:Connect(function()
@@ -402,6 +407,24 @@ local function setupCharacter(char)
 			-- into being flung upwards
 			torso.AssemblyLinearVelocity = Vector3.new(velocity.X * CLIMB_SIDE_DAMP,
 				math.max(velocity.Y, CLIMB_UP_SPEED), velocity.Z * CLIMB_SIDE_DAMP)
+		end
+
+		-- Topping out: the part under your feet ran out (the top of a ladder or a ledge) while you are
+		-- still walking into it: hop forward over the top, so you end up standing on it instead of
+		-- sliding back down.
+		local now = os.clock()
+		if walkingIntoPart then
+			if not grabStartY then grabStartY = torso.Position.Y end
+			lastGrab = now
+		elseif grabStartY then
+			local sinceGrab = now - lastGrab
+			if sinceGrab > TOP_OUT_TIME or humanoid:GetState() == Enum.HumanoidStateType.Running then
+				grabStartY = nil
+			elseif moving and not releasing and torso.Position.Y - grabStartY >= TOP_OUT_MIN_RISE then
+				local v = torso.AssemblyLinearVelocity
+				torso.AssemblyLinearVelocity = Vector3.new(moveDir.X * TOP_OUT_SPEED,
+					math.max(v.Y, TOP_OUT_UP), moveDir.Z * TOP_OUT_SPEED)
+			end
 		end
 
 		climbWanted = walkingIntoPart or humanoid:GetState() == Enum.HumanoidStateType.Climbing
