@@ -21,7 +21,8 @@
 -- + Less lag: no more scans of the whole GUI / workspace many times a second (see SPEED-UPS below,
 --   and Wizard smooth v10, which no longer leaves its hooks on for the whole game)
 -- + The 2006 avatar's T-shirt shows again with the 2011-2014 chat bubbles (they only remove bubbles now)
--- + Old-style speedometer (a blue bar) for 2010-2014; the game's own speedometer only from 2015 on
+-- + Old-style speedometer (a blue bar) for 2010-2014, only when the game has a speedometer on; none before 2010
+--   (2008 / 2006 / 2005); the game's own (modern) speedometer from 2015 on
 -- + 2008 (More guis): treated like 2010, so no bubble script of ours runs over it (it has no chat bubbles)
 -- + Chat bubbles by era: 2005 and 2006 have none; 2010 and 2015 early draw their own (no bubble script
 --   of ours runs over them); 2011-2014 / mobile use the built-in 2011-style ones; 2015/2016 the 2017 ones
@@ -1076,6 +1077,26 @@ task.spawn(function()
             display = nil
             pcall(function() shown.beat:Disconnect() end)
             pcall(function() shown.gui:Destroy() end)
+            -- Roblox's own speed display of that seat comes back as it was (it is only off while this
+            -- runs, i.e. up to 2014)
+            if shown.hudSeat then
+                pcall(function()
+                    if shown.hudSeat:GetAttribute("ClassicHudWas") ~= nil then
+                        shown.hudSeat.HeadsUpDisplay = shown.hudSeat:GetAttribute("ClassicHudWas")
+                        shown.hudSeat:SetAttribute("ClassicHudWas", nil)
+                    end
+                end)
+            end
+        end
+
+        -- Does the game have a speedometer of its own on? Roblox's own (the seat's HeadsUpDisplay was on when
+        -- you sat down), or a readout / meter GUI of the game's own that was found and switched off.
+        local function gameHasSpeedometer(shown)
+            if shown.hudWas == true or shown.readout ~= nil then return true end
+            for target in pairs(held) do
+                if target:IsDescendantOf(pg) then return true end
+            end
+            return false
         end
 
         local function barWidthFor(speed)
@@ -1116,9 +1137,9 @@ task.spawn(function()
             end
 
             local physical = seat.AssemblyLinearVelocity.Magnitude
-            -- always, unless it was asked to follow the game's readout only
-            local needsReadout = getgenv().SpeedometerOnlyWithGameReadout == true
-            local on = showOurs and (shown.readout ~= nil or not needsReadout) and (seat:IsA("VehicleSeat") or physical > 3)
+            -- only when the game has a speedometer on (getgenv().SpeedometerAlways = true shows it anyway)
+            local wanted = getgenv().SpeedometerAlways == true or gameHasSpeedometer(shown)
+            local on = showOurs and wanted and (seat:IsA("VehicleSeat") or physical > 3)
             if shown.gui.Enabled ~= on then
                 shown.gui.Enabled = on
                 shown.justShown = on
@@ -1197,8 +1218,22 @@ task.spawn(function()
                 if hider and hider.Keep then hider.Keep(gui) end
             end)
 
+            -- Roblox's own speed display belongs to the VehicleSeat: remember whether it was on (that is
+            -- the game having a speedometer), and switch it off (this script runs only up to 2014)
+            local hudSeat, hudWas = nil, nil
+            if seat:IsA("VehicleSeat") then
+                pcall(function()
+                    local remembered = seat:GetAttribute("ClassicHudWas")
+                    hudWas = (remembered ~= nil) and remembered or seat.HeadsUpDisplay
+                    seat:SetAttribute("ClassicHudWas", hudWas)
+                    seat.HeadsUpDisplay = false
+                    hudSeat = seat
+                end)
+            end
+
             local shown = { gui = gui, bar = bar, label = label, seat = seat, clock = 0, nextCheck = 0, nextMeterScan = 0,
-                            readout = nil, width = 0, shownNumber = nil, justShown = false }
+                            readout = nil, width = 0, shownNumber = nil, justShown = false,
+                            hudSeat = hudSeat, hudWas = hudWas }
             shown.beat = RunService.RenderStepped:Connect(frame)
             display = shown
             print("[Speedometer] " .. (showOurs and "shown" or "(no speedometer in this era)") .. " for " .. seat:GetFullName() .. " (" .. seat.ClassName .. ")")
@@ -1256,7 +1291,7 @@ task.spawn(function()
         -- the game's speedometer GUIs that are already there, and Roblox's own vehicle speed display
         pcall(switchOffMeters)
         pcall(switchOffVehicleHud)
-        print("[Loader] " .. (showOurs and "old speedometer on (2010-2014)" or "no speedometer (2005 / 2006)") .. ": the game's own speedometer is switched off")
+        print("[Loader] " .. (showOurs and "old speedometer on (2010-2014, when the game has one)" or "no speedometer (2008 / 2006 / 2005)") .. ": the game's own speedometer is switched off")
     end
 
     local function stopSpeedometer()
@@ -2469,10 +2504,12 @@ end
 
         -- The game's own (modern) speedometer only shows from 2015 on. Up to 2014 it is switched off:
         -- 2010-2014 get the old speedometer in its place, 2005 / 2006 have none.
-        if era == "classic" or era == "y2010" then
+        -- (the 2008 GUI of More guis is a "y2010" for the bubbles, but older than 2010: no speedometer)
+        local is2008 = tostring(raw) == "2008"
+        if (era == "classic" or era == "y2010") and not is2008 then
             local ok, err = pcall(startSpeedometer, "show")
             if not ok then warn("[Loader] the speedometer didn't start: " .. tostring(err)) end
-        elseif era == "y2006" or era == "y2005" then
+        elseif era == "y2006" or era == "y2005" or is2008 then
             local ok, err = pcall(startSpeedometer, "hideOnly")
             if not ok then warn("[Loader] the speedometer hider didn't start: " .. tostring(err)) end
         else
