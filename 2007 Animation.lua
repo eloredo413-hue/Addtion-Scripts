@@ -164,6 +164,8 @@ do
 			end
 
 			local function move(time)
+				-- Old physics camera addon says it is climbing: show the climbing pose, not the falling one
+				local pose = (Env.BPClimbing and "Climbing") or pose
 				if (pose == "Jumping") then moveJump() return end
 				if (pose == "FreeFall") then moveFreeFall() return end
 				if (pose == "Seated") then moveSit() return end
