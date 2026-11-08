@@ -70,6 +70,22 @@ do
 		local localJoints = {} -- [character] = the local character's four joints
 		local tracked = {}     -- other players' characters: [character] = entry
 
+		-- A respawned character gets its Animate script a moment AFTER its body parts, so it can't be
+		-- switched off just once at the start: switch it off when it arrives, and stop any animation
+		-- track it (or the game) starts, for as long as this character is being driven.
+		local function holdAnimateOff(char, humanoid, conns)
+			local function off(child)
+				if child.Name == "Animate" and child:IsA("LocalScript") then
+					child.Disabled = true
+					for _, t in ipairs(humanoid:GetPlayingAnimationTracks()) do pcall(function() t:Stop(0) end) end
+				end
+			end
+			for _, child in ipairs(char:GetChildren()) do off(child) end
+			table.insert(conns, char.ChildAdded:Connect(off))
+			local animator = humanoid:FindFirstChildOfClass("Animator") or humanoid
+			table.insert(conns, animator.AnimationPlayed:Connect(function(t) pcall(function() t:Stop(0) end) end))
+		end
+
 		local function runLocalCharacter(char)
 			local humanoid = char:WaitForChild("Humanoid", 10)
 			local torso = char:WaitForChild("Torso", 10)
@@ -199,6 +215,7 @@ do
 			local conns = {}
 			localConns[char] = conns
 			localJoints[char] = { RightShoulder, LeftShoulder, RightHip, LeftHip }
+			holdAnimateOff(char, humanoid, conns)
 
 			table.insert(conns, humanoid.Running:Connect(function(speed) pose = (speed > 0) and "Running" or "Standing" end))
 			table.insert(conns, humanoid.Died:Connect(function() pose = "Dead" end))
@@ -266,6 +283,7 @@ do
 				end
 			end))
 
+			holdAnimateOff(char, hum, entry.conns)
 			tracked[char] = entry
 		end
 
