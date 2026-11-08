@@ -152,6 +152,7 @@ local function setupCharacter(char)
 	-- over whichever animation you picked in the wizard. The climbing state is kept up instead (below),
 	-- so the animation you picked plays ITS OWN climbing animation.
 	local climbWanted = false -- true while the 2006 climbing is at work
+	local grabbingNow = false -- a part is in front of the feet right now (this frame)
 	local grabStartY, lastGrab = nil, 0 -- where the current climb began, and when a part was last in front
 
 	local lastFallSpeed = 0
@@ -427,6 +428,7 @@ local function setupCharacter(char)
 			end
 		end
 
+		grabbingNow = walkingIntoPart
 		climbWanted = walkingIntoPart or humanoid:GetState() == Enum.HumanoidStateType.Climbing
 		-- (2007 Animation.lua reads this to show its climbing pose, not its falling one)
 		BPGenv.BPClimbing = climbWanted or nil
@@ -454,10 +456,14 @@ local function setupCharacter(char)
 	-- So after the physics step the Climbing state is put back while the climb is on.
 	addConnection(RunService.Heartbeat:Connect(function()
 		if destroyed or not char.Parent or humanoid.Health <= 0 then return end
-		if climbWanted and not releasing and humanoid:GetState() ~= Enum.HumanoidStateType.Climbing
+		-- Only while a part really is in front of the feet. (Putting it back because "the state is
+		-- Climbing" would keep itself going: once you leave the part you would hang in the Climbing
+		-- state in mid-air instead of falling.)
+		if grabbingNow and not releasing and humanoid:GetState() ~= Enum.HumanoidStateType.Climbing
 			and not cantClimbNow() then
 			humanoid:ChangeState(Enum.HumanoidStateType.Climbing)
 		end
+		grabbingNow = false
 	end))
 
 	-- Jump lets go of whatever you are climbing.
