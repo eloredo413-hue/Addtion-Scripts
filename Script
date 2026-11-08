@@ -14,6 +14,7 @@
 -- + 2011-2014 classic chat bubbles built in: they stack (older ones above, grey), no fade
 -- + Terrain Hook: "What terrain do you want?" (2013 / 2014 / none) in Bloxy's setup
 -- + 2007 Animation: "2007" next to 2008 / 2006 / 2014 / Normal in Bloxy's "Choose your animations" (R6)
+-- + The "Old" physics (Old physics camera addon.lua) climbs like the 2006 physics
 -- + 2015/2016 use the real 2017 chat bubbles: the bubble chat block of your 2017 GUI script, taken out of it
 --   as it is and run (not a copy); if it shows nothing, Roblox's own bubbles come back
 -- + 2015 early keeps its own chat bubbles (no bubble script of ours) and uses Roblox's default dialogs
@@ -150,6 +151,11 @@ end
 local URL_WIZARD_SMOOTH    = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Wizard%20smooth.lua"
 local URL_WIZARD_SMOOTH_V9 = "https://gist.githubusercontent.com/eloredo413-hue/c9757141d957bb07793f812ea5c63601/raw/a16efa62bb2fa1dac7736a6d06870ac74c944f30/Wizard%2520smooth"
 
+-- Old physics camera addon: the "Old" physics climbs like the 2006 physics (Old physics camera addon.lua in this
+-- repo). The old gist is the fallback if the repo copy can't be downloaded.
+local URL_OLD_PHYSICS      = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Old%20physics%20camera%20addon.lua"
+local URL_OLD_PHYSICS_GIST = "https://gist.githubusercontent.com/eloredo413-hue/6ec77a9b2884b534cd09f653a0fe023d/raw/94075a70190110e81a9c4153c340b19f3c903790/Old%2520physics%2520camera%2520addon"
+
 local mainAddons = {
     -- FF Fix Hook goes first: it hooks loadstring itself, so it has to see the real one
     -- before the other hooks below wrap it.
@@ -160,7 +166,7 @@ local mainAddons = {
     "https://gist.githubusercontent.com/eloredo413-hue/09b2609e8aff413a178a16ac8477b612/raw/20961a4f1364c9805b1e93ab34f14abc4cc3998f/Particles%2520addon",
     URL_WIZARD_SMOOTH,
     "https://gist.githubusercontent.com/eloredo413-hue/f156101652b68d2fdcbbeae4dc0481d6/raw/028c65e676eda5d90f9c3a0595347b102df2a0b9/2010%2520hook",
-    "https://gist.githubusercontent.com/eloredo413-hue/6ec77a9b2884b534cd09f653a0fe023d/raw/94075a70190110e81a9c4153c340b19f3c903790/Old%2520physics%2520camera%2520addon",
+    URL_OLD_PHYSICS,
     "https://gist.githubusercontent.com/eloredo413-hue/85e4840f74edb2acaf0845da534c3d18/raw/e1de3a906c34929de562bc36aea179fa0e4eb7fe/Explosion%2520Replace%2520Addon",
 }
 
@@ -171,7 +177,9 @@ local URL_SAFECHAT_HOOK     = "https://gist.githubusercontent.com/eloredo413-hue
 local URL_ANIM_2007         = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2007%20Animation.lua"
 -- adds "What terrain do you want?" (2013 / 2014 / none) to Bloxy's setup, before "old particles"
 local URL_TERRAIN_HOOK      = "https://gist.githubusercontent.com/eloredo413-hue/e6591965831062d75e09aa49f60e2653/raw/dd8b8127a30461a7d0c11a312e8e0dba665fa5f9/Terrian%2520hook"
-local URL_HAMMER_2          = "https://gist.githubusercontent.com/eloredo413-hue/6c698a269da0afe65e71117cfbc80dc5/raw/17cbd297cbbf4871aee04d2a8741a5438be23a91/Hammer%2520stuff%25202"
+-- Hammer stuff 2 (Hammer stuff 2.lua in this repo): Remove Pro keeps shadows. The gist is the fallback.
+local URL_HAMMER_2          = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Hammer%20stuff%202.lua"
+local URL_HAMMER_2_GIST     = "https://gist.githubusercontent.com/eloredo413-hue/480460dbd8512106ba261da41d350e8c/raw/9fea2c5cf62b5b80a2b54f7fb3782d1258d819be/Hammer%2520stuff%25202"
 local URL_BUBBLE_2015_2016  = "https://gist.githubusercontent.com/eloredo413-hue/f37d62b43e7435cd46dd495b5ed1bcfc/raw/b4ae511afdec2e92e9b956a8ddc4803d9929d0da/Chat%2520bubble%2520fix"
 
 -- GUIs More guis loads, swapped for the copies in this repo before More guis runs (no need to
@@ -320,6 +328,9 @@ for i, url in ipairs(mainAddons) do
     if why == "download" and url == URL_WIZARD_SMOOTH then
         warn("[Loader] Wizard smooth v10 couldn't be downloaded: using v9")
         loadUrl(URL_WIZARD_SMOOTH_V9, "Wizard smooth v9")
+    elseif why == "download" and url == URL_OLD_PHYSICS then
+        warn("[Loader] Old physics camera addon (repo copy) couldn't be downloaded: using the old gist")
+        loadUrl(URL_OLD_PHYSICS_GIST, "Old physics camera addon (gist)")
     end
     task.wait(0.1)
 end
@@ -329,7 +340,13 @@ loadUrl(URL_SAFECHAT_HOOK, "SafeChat Hook")
 loadUrl(URL_TERRAIN_HOOK, "Terrain Hook")
 loadUrl(URL_ANIM_2007, "2007 Animation")
 task.wait(1)
-loadUrl(URL_HAMMER_2, "Hammer stuff 2")
+do
+    local _, why = loadUrl(URL_HAMMER_2, "Hammer stuff 2")
+    if why == "download" then
+        warn("[Loader] Hammer stuff 2 (repo copy) couldn't be downloaded: using the gist")
+        loadUrl(URL_HAMMER_2_GIST, "Hammer stuff 2 (gist)")
+    end
+end
 
 --========================================================
 -- SYSTEM INJECTORS
