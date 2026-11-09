@@ -909,7 +909,7 @@ end)
 
 --[[
     =========================================================
-    PART 9: 2013 PHONE BACKPACK (TOUCH DEVICES)
+    PART 9: 2013 BACKPACK (TOUCH AND MOUSE; 3 SLOTS ON PHONES, 10 ON TABLETS AND PC)
     =========================================================
 ]]
 
@@ -917,7 +917,10 @@ end)
 -- modern phones get the 600x400 tablet window that covers most of the screen. On phones its
 -- hotbar, inventory window and tab are hidden and replaced by the phone layout below.
 
-local function startPhoneBackpack(legacyGui)
+-- desktop = a big screen (tablet or PC): ten hotbar slots with 1-0 as keys and a bigger window. Phones keep the
+-- three slots and the small window. Touch and mouse both work on both (the payload's own backpack only reacts
+-- to a mouse hovering over a tool, so a drag did nothing with touch and dropped the tool into the void).
+local function startPhoneBackpack(legacyGui, desktop)
     local SLOT_IMAGE = "rbxassetid://97613075"
     local LOADOUT_IMAGE = "rbxassetid://96536002"
     local LOADOUT_EDGE_IMAGE = "rbxassetid://97662207"
@@ -925,18 +928,19 @@ local function startPhoneBackpack(legacyGui)
     local TAB_UP_IMAGE = "rbxassetid://97617958"
     local TAB_DOWN_IMAGE = "rbxassetid://97644093"
 
-    local SLOT_COUNT = 3
+    local SLOT_COUNT = desktop and 10 or 3
     local SLOT_SIZE = 54
     local SLOT_PITCH = 60
-    local LOADOUT_WIDTH = 180
+    local LOADOUT_WIDTH = SLOT_COUNT * SLOT_PITCH
     local LOADOUT_Y = -85
-    local PANEL_WIDTH = 200
-    local PANEL_HEIGHT = 140
-    local PANEL_BOTTOM = -88
     local CELL_SIZE = 52
     local CELL_GAP = 2
-    local GRID_COLUMNS = 3
-    local GRID_ROWS = 2
+    local GRID_COLUMNS = desktop and 7 or 3
+    local GRID_ROWS = desktop and 4 or 2
+    -- window: the grid (14 px in from the left, 32 down), then the scroll bar
+    local PANEL_WIDTH = 14 + GRID_COLUMNS * (CELL_SIZE + CELL_GAP) - CELL_GAP + 12 + 19
+    local PANEL_HEIGHT = 32 + GRID_ROWS * (CELL_SIZE + CELL_GAP)
+    local PANEL_BOTTOM = -88
     local EQUIPPED_SCALE = 1.18
     local DRAG_THRESHOLD = 8
     local slideInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -1322,14 +1326,15 @@ local function startPhoneBackpack(legacyGui)
 
         -- While the window is open every slot sits in place so gear can be dropped into it,
         -- otherwise only the filled slots show, centred under the tab
-        local centerStart = 0.5 - #filledSlots * 0.333 / 2
+        local pitchShare = SLOT_PITCH / LOADOUT_WIDTH -- (a third on the phone's three slots)
+        local centerStart = 0.5 - #filledSlots * pitchShare / 2
         for slot = 1, SLOT_COUNT do
             local tool = hotbar[slot]
             local target = nil
             if panelOpen then
                 target = UDim2.new(0, (slot - 1) * SLOT_PITCH, 0, 0)
             elseif tool then
-                target = UDim2.new(centerStart + (table.find(filledSlots, slot) - 1) * 0.33, 0, 0, 0)
+                target = UDim2.new(centerStart + (table.find(filledSlots, slot) - 1) * pitchShare, 0, 0, 0)
             end
             if target and target ~= slotTargets[slot] then
                 slotTargets[slot] = target
@@ -1438,6 +1443,18 @@ local function startPhoneBackpack(legacyGui)
         if not panelBusy then setPanelOpen(not panelOpen, false) end
     end)
 
+    -- keys 1 to 9 and 0 equip the hotbar slot, as in 2013 (when a keyboard is there)
+    local SLOT_KEYS = {
+        [Enum.KeyCode.One] = 1, [Enum.KeyCode.Two] = 2, [Enum.KeyCode.Three] = 3, [Enum.KeyCode.Four] = 4,
+        [Enum.KeyCode.Five] = 5, [Enum.KeyCode.Six] = 6, [Enum.KeyCode.Seven] = 7, [Enum.KeyCode.Eight] = 8,
+        [Enum.KeyCode.Nine] = 9, [Enum.KeyCode.Zero] = 10,
+    }
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+        local slot = SLOT_KEYS[input.KeyCode]
+        if slot and slot <= SLOT_COUNT and hotbar[slot] then toggleEquip(hotbar[slot]) end
+    end)
+
     scrollUpButton.Activated:Connect(function()
         scrollRow = scrollRow - 1
         queueRefresh()
@@ -1496,15 +1513,14 @@ local function startPhoneBackpack(legacyGui)
     bindCharacter(LocalPlayer.Character)
 end
 
--- Phones only; tablets keep the payload's own backpack. Same small-screen rule Roblox's menus use.
+-- Every screen gets this backpack (touch and mouse both work in it); a big screen (tablet or PC) gets the
+-- ten-slot version. Same small-screen rule Roblox's menus use.
 local function isPhoneScreen()
     local viewport = workspace.CurrentCamera.ViewportSize
     return math.min(viewport.X, viewport.Y) <= 500
 end
 
-if UserInputService.TouchEnabled then
-    task.spawn(function()
-        local legacyGui = CoreGui:WaitForChild("NewRobloxGui", 30)
-        if legacyGui and isPhoneScreen() then startPhoneBackpack(legacyGui) end
-    end)
-end
+task.spawn(function()
+    local legacyGui = CoreGui:WaitForChild("NewRobloxGui", 30)
+    if legacyGui then startPhoneBackpack(legacyGui, not isPhoneScreen()) end
+end)
