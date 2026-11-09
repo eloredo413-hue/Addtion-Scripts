@@ -64,6 +64,7 @@ do
 			player = Players.LocalPlayer
 		end
 
+		local CLIMB_HOLD = 0.3 -- seconds the climbing pose is held after the last sign of climbing
 		local running = false
 		local cleanup = {}     -- the engine's own connections
 		local localConns = {}  -- [character] = connections of the local player's loop
@@ -108,6 +109,7 @@ do
 			if not running or not char.Parent or localConns[char] then return end
 
 			local pose = "Standing"
+			local lastClimb = -10
 			local toolAnim = "None"
 			local toolAnimTime = 0
 			local jumpMaxLimbVelocity = 0.75
@@ -164,8 +166,13 @@ do
 			end
 
 			local function move(time)
-				-- Old physics camera addon says it is climbing: show the climbing pose, not the falling one
-				local pose = (Env.BPClimbing and "Climbing") or pose
+				-- Climbing is read from the humanoid state and from Old physics camera addon (BPClimbing)
+				-- every frame, and held for a moment, so a ladder with gaps (the state drops to walking or
+				-- falling for a frame between two rungs) keeps the climbing pose instead of the walking one.
+				if Env.BPClimbing or humanoid:GetState() == Enum.HumanoidStateType.Climbing then
+					lastClimb = time
+				end
+				local pose = (time - lastClimb < CLIMB_HOLD and "Climbing") or pose
 				if (pose == "Jumping") then moveJump() return end
 				if (pose == "FreeFall") then moveFreeFall() return end
 				if (pose == "Seated") then moveSit() return end
@@ -295,6 +302,7 @@ do
 			for char, data in pairs(tracked) do
 				if char.Parent and data.hum and data.hum.Health > 0 then
 					local pose = data.pose
+					if data.hum:GetState() == Enum.HumanoidStateType.Climbing then pose = "Climbing" end
 					local rS, lS, rH, lH = data.rS, data.lS, data.rH, data.lH
 
 					if pose == "Jumping" or pose == "FreeFall" then
