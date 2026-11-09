@@ -191,13 +191,15 @@ local URL_BUBBLE_2015_2016  = "https://gist.githubusercontent.com/eloredo413-hue
 -- change the More guis gist):
 --   * 2015 early (E2015 Gui.lua): the leaderboard kept thin on phones, the PC chat bar on touch-screen PCs
 --   * 2013 mobile (2013 Mobile Gui.lua): joystick drives vehicles, a backpack that works with touch and mouse
--- (2019 is not swapped: More guis has a 2019 GUI of its own.)
 local MORE_GUIS_SWAPS = {
     URL_2015EARLY = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/E2015%20Gui.lua",
     -- 2013 mobile (2013 Mobile Gui.lua): the backpack takes touch and mouse, ten slots on tablets and PC
     URL_2013MOB   = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2013%20Mobile%20Gui.lua",
     -- 2021 / 2023 new / 2023 old: the top bar's chat icon (and the 2021 Roblox logo) are drawn when their image
     -- files do not load in the client (a PC's), so they are never blank
+    -- 2019 / 2017: a PC with a touch screen is a PC (it has a keyboard), so it gets the PC layout and menus
+    URL_2019      = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2019%20Gui.lua",
+    URL_2017      = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2017%20Gui.lua",
     URL_2021      = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2021%20Gui.lua",
     URL_2023_NEW  = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2023%20New%20Gui.lua",
     URL_2023_OLD  = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2023%20Old%20Gui.lua",
