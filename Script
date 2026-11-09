@@ -49,6 +49,10 @@ if getgenv().SpeedometerCleanup then
     pcall(getgenv().SpeedometerCleanup)
     getgenv().SpeedometerCleanup = nil
 end
+if getgenv().DialogBubbleHiderCleanup then
+    pcall(getgenv().DialogBubbleHiderCleanup)
+    getgenv().DialogBubbleHiderCleanup = nil
+end
 getgenv().BloxyEraLoopId = nil
 
 local HttpService = game:GetService("HttpService")
@@ -2481,6 +2485,81 @@ end
         return (text:gsub("^%s+", ""):gsub("%s+$", ""))
     end
 
+    --========================================================
+    -- NO DIALOG BUBBLES (2008)
+    -- The "?" / "!" bubbles over NPCs are BillboardGuis: Roblox's own (CoreGui) and the ones the
+    -- classic dialogs draw. Switched off and kept off while the 2008 GUI is the topbar, and put back
+    -- as they were when another one is picked. Nothing is looked through repeatedly: the ones there
+    -- are swept once, the ones that appear later are caught as they are added.
+    --========================================================
+    local function stopDialogBubbleHider()
+        if getgenv().DialogBubbleHiderCleanup then pcall(getgenv().DialogBubbleHiderCleanup) end
+    end
+
+    local function startDialogBubbleHider()
+        if getgenv().DialogBubbleHiderCleanup then return end   -- already on
+        local hidden, connections = {}, {}
+        local alive = true
+
+        local function isDialogBubble(gui)
+            local name = gui.Name
+            if name == "ChatNotificationGui" or name == "PlayerDialogBubble"
+               or string.find(name, "^ClassicExecutorDialogGui_") then
+                return true
+            end
+            -- Roblox's bubble under some other name still has its dialog bubble pictures
+            for _, child in ipairs(gui:GetDescendants()) do
+                if child:IsA("ImageLabel") or child:IsA("ImageButton") then
+                    local image = string.lower(child.Image)
+                    if string.find(image, "dialog_purpose", 1, true) or string.find(image, "notify_bkg", 1, true) then
+                        return true
+                    end
+                end
+            end
+            return false
+        end
+
+        local function hideBubble(gui)
+            if not alive or hidden[gui] or gui.ClassName ~= "BillboardGui" or not gui.Parent then return end
+            if gui:GetAttribute("ClassicOwned") and gui.Name ~= "PlayerDialogBubble" then return end  -- name tags etc.
+            if not isDialogBubble(gui) then return end
+            local entry = { was = gui.Enabled }
+            pcall(function() gui.Enabled = false end)
+            entry.conn = gui:GetPropertyChangedSignal("Enabled"):Connect(function()
+                if alive and gui.Enabled then pcall(function() gui.Enabled = false end) end
+            end)
+            hidden[gui] = entry
+        end
+
+        for _, root in ipairs({ CoreGui, pg }) do
+            pcall(function()
+                for _, obj in ipairs(root:GetDescendants()) do
+                    if obj.ClassName == "BillboardGui" then hideBubble(obj) end
+                end
+                table.insert(connections, root.DescendantAdded:Connect(function(obj)
+                    if obj.ClassName ~= "BillboardGui" then return end
+                    -- its pictures are put in a moment after it is parented
+                    task.defer(hideBubble, obj)
+                    task.delay(0.5, hideBubble, obj)
+                end))
+            end)
+        end
+
+        local function cleanup()
+            alive = false
+            for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
+            connections = {}
+            for gui, entry in pairs(hidden) do
+                pcall(function() entry.conn:Disconnect() end)
+                pcall(function() if gui.Parent then gui.Enabled = entry.was end end)
+            end
+            hidden = {}
+            if getgenv().DialogBubbleHiderCleanup == cleanup then getgenv().DialogBubbleHiderCleanup = nil end
+        end
+        getgenv().DialogBubbleHiderCleanup = cleanup
+        print("[Loader] no dialog bubbles over NPCs (2008)")
+    end
+
     local function evaluateAndLoad()
         local era, raw = getSelectedEra()
         if confirmedVariant then
@@ -2506,6 +2585,7 @@ end
         -- 2010-2014 get the old speedometer in its place, 2005 / 2006 have none.
         -- (the 2008 GUI of More guis is a "y2010" for the bubbles, but older than 2010: no speedometer)
         local is2008 = tostring(raw) == "2008"
+        if not (is2008 and era == "y2010") then stopDialogBubbleHider() end
         if (era == "classic" or era == "y2010") and not is2008 then
             local ok, err = pcall(startSpeedometer, "show")
             if not ok then warn("[Loader] the speedometer didn't start: " .. tostring(err)) end
@@ -2552,6 +2632,17 @@ end
             if getgenv().Bubble2017Cleanup then pcall(getgenv().Bubble2017Cleanup) end
             if getgenv().ClassicDialogCleanup then pcall(getgenv().ClassicDialogCleanup) end
             dialogLoaded_Classic = false
+
+        elseif era == "y2010" and is2008 then
+            -- 2008: like 2010 (its GUI draws no bubbles of ours, Roblox's own stay off), but no
+            -- dialog bubbles over NPCs: the classic dialogs do not run, and the ones Roblox draws
+            -- are switched off.
+            setNativeBubbles(true)
+            if activeBubbleEra then stopBubbleScript(activeBubbleEra) end
+            if getgenv().Bubble2017Cleanup then pcall(getgenv().Bubble2017Cleanup) end
+            if getgenv().ClassicDialogCleanup then pcall(getgenv().ClassicDialogCleanup) end
+            dialogLoaded_Classic = false
+            startDialogBubbleHider()
 
         elseif era == "y2010" then
             -- 2010 draws its own chat bubbles (Retro2009ChatBubbles, in PlayerGui). The 2011-style
