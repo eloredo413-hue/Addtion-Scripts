@@ -1,4 +1,4 @@
--- [[ 2019 GUI (Addtion-Scripts copy) — the backpack and emote buttons are spaced evenly after the chat icon ]]
+-- [[ (Addtion-Scripts copy of the 2019 gui) a PC with a touch screen gets the PC layout, menus and controls, not the phone ones ]]
 --[[
 		___ _______ ________ ________ ________ ___ ___
 		|\ \ |\ ___ \ |\ ____\|\ __ \|\ ____\ |\ \ / /|
@@ -77,7 +77,8 @@ if ExperienceChat then
 		or ExperienceChat:WaitForChild("bubbleChat", 3)
 end
 
-local IsTouchDevice = UserInputService.TouchEnabled
+-- (Addtion-Scripts) a touch-screen PC (it has a keyboard) is a PC, not a phone
+local IsTouchDevice = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 
 -- Types
 
@@ -708,6 +709,332 @@ end
 
 local Chat2017 = (function()
 
+-- [[ CHAT FIX BLOCK ]]
+-- Shared by the 2017 / 2019 / 2021 / 2023 old GUIs. They all use the same
+-- 2017 chat window (Chat.lua), which has two bugs:
+--
+--   1. Scroll / vanishing bug. When the window passes 50 messages it drops
+--      the oldest one and shrinks the canvas, but never moves the remaining
+--      messages up or shrinks their container. Every message after that is
+--      drawn further below the canvas, so you get a blank box that can't be
+--      scrolled and (once enough was trimmed) shows nothing at all.
+--
+--   2. Colours. Message text was drawn as plain text, so colour tags
+--      (<font color="...">) never rendered. Messages that come from the game
+--      (red server messages, DisplaySystemMessage) were ignored or had their
+--      tags stripped, and the text colour that chat-colour commands set
+--      (TextChatService.OnIncomingMessage) never reached this window.
+--
+-- ChatFix.Patch(source, label) takes the Chat module source, fixes both and
+-- returns the new source. If a fix can't be applied it is skipped, and if the
+-- result doesn't compile the original source is returned untouched.
+
+local ChatFix = (function()
+
+	local Fix = {}
+
+	-- Goes at the very top of the chat module. One copy of this lives in each
+	-- chat window, plus one shared record of what the game's chat callback did.
+	local RUNTIME = [==[
+local Chat2017Fx = (function()
+	local Fx = {}
+	local Players = game:GetService("Players")
+	local TextChatService = game:GetService("TextChatService")
+	local Env = (getgenv or function() return _G end)()
+
+	local Shared = Env.Chat2017FixShared
+	if type(Shared) ~= "table" then
+		Shared = { Records = {}, Order = {}, Calls = 0, Misses = 0 }
+		Env.Chat2017FixShared = Shared
+	end
+
+	-- Message text from TextChatService is escaped ("&lt;") and the label now
+	-- reads rich text, so text that isn't escaped yet gets escaped here.
+	function Fx.Escape(Text)
+		Text = tostring(Text)
+		Text = string.gsub(Text, "&", "&amp;")
+		Text = string.gsub(Text, "<", "&lt;")
+		Text = string.gsub(Text, ">", "&gt;")
+		Text = string.gsub(Text, '"', "&quot;")
+		Text = string.gsub(Text, "'", "&apos;")
+		return Text
+	end
+
+	-- What the game's OnIncomingMessage callback returned for each message
+	-- (this is where chat colour commands put their colours). The callback
+	-- can't be read normally, so it is read with getcallbackvalue and wrapped.
+	local function record(Message, Props)
+		local Id = Message.MessageId
+		Shared.Calls = Shared.Calls + 1
+		Shared.Records[Id] = Props or false
+		table.insert(Shared.Order, Id)
+		if #Shared.Order > 300 then
+			for _ = 1, 100 do
+				Shared.Records[table.remove(Shared.Order, 1)] = nil
+			end
+		end
+	end
+
+	local function wrapCallback()
+		if not getcallbackvalue then return end
+		local Ok, Current = pcall(getcallbackvalue, TextChatService, "OnIncomingMessage")
+		if not Ok or type(Current) ~= "function" or Current == Shared.Wrapper then return end
+		local Original = Current
+		local Wrapper = function(Message)
+			local Props = Original(Message)
+			pcall(record, Message, Props)
+			return Props
+		end
+		local Set = pcall(function()
+			TextChatService.OnIncomingMessage = Wrapper
+		end)
+		if Set then
+			Shared.Wrapper = Wrapper
+		end
+	end
+
+	if not Shared.Polling then
+		Shared.Polling = true
+		pcall(wrapCallback)
+		task.spawn(function()
+			while true do
+				task.wait(2)
+				pcall(wrapCallback)
+			end
+		end)
+	end
+
+	local function parseColor(Text)
+		if type(Text) ~= "string" then return nil end
+		Text = string.lower(Text)
+		local Hex = string.match(Text, 'color%s*=%s*["\']?#(%x%x%x%x%x%x)')
+		if Hex then
+			return Color3.fromRGB(
+				tonumber(string.sub(Hex, 1, 2), 16),
+				tonumber(string.sub(Hex, 3, 4), 16),
+				tonumber(string.sub(Hex, 5, 6), 16)
+			)
+		end
+		local R, G, B = string.match(Text, 'color%s*=%s*["\']?rgb%(%s*(%d+)%s*,%s*(%d+)%s*,%s*(%d+)%s*%)')
+		if R then
+			return Color3.fromRGB(tonumber(R), tonumber(G), tonumber(B))
+		end
+		return nil
+	end
+
+	-- Name colour for the message being added right now (the window reads it).
+	Fx.NameColor = nil
+
+	function Fx.Process(Chat, Msg, Props)
+		if Msg.Status ~= Enum.TextChatMessageStatus.Success then return end
+
+		local Text, Prefix = Msg.Text, nil
+		if Props then
+			local Ok, PropText, PropPrefix = pcall(function()
+				return Props.Text, Props.PrefixText
+			end)
+			if Ok then
+				if type(PropText) == "string" and PropText ~= "" then
+					Text = PropText
+				end
+				Prefix = PropPrefix
+			end
+		end
+
+		if type(Text) ~= "string" or Text == "" then return end
+
+		local Window = Chat.ChatWindowWidget
+		if not Window then return end
+
+		-- From the game itself (red server messages and so on): its own line,
+		-- tags kept so its colours show.
+		if not Msg.TextSource then
+			Window:AddSystemChatMessage(Text)
+			return
+		end
+
+		local Plr = Players:GetPlayerByUserId(Msg.TextSource.UserId)
+		if not Plr then return end
+
+		local Skip = false
+		pcall(function()
+			local Flag = game:GetService("Lighting"):FindFirstChild("LocalChatsAreUnfiltered")
+			if Flag and Flag.Value and Plr == Players.LocalPlayer then
+				Skip = true
+			end
+		end)
+		if Skip then return end
+
+		Fx.NameColor = parseColor(Prefix)
+		local Ok, Err = pcall(Chat.OnPlayerChatted, Chat, Enum.PlayerChatType.All, Plr, Text, nil)
+		Fx.NameColor = nil
+		if not Ok then
+			warn("[Chat fix] " .. tostring(Err))
+		end
+	end
+
+	-- Messages are added one at a time, in order. When the game has a chat
+	-- callback, each one waits a moment for what the callback made of it.
+	local Queue, Working = {}, false
+
+	function Fx.Handle(Chat, Msg)
+		table.insert(Queue, { Chat, Msg })
+		if Working then return true end
+		Working = true
+		task.spawn(function()
+			while #Queue > 0 do
+				local Item = table.remove(Queue, 1)
+				local Message = Item[2]
+				local Props = Shared.Records[Message.MessageId]
+				if Props == nil and Shared.Wrapper and Shared.Misses < 5 then
+					local Started = os.clock()
+					repeat
+						task.wait()
+					until Shared.Records[Message.MessageId] ~= nil or os.clock() - Started > 0.25
+					Props = Shared.Records[Message.MessageId]
+					-- the callback never runs here: stop waiting for it
+					if Props == nil and Shared.Calls == 0 then
+						Shared.Misses = Shared.Misses + 1
+					end
+				end
+				if Props == false then Props = nil end
+				local Ok, Err = pcall(Fx.Process, Item[1], Message, Props)
+				if not Ok then
+					warn("[Chat fix] " .. tostring(Err))
+				end
+			end
+			Working = false
+		end)
+		return true
+	end
+
+	return Fx
+end)()
+]==]
+
+	-- Put right before RemoveOldestMessage: lays every message out again,
+	-- one under the other from the top, and sizes the container and canvas
+	-- to match.
+	local RELAYOUT = [==[
+function this:RelayoutChats()
+	local Frame = this.ScrollingFrame
+	local Container = this.MessageContainer
+	if not (Frame and Container) then return end
+	local Y = 0
+	for _, Message in ipairs(this.Chats) do
+		local Gui = Message:GetGui()
+		if Gui then
+			Gui.Position = UDim2.new(0, 0, 0, Y)
+			Y = Y + Gui.Size.Y.Offset
+		end
+	end
+	Container.Position = UDim2.new(0, 0, 0, 0)
+	Container.Size = UDim2.new(Container.Size.X.Scale, Container.Size.X.Offset, 0, Y)
+	Frame.CanvasSize = UDim2.new(Frame.CanvasSize.X.Scale, Frame.CanvasSize.X.Offset, Frame.CanvasSize.Y.Scale, Y)
+	this:SetCanvasPosition(Frame.CanvasPosition)
+end
+
+]==]
+
+	-- { name, pattern, replacement(match, captures...) }
+	local PATCHES = {
+		{
+			"drop type annotation",
+			"local RBXGeneral: TextChannel =",
+			function() return "local RBXGeneral =" end,
+		},
+		{
+			"layout after trim (1/2)",
+			"function%s+this:RemoveOldestMessage%(%)",
+			function(Match) return RELAYOUT .. Match end,
+		},
+		{
+			"layout after trim (2/2)",
+			"return%s+table%.remove%(%s*this%.Chats%s*,%s*index%s*%)",
+			function()
+				return "local RemovedMessage = table.remove(this.Chats, index) this:RelayoutChats() return RemovedMessage"
+			end,
+		},
+		{
+			"rich text on player messages",
+			"Text%s*=%s*chatMessageDisplayText%s*;",
+			function() return "RichText = true; Text = chatMessageDisplayText;" end,
+		},
+		{
+			"rich text on system messages",
+			"Text%s*=%s*systemMessageDisplayText%s*;",
+			function() return "RichText = true; Text = systemMessageDisplayText;" end,
+		},
+		{
+			"name colour",
+			"TextColor3%s*=%s*playerColor%s*;",
+			function() return "TextColor3 = (Chat2017Fx.NameColor or playerColor);" end,
+		},
+		{
+			"receive handler",
+			"RBXGeneral%.MessageReceived:Connect%(%s*function%s*%(msg%)",
+			function(Match) return Match .. " if Chat2017Fx.Handle(this, msg) then return end " end,
+		},
+		{
+			"escape your own message",
+			"OnPlayerChatted%(([^%)]-),%s*msg%.Text%s*,%s*nil%s*%)",
+			function(Before)
+				return "OnPlayerChatted(" .. Before .. ", Chat2017Fx.Escape(msg.Text), nil)"
+			end,
+			true, -- optional
+		},
+	}
+
+	function Fix.Patch(Source, Label)
+		Label = Label or "chat"
+		if type(Source) ~= "string" then return Source end
+
+		-- Already fixed (a second pass would double up the patches).
+		if string.find(Source, "Chat2017Fx", 1, true) then
+			return Source
+		end
+
+		local Patched = Source
+		local Applied, Skipped = {}, {}
+
+		for _, Patch in ipairs(PATCHES) do
+			local Name, Pattern, Replace, Optional = Patch[1], Patch[2], Patch[3], Patch[4]
+			local Result, Count = string.gsub(Patched, Pattern, Replace)
+			if Count >= 1 then
+				Patched = Result
+				table.insert(Applied, Name)
+			elseif not Optional and Name ~= "drop type annotation" then
+				table.insert(Skipped, Name)
+			end
+		end
+
+		-- the runtime is only needed when something uses it
+		if string.find(Patched, "Chat2017Fx", 1, true) then
+			Patched = RUNTIME .. Patched
+		end
+
+		if #Skipped > 0 then
+			warn("[Chat fix] " .. Label .. ": could not apply: " .. table.concat(Skipped, ", "))
+		end
+
+		-- never leave the chat worse than it was: if the fixed source doesn't
+		-- compile, use the original
+		local Compiled, CompileError = loadstring(Patched)
+		if not Compiled then
+			warn("[Chat fix] " .. Label .. ": fixed chat did not compile, using the original (" .. tostring(CompileError) .. ")")
+			return Source
+		end
+
+		print("[Chat fix] " .. Label .. ": applied " .. #Applied .. " fixes")
+		return Patched
+	end
+
+	return Fix
+
+end)()
+-- [[ END CHAT FIX BLOCK ]]
+
+
 	local Success, Result = pcall(function()
 
 		local Model = Suite.launch(
@@ -738,6 +1065,9 @@ local Chat2017 = (function()
 			"local RBXGeneral =",
 			1
 		)
+
+		-- Chat fix: scroll / vanishing bug and colours
+		Chat.Source = ChatFix.Patch(Chat.Source, "2019 chat")
 
 		local Compiled, CompileError = loadstring(Chat.Source)
 
@@ -2720,13 +3050,8 @@ task.spawn(function()
 		local container = findTopBar()
 		if container then
 			makeTopBarPassClicks(container)
-			-- one pass for a whole burst of new parts (this used to go through the whole top bar once per part)
-			local passPending = false
 			container.DescendantAdded:Connect(function()
-				if passPending then return end
-				passPending = true
 				task.defer(function()
-					passPending = false
 					makeTopBarPassClicks(container)
 				end)
 			end)
@@ -2901,49 +3226,6 @@ end)
 				end
 
 				local scaleX, x, scaleY, y = baseXFromChat()
-
-				-- Even spacing, like the real 2019 top bar: the backpack sits as far after the chat
-				-- icon as the chat icon sits after the menu icon (centre to centre), and the emote
-				-- button one more step on. ("end of the chat button + 4" put the backpack too far
-				-- right, so the row looked shifted when there is no emote button.)
-				local function centreX(btn)
-					return btn.AbsolutePosition.X + btn.AbsoluteSize.X / 2
-				end
-				local function placeCentre(btn, centre)
-					local w = btn.AbsoluteSize.X
-					if w <= 0 then w = resolveWidth(btn) end
-					local offset = centre - ButtonParent.AbsolutePosition.X - w * (0.5 - btn.AnchorPoint.X)
-					btn.Position = UDim2.new(0, math.floor(offset + 0.5), scaleY, y)
-				end
-				local MenuButton
-				if FirstChat and FirstChat.AbsoluteSize.X > 0 then
-					local chatCentre = centreX(FirstChat)
-					for _, Child in ipairs(ButtonParent:GetChildren()) do
-						if Child:IsA("GuiObject") and Child.Visible and Child ~= FirstChat
-							and Child ~= BackpackButton and Child ~= EmoteButton
-							and not Child.Name:lower():find("^chat") and Child.AbsoluteSize.X > 0
-							and Child.AbsoluteSize.X < 120 then
-							local c = centreX(Child)
-							if c < chatCentre and (not MenuButton or c > centreX(MenuButton)) then
-								MenuButton = Child
-							end
-						end
-					end
-				end
-				if MenuButton then
-					local step = centreX(FirstChat) - centreX(MenuButton)
-					if step > 10 and step < 150 then
-						local nextCentre = centreX(FirstChat) + step
-						if HasBackpack then
-							placeCentre(BackpackButton, nextCentre)
-							nextCentre = nextCentre + step
-						end
-						if EmoteButton then
-							placeCentre(EmoteButton, nextCentre)
-						end
-						return
-					end
-				end
 
 				if HasBackpack then
 					local bw = resolveWidth(BackpackButton)
@@ -3364,19 +3646,6 @@ task.spawn(function()
 
 	end
 
-	-- Whether a ScreenGui has a top bar of its own is looked up every few seconds, not twice a second
-	-- (it searches the whole ScreenGui, which is slow for the big ones).
-	local topBarLookup = setmetatable({}, { __mode = "k" })
-	local function hasTopBar(Gui)
-		local entry = topBarLookup[Gui]
-		local now = os.clock()
-		if not entry or now - entry.at > 8 then
-			entry = { has = Gui:FindFirstChild("TopBarContainer", true) ~= nil, at = now }
-			topBarLookup[Gui] = entry
-		end
-		return entry.has
-	end
-
 	while task.wait(0.5) do
 
 		for _, Gui in ipairs(PlayerGui:GetChildren()) do
@@ -3386,7 +3655,7 @@ task.spawn(function()
 				and Gui.Enabled
 				and not Ignored[Gui.Name]
 				and Gui ~= LegacyGui
-				and not hasTopBar(Gui)
+				and not Gui:FindFirstChild("TopBarContainer", true)
 			then
 
 				pcall(function()
@@ -3451,6 +3720,1278 @@ task.spawn(function()
 		task.wait(0.5)
 	end
 end)
+
+-- LEAVE / RESET CONFIRMATION PAGES
+--
+-- The "Are you sure you want to leave the game?" and "Are you sure you
+-- want to reset your character?" pages of the ESC menu.
+--
+-- On a touch screen (phones / tablets) they look like the 2021 gui on
+-- a phone: the question about a third of the way down, the blue
+-- "Leave" / "Reset" button and the grey "Don't" button side by side
+-- under it, wide and centred. Changing the menu's own question and
+-- buttons does not work there (the menu keeps its own layout), so a
+-- copy of them is drawn on top in the 2021 spot, sliding in and out
+-- with the page, while the menu's own ones are hidden. Tapping a copied
+-- button runs the menu's real button, so they do exactly what they did
+-- before.
+--
+-- On PC the Leave page copies the Reset page's layout, and the first
+-- button of each page stays blue.
+--
+-- The pages are found by their text, wherever the menu keeps them.
+
+local MATCH_LEAVE_TO_RESET = true
+local FIRST_BUTTON_BLUE = true
+local MOBILE_LAYOUT_LIKE_2021 = true
+
+-- 2021 mobile layout, as fractions of the screen height (measured on
+-- the 2021 gui on a 2340x1080 phone).
+local MobileLayout = {
+	QuestionCenterY = 0.311, -- middle of the question line
+	QuestionHeight = 0.12,
+	QuestionTextSize = 0.0515, -- only used if the text can't be measured
+	ButtonTop = 0.4565,
+	ButtonWidth = 0.5315,
+	ButtonHeight = 0.1148,
+	ButtonGap = 0.1361, -- space between the two buttons
+	ButtonTextSize = 0.0375, -- only used if the text can't be measured
+	MaxScreenWidth = 0.92, -- never wider than this part of the screen
+
+	-- How far the button's frame reaches past the button you see, in
+	-- pixels on a 1080 px tall screen (measured on the last screenshots:
+	-- the frame was 27 px wider and taller than the button showing).
+	FaceMargin = { Left = 15, Right = 13, Top = 6, Bottom = 22 },
+
+	-- The text is sized so it is as wide as in the 2021 images (fractions
+	-- of the screen height): "Are you sure you want to leave the game?"
+	-- is 1052 px wide and "Leave" 104 px on a 1080 px tall screen.
+	QuestionSample = "Are you sure you want to leave the game?",
+	QuestionSampleWidth = 1.015,
+	ButtonSample = "Leave",
+	ButtonSampleWidth = 0.1065,
+}
+
+task.spawn(function()
+
+	if not (MATCH_LEAVE_TO_RESET or FIRST_BUTTON_BLUE or MOBILE_LAYOUT_LIKE_2021) then
+		return
+	end
+
+	local GuiService = game:GetService("GuiService")
+
+	local VirtualInputManager
+
+	pcall(function()
+		VirtualInputManager = game:GetService("VirtualInputManager")
+	end)
+
+	local BlueButton = "rbxasset://textures/ui/Settings/MenuBarAssets/MenuButtonSelected.png"
+	local GreyButton = "rbxasset://textures/ui/Settings/MenuBarAssets/MenuButton.png"
+
+	local Questions = {
+		leave = { question = "leave the game", confirm = "leave" },
+		reset = { question = "reset your character", confirm = "reset" },
+	}
+
+	local SetIfDifferent = function(Object, Property, Value)
+		pcall(function()
+			if Object[Property] ~= Value then
+				Object[Property] = Value
+			end
+		end)
+	end
+
+	local TextOf = function(Object)
+
+		local Success, Text = pcall(function()
+			return Object.Text
+		end)
+
+		if Success and type(Text) == "string" then
+			return (Text:lower():match("^%s*(.-)%s*$"))
+		end
+
+		return nil
+
+	end
+
+	local KindOf = function(Object)
+
+		if not Object:IsA("TextLabel") then
+			return nil
+		end
+
+		local Text = TextOf(Object)
+
+		if not Text then
+			return nil
+		end
+
+		for Kind, Info in pairs(Questions) do
+			if Text:find(Info.question, 1, true) then
+				return Kind
+			end
+		end
+
+		return nil
+
+	end
+
+	-- The page a question sits on, and its two buttons.
+	local FindParts = function(Question, Kind)
+
+		local Page = Question.Parent
+
+		if not (Page and Page:IsA("GuiBase2d")) then
+			return nil
+		end
+
+		local Word = Questions[Kind].confirm
+		local Confirm, Cancel
+
+		for _, Object in ipairs(Page:GetDescendants()) do
+
+			if
+				Object:IsA("GuiButton")
+				and not (Confirm and Confirm:IsAncestorOf(Object))
+				and not (Cancel and Cancel:IsAncestorOf(Object))
+			then
+
+				local Texts = { TextOf(Object) }
+
+				for _, Child in ipairs(Object:GetDescendants()) do
+
+					local Text = (Child:IsA("TextLabel") or Child:IsA("TextButton")) and TextOf(Child)
+
+					if Text then
+						table.insert(Texts, Text)
+					end
+
+				end
+
+				for _, Text in ipairs(Texts) do
+
+					if Text == Word then
+						Confirm = Confirm or Object
+					elseif Text:find("^don") and Text:find(Word, 1, true) then
+						Cancel = Cancel or Object
+					end
+
+				end
+
+			end
+
+		end
+
+		if not Confirm then
+			return nil
+		end
+
+		return { Kind = Kind, page = Page, question = Question, confirm = Confirm, cancel = Cancel }
+
+	end
+
+	local StillValid = function(Parts)
+		return Parts.question.Parent == Parts.page
+			and KindOf(Parts.question) == Parts.Kind
+			and Parts.confirm:IsDescendantOf(Parts.page)
+	end
+
+	--========================================================*
+	-- OVERLAY (touch screens): the 2021 copy is drawn here
+	--========================================================*
+
+	local Overlay = Instance.new("ScreenGui")
+
+	Overlay.Name = "Legacy2021ConfirmPage"
+	Overlay.ResetOnSpawn = false
+	Overlay.IgnoreGuiInset = true
+	Overlay.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	Overlay.DisplayOrder = 1000
+	Overlay.Enabled = false
+
+	pcall(function()
+		Overlay.ScreenInsets = Enum.ScreenInsets.None
+	end)
+
+	pcall(function()
+		Overlay.Parent = CoreGui
+	end)
+
+	if not Overlay.Parent then
+		pcall(function()
+			Overlay.Parent = gethui and gethui()
+		end)
+	end
+
+	if not Overlay.Parent then
+		pcall(function()
+			Overlay.Parent = Players.LocalPlayer:WaitForChild("PlayerGui", 10)
+		end)
+	end
+
+	--========================================================*
+	-- FINDING THE PAGES
+	--========================================================*
+
+	-- [question label] = { Kind, page, question, confirm, cancel }
+	local Tracked = {}
+
+	local Consider = function(Object)
+
+		if Tracked[Object] or not Object:IsA("TextLabel") or Object:IsDescendantOf(Overlay) then
+			return
+		end
+
+		local Kind = KindOf(Object)
+
+		if not Kind then
+			return
+		end
+
+		local Success, Parts = pcall(FindParts, Object, Kind)
+
+		if Success and Parts then
+			Tracked[Object] = Parts
+			print("[Legacy] " .. Kind .. " page found:", Parts.page:GetFullName())
+		end
+
+	end
+
+	local Scan = function(Root)
+
+		if typeof(Root) ~= "Instance" then
+			return
+		end
+
+		Consider(Root)
+
+		for _, Object in ipairs(Root:GetDescendants()) do
+			if Object:IsA("TextLabel") then
+				Consider(Object)
+			end
+		end
+
+	end
+
+	local Have = function(Kind)
+
+		for _, Parts in pairs(Tracked) do
+			if Parts.Kind == Kind then
+				return true
+			end
+		end
+
+		return false
+
+	end
+
+	-- Pages the menu keeps off screen: its module records, and the
+	-- objects with no parent.
+	local HiddenRoots = function()
+
+		local Roots = {}
+
+		pcall(function()
+
+			local Records = Environment().__rbxm_suite_modules
+
+			if type(Records) ~= "table" then
+				return
+			end
+
+			local AddPage = function(Value)
+				if type(Value) == "table" and typeof(rawget(Value, "Page")) == "Instance" then
+					table.insert(Roots, rawget(Value, "Page"))
+				end
+			end
+
+			for Module, Record in pairs(Records) do
+
+				if
+					typeof(Module) == "Instance"
+					and type(Record) == "table"
+					and (
+						Module.Name == "LeaveGame"
+						or Module.Name == "ResetCharacter"
+						or Module.Name == "SettingsHub"
+					)
+				then
+
+					local Data = rawget(Record, "data")
+
+					AddPage(Data)
+
+					local Hub = type(Data) == "table" and rawget(Data, "Instance")
+
+					if type(Hub) == "table" then
+						for _, Value in pairs(Hub) do
+							AddPage(Value)
+						end
+					end
+
+				end
+
+			end
+
+		end)
+
+		pcall(function()
+
+			if type(getnilinstances) ~= "function" then
+				return
+			end
+
+			for _, Object in ipairs(getnilinstances()) do
+				if typeof(Object) == "Instance" and Object:IsA("GuiObject") then
+					table.insert(Roots, Object)
+				end
+			end
+
+		end)
+
+		return Roots
+
+	end
+
+	-- Right away when a page is built or put on screen.
+	local Watch = function(Root)
+
+		if typeof(Root) ~= "Instance" then
+			return
+		end
+
+		pcall(function()
+
+			Root.DescendantAdded:Connect(function(Object)
+
+				if Object:IsA("TextLabel") then
+					Consider(Object)
+					task.defer(Consider, Object)
+					task.delay(0.25, Consider, Object)
+				end
+
+			end)
+
+		end)
+
+	end
+
+	Watch(CoreGui)
+
+	if typeof(LegacyGui) == "Instance" and not LegacyGui:IsDescendantOf(CoreGui) then
+		Watch(LegacyGui)
+	end
+
+	--========================================================*
+	-- THE 2021 COPY
+	--========================================================*
+
+	local Copies = {} -- [Parts] = { Holder, Question, Buttons }
+	local Saved = {} -- [Parts] = the menu's own look, while hidden
+
+	local StripConstraints = function(Object)
+
+		for _, Descendant in ipairs(Object:GetDescendants()) do
+
+			if
+				Descendant:IsA("UISizeConstraint")
+				or Descendant:IsA("UIAspectRatioConstraint")
+				or Descendant:IsA("UITextSizeConstraint")
+				or Descendant:IsA("UIScale")
+				or Descendant:IsA("LuaSourceContainer")
+			then
+				Descendant:Destroy()
+			end
+
+		end
+
+	end
+
+	-- Used only if the menu's button can't be copied.
+	local BuildButton = function(Text, Blue)
+
+		local Button = Instance.new("ImageButton")
+
+		Button.BackgroundTransparency = 1
+		Button.Image = Blue and BlueButton or GreyButton
+		Button.ScaleType = Enum.ScaleType.Slice
+		Button.SliceCenter = Rect.new(8, 6, 46, 44)
+
+		local Label = Instance.new("TextLabel")
+
+		Label.BackgroundTransparency = 1
+		Label.Size = UDim2.new(1, 0, 1, -8)
+		Label.Font = Enum.Font.SourceSansBold
+		Label.TextColor3 = Color3.new(1, 1, 1)
+		Label.Text = Text
+		Label.Parent = Button
+
+		return Button
+
+	end
+
+	-- Run the menu's real button, as if it was tapped.
+	local Fire = function(Button)
+
+		for _, Name in ipairs({ "MouseButton1Click", "Activated" }) do
+
+			local Fired = false
+
+			if getconnections then
+
+				pcall(function()
+
+					for _, Connection in ipairs(getconnections(Button[Name])) do
+
+						if Connection.Function then
+							task.spawn(Connection.Function)
+							Fired = true
+						elseif Connection.Fire then
+							task.spawn(pcall, Connection.Fire, Connection)
+							Fired = true
+						end
+
+					end
+
+				end)
+
+			elseif firesignal then
+
+				Fired = pcall(firesignal, Button[Name])
+
+			end
+
+			if Fired then
+				return true
+			end
+
+		end
+
+		return false
+
+	end
+
+	local Restore = function(Parts)
+
+		local Look = Saved[Parts]
+
+		if not Look then
+			return
+		end
+
+		Saved[Parts] = nil
+
+		SetIfDifferent(Parts.question, "TextTransparency", Look.TextTransparency)
+		SetIfDifferent(Parts.question, "TextStrokeTransparency", Look.TextStrokeTransparency)
+		SetIfDifferent(Parts.confirm, "Visible", true)
+
+		if Parts.cancel then
+			SetIfDifferent(Parts.cancel, "Visible", true)
+		end
+
+	end
+
+	local HideOriginals = function(Parts)
+
+		if not Saved[Parts] then
+			Saved[Parts] = {
+				TextTransparency = Parts.question.TextTransparency,
+				TextStrokeTransparency = Parts.question.TextStrokeTransparency,
+			}
+		end
+
+		SetIfDifferent(Parts.question, "TextTransparency", 1)
+		SetIfDifferent(Parts.question, "TextStrokeTransparency", 1)
+		SetIfDifferent(Parts.confirm, "Visible", false)
+
+		if Parts.cancel then
+			SetIfDifferent(Parts.cancel, "Visible", false)
+		end
+
+	end
+
+	local LastPress = 0
+	local ShowRealUntil = 0
+
+	local Press = function(Parts, Original)
+
+		if os.clock() - LastPress < 0.4 then
+			return
+		end
+
+		LastPress = os.clock()
+
+		if Fire(Original) then
+			return
+		end
+
+		-- No way to run it directly: show the real button for a moment
+		-- and tap it.
+		if not VirtualInputManager then
+			warn("[Legacy] can't press the menu's button on this executor")
+			return
+		end
+
+		ShowRealUntil = os.clock() + 0.5
+
+		task.spawn(function()
+
+			Restore(Parts)
+
+			RunService.RenderStepped:Wait()
+
+			local Root = Original:FindFirstAncestorWhichIsA("ScreenGui")
+			local Inset = (Root and not Root.IgnoreGuiInset) and GuiService:GetGuiInset() or Vector2.zero
+			local Center = Original.AbsolutePosition + Original.AbsoluteSize / 2 + Inset
+
+			pcall(function()
+				VirtualInputManager:SendMouseButtonEvent(Center.X, Center.Y, 0, true, game, 0)
+				task.wait(0.05)
+				VirtualInputManager:SendMouseButtonEvent(Center.X, Center.Y, 0, false, game, 0)
+			end)
+
+		end)
+
+	end
+
+	local MakeCopy = function(Parts)
+
+		local Holder = Instance.new("Frame")
+
+		Holder.Name = Parts.Kind
+		Holder.BackgroundTransparency = 1
+		Holder.Size = UDim2.fromScale(1, 1)
+		Holder.Active = false
+		Holder.Visible = false
+		Holder.Parent = Overlay
+
+		local Question = Instance.new("TextLabel")
+
+		Question.Name = "Question"
+		Question.BackgroundTransparency = 1
+		Question.Active = false
+		Question.Font = Enum.Font.SourceSansBold
+		Question.TextColor3 = Color3.new(1, 1, 1)
+		Question.TextWrapped = true
+		Question.TextScaled = false
+		Question.TextXAlignment = Enum.TextXAlignment.Center
+		Question.TextYAlignment = Enum.TextYAlignment.Center
+
+		pcall(function()
+			Question.FontFace = Parts.question.FontFace
+		end)
+
+		pcall(function()
+			Question.TextColor3 = Parts.question.TextColor3
+		end)
+
+		Question.Parent = Holder
+
+		local Buttons = {}
+
+		for Index, Original in ipairs({ Parts.confirm, Parts.cancel or false }) do
+
+			if Original then
+
+				local Blue = Index == 1 and FIRST_BUTTON_BLUE
+
+				local Success, Copy = pcall(function()
+					return Original:Clone()
+				end)
+
+				if Success and Copy then
+
+					StripConstraints(Copy)
+
+					if Copy:IsA("ImageButton") then
+						if Blue then
+							Copy.Image = BlueButton
+						elseif Copy.Image == BlueButton then
+							Copy.Image = GreyButton
+						end
+					end
+
+				else
+
+					local Text = TextOf(Original) or ""
+
+					for _, Child in ipairs(Original:GetDescendants()) do
+						if Child:IsA("TextLabel") and Child.Text ~= "" then
+							Text = Child.Text
+							break
+						end
+					end
+
+					Copy = BuildButton(Text, Blue)
+
+				end
+
+				Copy.Name = Index == 1 and "Confirm" or "Cancel"
+				Copy.AnchorPoint = Vector2.zero
+				Copy.Visible = true
+				Copy.Active = true
+
+				pcall(function()
+					Copy.Selectable = false
+				end)
+
+				Copy.Parent = Holder
+
+				Copy.Activated:Connect(function()
+					Press(Parts, Original)
+				end)
+
+				-- Flashes blue while it is pressed, like the menu's own
+				-- buttons (so "Don't Leave" / "Don't Reset" go blue too),
+				-- and stays blue a moment after a quick tap so it shows.
+				if Copy:IsA("ImageButton") then
+
+					local Normal = Copy.Image
+					local Token = 0
+					local PressedAt = 0
+
+					local IsPointer = function(Input)
+						return Input.UserInputType == Enum.UserInputType.Touch
+							or Input.UserInputType == Enum.UserInputType.MouseButton1
+					end
+
+					local Release = function()
+
+						local Mine = Token
+
+						task.delay(math.max(0, 0.2 - (os.clock() - PressedAt)), function()
+							if Token == Mine then
+								SetIfDifferent(Copy, "Image", Normal)
+							end
+						end)
+
+					end
+
+					Copy.InputBegan:Connect(function(Input)
+
+						if IsPointer(Input) then
+							Token = Token + 1
+							PressedAt = os.clock()
+							SetIfDifferent(Copy, "Image", BlueButton)
+						end
+
+					end)
+
+					Copy.InputEnded:Connect(function(Input)
+
+						if IsPointer(Input) then
+							Release()
+						end
+
+					end)
+
+					Copy.MouseLeave:Connect(Release)
+
+				end
+
+				table.insert(Buttons, Copy)
+
+			end
+
+		end
+
+		return { Holder = Holder, Question = Question, Buttons = Buttons }
+
+	end
+
+	local IsOnScreen = function(Parts)
+
+		local Question = Parts.question
+		local Root = Question:FindFirstAncestorWhichIsA("LayerCollector")
+
+		if not (Root and Root:IsDescendantOf(game)) then
+			return false
+		end
+
+		if Root:IsA("ScreenGui") and not Root.Enabled then
+			return false
+		end
+
+		local Current = Question
+
+		while Current and Current ~= Root do
+
+			if Current:IsA("GuiObject") and not Current.Visible then
+				return false
+			end
+
+			Current = Current.Parent
+
+		end
+
+		local Camera = workspace.CurrentCamera
+		local Screen = Camera and Camera.ViewportSize or Vector2.new(1, 1)
+		local Position, Size = Question.AbsolutePosition, Question.AbsoluteSize
+
+		return Size.X > 0 and Size.Y > 0
+			and Position.X + Size.X > 0 and Position.X < Screen.X
+			and Position.Y + Size.Y > 0 and Position.Y < Screen.Y
+
+	end
+
+	-- How far the page is from where it rests (the menu slides pages in
+	-- and out): the copy is moved by the same amount, so it slides with
+	-- the page and stops in the 2021 spot.
+	local Rest = setmetatable({}, { __mode = "k" })
+	local Last = setmetatable({}, { __mode = "k" })
+	local Still = setmetatable({}, { __mode = "k" })
+
+	local SlideOffset = function(Page, ScreenWidth)
+
+		local Position = Page.AbsolutePosition
+		local Parent = Page.Parent
+
+		if Last[Page] and (Position - Last[Page]).Magnitude < 0.5 then
+			Still[Page] = (Still[Page] or 0) + 1
+		else
+			Still[Page] = 0
+		end
+
+		Last[Page] = Position
+
+		local Across =
+			(Parent and Parent:IsA("GuiBase2d"))
+			and Position.X - Parent.AbsolutePosition.X
+			or 0
+
+		-- Not moving for a few frames, and on screen: that's its rest.
+		if Still[Page] >= 5 and math.abs(Across) < ScreenWidth * 0.25 then
+			Rest[Page] = Position
+		end
+
+		if Rest[Page] then
+			return Position - Rest[Page]
+		end
+
+		return Vector2.new(Across, 0)
+
+	end
+
+	local TextService = game:GetService("TextService")
+
+	-- The biggest whole TextSize at which Text is no wider than Width.
+	local FitSize = function(Text, Font, Width)
+
+		local Low, High = 8, 120
+
+		while Low < High do
+
+			local Mid = math.ceil((Low + High) / 2)
+
+			local Success, Bounds = pcall(
+				TextService.GetTextSize,
+				TextService,
+				Text,
+				Mid,
+				Font,
+				Vector2.new(10000, 10000)
+			)
+
+			if not Success then
+				return nil
+			end
+
+			if Bounds.X > Width then
+				High = Mid - 1
+			else
+				Low = Mid
+			end
+
+		end
+
+		return Low
+
+	end
+
+	local Fitted = {}
+
+	local TextSizes = function(Parts, H)
+
+		local L = MobileLayout
+		local Key = tostring(H)
+
+		if Fitted[Key] then
+			return Fitted[Key][1], Fitted[Key][2]
+		end
+
+		local QuestionFont, ButtonFont = Enum.Font.SourceSansBold, Enum.Font.SourceSansBold
+
+		pcall(function()
+			QuestionFont = Parts.question.Font
+		end)
+
+		pcall(function()
+			for _, Child in ipairs(Parts.confirm:GetDescendants()) do
+				if Child:IsA("TextLabel") and Child.Text ~= "" then
+					ButtonFont = Child.Font
+					break
+				end
+			end
+		end)
+
+		local Question = FitSize(L.QuestionSample, QuestionFont, H * L.QuestionSampleWidth)
+			or math.floor(H * L.QuestionTextSize + 0.5)
+
+		local Button = FitSize(L.ButtonSample, ButtonFont, H * L.ButtonSampleWidth)
+			or math.floor(H * L.ButtonTextSize + 0.5)
+
+		Fitted[Key] = { Question, Button }
+
+		print("[Legacy] 2021 page text sizes for a screen " .. Key .. " tall: question " .. Question .. ", buttons " .. Button)
+
+		return Question, Button
+
+	end
+
+	local LayOut = function(Parts, Copy)
+
+		local Camera = workspace.CurrentCamera
+
+		if not Camera then
+			return false
+		end
+
+		-- The whole display, which is what this overlay covers. (The
+		-- camera's viewport leaves out the notch / rounded-corner
+		-- gutters, about 100 px each side on a phone, which put
+		-- everything about 100 px left of where it is in 2021.)
+		local W, H = Overlay.AbsoluteSize.X, Overlay.AbsoluteSize.Y
+
+		if W <= 0 or H <= 0 then
+			W, H = Camera.ViewportSize.X, Camera.ViewportSize.Y
+		end
+
+		if W <= 0 or H <= 0 then
+			return false
+		end
+
+		local Offset = SlideOffset(Parts.page, W)
+
+		if math.abs(Offset.X) >= W or math.abs(Offset.Y) >= H then
+			return false
+		end
+
+		local L = MobileLayout
+
+		SetIfDifferent(Copy.Holder, "Position", UDim2.fromOffset(math.floor(Offset.X + 0.5), math.floor(Offset.Y + 0.5)))
+
+		-- Question
+		local QuestionWidth = W * L.MaxScreenWidth
+		local QuestionHeight = H * L.QuestionHeight
+
+		SetIfDifferent(Copy.Question, "Size", UDim2.fromOffset(math.floor(QuestionWidth), math.floor(QuestionHeight)))
+		SetIfDifferent(Copy.Question, "Position", UDim2.fromOffset(
+			math.floor((W - QuestionWidth) / 2),
+			math.floor(H * L.QuestionCenterY - QuestionHeight / 2)
+		))
+		SetIfDifferent(Copy.Question, "Text", Parts.question.Text)
+		local QuestionSize, ButtonSize = TextSizes(Parts, H)
+
+		SetIfDifferent(Copy.Question, "TextSize", math.clamp(QuestionSize, 1, 100))
+
+		-- Buttons: wide, side by side, centred under the question.
+		local ButtonWidth = H * L.ButtonWidth
+		local ButtonHeight = H * L.ButtonHeight
+		local Gap = H * L.ButtonGap
+
+		local Total = ButtonWidth * 2 + Gap
+		local MaxTotal = W * L.MaxScreenWidth
+
+		if Total > MaxTotal then
+			local Shrink = MaxTotal / Total
+			ButtonWidth = ButtonWidth * Shrink
+			Gap = Gap * Shrink
+			Total = MaxTotal
+		end
+
+		local Left = (W - Total) / 2
+		local Top = H * L.ButtonTop
+		local TextSize = math.clamp(ButtonSize, 1, 100)
+
+		for Index, Button in ipairs(Copy.Buttons) do
+
+			-- ButtonWidth x ButtonHeight is the button you see. Its picture
+			-- has a see-through edge and a shadow, so the frame holding
+			-- it is bigger than that by the margins.
+			local Scale = H / 1080
+			local Margin = L.FaceMargin
+			local FaceLeft = Left + (Index - 1) * (ButtonWidth + Gap)
+
+			SetIfDifferent(Button, "Position", UDim2.fromOffset(
+				math.floor(FaceLeft - Margin.Left * Scale + 0.5),
+				math.floor(Top - Margin.Top * Scale + 0.5)
+			))
+			SetIfDifferent(Button, "Size", UDim2.fromOffset(
+				math.floor(ButtonWidth + (Margin.Left + Margin.Right) * Scale + 0.5),
+				math.floor(ButtonHeight + (Margin.Top + Margin.Bottom) * Scale + 0.5)
+			))
+
+			for _, Child in ipairs(Button:GetDescendants()) do
+				if Child:IsA("TextLabel") then
+					SetIfDifferent(Child, "TextScaled", false)
+					SetIfDifferent(Child, "TextSize", TextSize)
+				end
+			end
+
+			if Button:IsA("TextButton") and Button.Text ~= "" then
+				SetIfDifferent(Button, "TextScaled", false)
+				SetIfDifferent(Button, "TextSize", TextSize)
+			end
+
+		end
+
+		-- Just above the menu.
+		local Root = Parts.question:FindFirstAncestorWhichIsA("ScreenGui")
+
+		if Root then
+			SetIfDifferent(Overlay, "DisplayOrder", Root.DisplayOrder + 1)
+		end
+
+		return true
+
+	end
+
+	--========================================================*
+	-- LOOKING FOR THE PAGES
+	--========================================================*
+
+	-- A regular look in case one is missed. The whole CoreGui only a few
+	-- times at the start; the hidden places every 5 seconds until both
+	-- pages are known.
+	task.spawn(function()
+
+		local Started, LastHidden = os.clock(), -math.huge
+		local FullScans, NextFull = { 0, 5, 15, 30 }, 1
+
+		while true do
+
+			pcall(Scan, LegacyGui)
+			pcall(Scan, CoreGui:FindFirstChild("NewRobloxGui"))
+
+			if NextFull <= #FullScans and os.clock() - Started >= FullScans[NextFull] then
+				NextFull = NextFull + 1
+				pcall(Scan, CoreGui)
+			end
+
+			if not (Have("leave") and Have("reset")) and os.clock() - LastHidden >= 5 then
+
+				LastHidden = os.clock()
+
+				for _, Root in ipairs(HiddenRoots()) do
+					pcall(Scan, Root)
+				end
+
+			end
+
+			-- Forget pages that are gone.
+			for Question, Parts in pairs(Tracked) do
+
+				if not StillValid(Parts) then
+
+					Restore(Parts)
+
+					if Copies[Parts] then
+						pcall(function()
+							Copies[Parts].Holder:Destroy()
+						end)
+						Copies[Parts] = nil
+					end
+
+					Tracked[Question] = nil
+
+				end
+
+			end
+
+			task.wait(1)
+
+		end
+
+	end)
+
+	--========================================================*
+	-- EVERY FRAME
+	--========================================================*
+
+	local CopyProps = function(From, To, Props)
+		for _, Prop in ipairs(Props) do
+			pcall(function()
+				local Value = From[Prop]
+				if To[Prop] ~= Value then
+					To[Prop] = Value
+				end
+			end)
+		end
+	end
+
+	local MakeBlue = function(Button)
+		pcall(function()
+			if Button:IsA("ImageButton") and Button.Image ~= BlueButton then
+				Button.Image = BlueButton
+			end
+		end)
+	end
+
+	local MatchLeaveToReset = function(Leave, Reset)
+
+		CopyProps(Reset.page, Leave.page, { "Size" })
+
+		CopyProps(Reset.question, Leave.question, {
+			"AnchorPoint", "Position", "Size", "TextSize", "TextScaled", "TextWrapped",
+			"TextXAlignment", "TextYAlignment",
+		})
+
+		for _, Pair in ipairs({ { Leave.confirm, Reset.confirm }, { Leave.cancel, Reset.cancel } }) do
+
+			local Mine, Theirs = Pair[1], Pair[2]
+
+			if Mine and Theirs then
+
+				if Theirs.Parent == Reset.question and Mine.Parent ~= Leave.question then
+					Mine.Parent = Leave.question
+				elseif Theirs.Parent == Reset.page and Mine.Parent ~= Leave.page then
+					Mine.Parent = Leave.page
+				end
+
+				CopyProps(Theirs, Mine, { "AnchorPoint", "Position", "Size" })
+
+			end
+
+		end
+
+	end
+
+	RunService.RenderStepped:Connect(function()
+
+		-- PC
+		if not (MOBILE_LAYOUT_LIKE_2021 and IsTouchDevice) then
+
+			local Leave, Reset
+
+			for _, Parts in pairs(Tracked) do
+
+				if Parts.Kind == "leave" then
+					Leave = Leave or Parts
+				else
+					Reset = Reset or Parts
+				end
+
+				if FIRST_BUTTON_BLUE then
+					MakeBlue(Parts.confirm)
+				end
+
+			end
+
+			if MATCH_LEAVE_TO_RESET and Leave and Reset then
+				pcall(MatchLeaveToReset, Leave, Reset)
+			end
+
+			return
+
+		end
+
+		-- Touch screen: the page on screen gets the 2021 copy.
+		local Shown
+
+		for _, Parts in pairs(Tracked) do
+
+			local OnScreen = false
+
+			if not Shown then
+				local Success, Result = pcall(IsOnScreen, Parts)
+				OnScreen = Success and Result
+			end
+
+			if OnScreen then
+				Shown = Parts
+			else
+				Restore(Parts)
+			end
+
+		end
+
+		for Parts, Copy in pairs(Copies) do
+			if Parts ~= Shown then
+				SetIfDifferent(Copy.Holder, "Visible", false)
+			end
+		end
+
+		if not Shown then
+			SetIfDifferent(Overlay, "Enabled", false)
+			return
+		end
+
+		if not Copies[Shown] then
+			local Success, Copy = pcall(MakeCopy, Shown)
+			if not Success then
+				warn("[Legacy] couldn't build the 2021 " .. Shown.Kind .. " page:", Copy)
+				return
+			end
+			Copies[Shown] = Copy
+		end
+
+		local Copy = Copies[Shown]
+
+		SetIfDifferent(Overlay, "Enabled", true)
+
+		local Success, Placed = pcall(LayOut, Shown, Copy)
+
+		if not (Success and Placed) then
+			SetIfDifferent(Copy.Holder, "Visible", false)
+			Restore(Shown)
+			return
+		end
+
+		SetIfDifferent(Copy.Holder, "Visible", true)
+		SetIfDifferent(Overlay, "Enabled", true)
+
+		if os.clock() >= ShowRealUntil then
+			HideOriginals(Shown)
+		else
+			Restore(Shown)
+		end
+
+	end)
+
+end)
+
+-- Set by the 2017 chat notification bubble section below once it has
+-- found the top bar's own unread counter; the chat icon's extra badge
+-- then stays hidden so there is only one.
+local NativeChatCounter = false
+
+-- The 2017 chat notification badge, as on the 2017 top bar: a solid
+-- red circle with a white bold number, a bit over half the width of
+-- the chat icon, overlapping the icon's top-right corner. Sized and
+-- placed as fractions of the icon, so it fits whatever size the icon
+-- is drawn at.
+-- Measured against the 2017 top bar on a phone, next to this one.
+local Legacy2017Badge = {
+	Color = Color3.fromRGB(246, 66, 74), -- read off the 2017 recording
+	TextColor = Color3.new(1, 1, 1),
+	Size = 0.478, -- of the icon's width
+	CenterX = 0.902, -- of the icon's width, from its left edge
+	CenterY = 0.16, -- of the icon's height, from its top edge
+	TextHeight = 1.07, -- number box, of the circle (the number is ~55% of it)
+	TextWidth = 0.86, -- room for "99+" before it shrinks
+	TextCenterY = 0.39, -- the 2017 number sits a little above the middle
+
+	-- The 2017 drop shadow (compared with the 2017 crop): not an outline
+	-- but a wide, very soft halo that sits mostly underneath the circle
+	-- and fades out about 7 px below it. Five stacked circles, each
+	-- a little bigger and fainter: size (of the badge), see-through.
+	ShadowLayers = {
+		{ Size = 1.02, Transparency = 0.93 },
+		{ Size = 1.06, Transparency = 0.94 },
+		{ Size = 1.11, Transparency = 0.95 },
+		{ Size = 1.17, Transparency = 0.96 },
+		{ Size = 1.24, Transparency = 0.97 },
+	},
+	ShadowOffsetX = -0.02, -- of the badge's size
+	ShadowOffsetY = 0.06,
+}
+
+local MakeLegacy2017Badge = function(Icon, Name)
+
+	-- The badge is a see-through holder: showing, hiding and placing it
+	-- moves the shadow and the red circle together.
+	local Badge = Instance.new("Frame")
+
+	Badge.Name = Name
+	Badge.AnchorPoint = Vector2.new(0.5, 0.5)
+	Badge.Position = UDim2.fromScale(Legacy2017Badge.CenterX, Legacy2017Badge.CenterY)
+	Badge.Size = UDim2.fromScale(Legacy2017Badge.Size, Legacy2017Badge.Size)
+	Badge.SizeConstraint = Enum.SizeConstraint.RelativeXX
+	Badge.BackgroundTransparency = 1
+	Badge.BorderSizePixel = 0
+	Badge.Active = false
+	Badge.Visible = false
+	Badge.ZIndex = Icon.ZIndex + 10
+
+	-- Drop shadow, underneath.
+	for Index, Layer in ipairs(Legacy2017Badge.ShadowLayers) do
+
+		local Shadow = Instance.new("Frame")
+
+		Shadow.Name = "Shadow" .. Index
+		Shadow.AnchorPoint = Vector2.new(0.5, 0.5)
+		Shadow.Position = UDim2.fromScale(0.5 + Legacy2017Badge.ShadowOffsetX, 0.5 + Legacy2017Badge.ShadowOffsetY)
+		Shadow.Size = UDim2.fromScale(Layer.Size, Layer.Size)
+		Shadow.BackgroundColor3 = Color3.new(0, 0, 0)
+		Shadow.BackgroundTransparency = Layer.Transparency
+		Shadow.BorderSizePixel = 0
+		Shadow.Active = false
+		Shadow.ZIndex = Icon.ZIndex + 9
+
+		local ShadowCorner = Instance.new("UICorner")
+		ShadowCorner.CornerRadius = UDim.new(1, 0)
+		ShadowCorner.Parent = Shadow
+
+		Shadow.Parent = Badge
+
+	end
+
+	-- The red circle.
+	local Face = Instance.new("Frame")
+
+	Face.Name = "Face"
+	Face.AnchorPoint = Vector2.new(0.5, 0.5)
+	Face.Position = UDim2.fromScale(0.5, 0.5)
+	Face.Size = UDim2.fromScale(1, 1)
+	Face.BackgroundColor3 = Legacy2017Badge.Color
+	Face.BackgroundTransparency = 0
+	Face.BorderSizePixel = 0
+	Face.Active = false
+	Face.ZIndex = Icon.ZIndex + 10
+
+	local Corner = Instance.new("UICorner")
+	Corner.CornerRadius = UDim.new(1, 0)
+	Corner.Parent = Face
+
+	Face.Parent = Badge
+
+	local Label = Instance.new("TextLabel")
+
+	Label.Name = "Amount"
+	Label.AnchorPoint = Vector2.new(0.5, 0.5)
+	Label.Position = UDim2.fromScale(0.5, Legacy2017Badge.TextCenterY)
+	Label.Size = UDim2.fromScale(Legacy2017Badge.TextWidth, Legacy2017Badge.TextHeight)
+	Label.BackgroundTransparency = 1
+	Label.Text = ""
+	Label.TextColor3 = Legacy2017Badge.TextColor
+	Label.TextStrokeTransparency = 1
+	Label.Font = Enum.Font.SourceSansBold
+	Label.TextScaled = true
+	Label.TextXAlignment = Enum.TextXAlignment.Center
+	Label.TextYAlignment = Enum.TextYAlignment.Center
+	Label.ZIndex = Icon.ZIndex + 11
+	Label.Parent = Face
+
+	-- The badge hangs over the icon's edge: don't let anything crop it.
+	local Ancestor = Icon
+
+	while Ancestor and Ancestor:IsA("GuiObject") do
+
+		pcall(function()
+			Ancestor.ClipsDescendants = false
+		end)
+
+		Ancestor = Ancestor.Parent
+
+	end
+
+	Badge.Parent = Icon
+
+	return Badge, Label
+
+end
 
 -- CHAT ICON
 --
@@ -3614,8 +5155,9 @@ task.spawn(function()
 	-- UNREAD NOTIFICATION BADGE
 	--========================================================*
 
-	local BadgeColor = Color3.fromRGB(239, 65, 54)
-	local BadgeSize = 16
+	-- The 2017 red badge (see MakeLegacy2017Badge above). Only used
+	-- when the top bar has no unread counter of its own; otherwise the
+	-- 2017 chat notification bubble section draws it on that counter.
 
 	local UnreadCount = 0
 
@@ -3627,52 +5169,11 @@ task.spawn(function()
 
 	end
 
-	local Ancestor = Icon
-
-	while Ancestor and Ancestor:IsA("GuiObject") do
-
-		pcall(function()
-			Ancestor.ClipsDescendants = false
-		end)
-
-		Ancestor = Ancestor.Parent
-
-	end
-
-	local Badge = Instance.new("Frame")
-
-	Badge.Name = "LegacyChatBadge"
-	Badge.AnchorPoint = Vector2.new(0.5, 0.5)
-	Badge.Position = UDim2.new(1, -3, 0, 3)
-	Badge.Size = UDim2.fromOffset(BadgeSize, BadgeSize)
-	Badge.BackgroundColor3 = BadgeColor
-	Badge.BorderSizePixel = 0
-	Badge.Visible = false
-	Badge.ZIndex = Icon.ZIndex + 10
-	Badge.Parent = Icon
-
-	local BadgeCorner = Instance.new("UICorner")
-
-	BadgeCorner.CornerRadius = UDim.new(1, 0)
-	BadgeCorner.Parent = Badge
-
-	local BadgeLabel = Instance.new("TextLabel")
-
-	BadgeLabel.Name = "Amount"
-	BadgeLabel.AnchorPoint = Vector2.new(0.5, 0.5)
-	BadgeLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
-	BadgeLabel.Size = UDim2.fromScale(1, 1)
-	BadgeLabel.BackgroundTransparency = 1
-	BadgeLabel.Text = "0"
-	BadgeLabel.TextColor3 = Color3.new(1, 1, 1)
-	BadgeLabel.Font = Enum.Font.SourceSansBold
-	BadgeLabel.TextSize = 12
-	BadgeLabel.ZIndex = Icon.ZIndex + 11
-	BadgeLabel.Parent = Badge
+	local Badge, BadgeLabel = MakeLegacy2017Badge(Icon, "LegacyChatBadge")
 
 	local UpdateBadge = function()
 
-		if ChatOpen or UnreadCount <= 0 then
+		if NativeChatCounter or ChatOpen or UnreadCount <= 0 then
 			Badge.Visible = false
 			return
 		end
@@ -3681,10 +5182,6 @@ task.spawn(function()
 
 		BadgeLabel.Text =
 			UnreadCount >= 100 and "99+" or tostring(UnreadCount)
-
-		BadgeLabel.TextSize =
-			UnreadCount >= 100 and 9
-			or (UnreadCount >= 10 and 11 or 12)
 
 	end
 
@@ -4019,6 +5516,371 @@ task.spawn(function()
 
 end)
 
+
+-- 2017 CHAT NOTIFICATION BUBBLE
+--
+-- The 2019 top bar has its own unread counter on the chat button, and
+-- it looks off. It is replaced by the 2017 badge (MakeLegacy2017Badge
+-- above: solid red circle, white bold number, over the icon's top-right
+-- corner). The top bar keeps counting and deciding when it shows; the
+-- 2017 badge shows the same number at the same moments, and the 2019
+-- counter itself is no longer drawn. While it exists, the chat icon
+-- section's own badge stays hidden so there is only one.
+--
+-- The counter is found by what it shows: a small label with a number
+-- on (or next to) a chat button.
+
+task.spawn(function()
+
+	local OurNames = {
+		LegacyChatBadge = true,
+		Legacy2017Bubble = true,
+	}
+
+	local IsOurs = function(Object)
+
+		local Current = Object
+
+		while Current do
+
+			if OurNames[Current.Name] then
+				return true
+			end
+
+			Current = Current.Parent
+
+		end
+
+		return false
+
+	end
+
+	local FindContainer = function()
+
+		local NewRobloxGui = CoreGui:FindFirstChild("NewRobloxGui")
+
+		local Container =
+			NewRobloxGui
+			and NewRobloxGui:FindFirstChild("TopBarContainer", true)
+
+		if not Container and typeof(LegacyGui) == "Instance" then
+			Container = LegacyGui:FindFirstChild("TopBarContainer", true)
+		end
+
+		return Container or CoreGui:FindFirstChild("TopBarContainer", true)
+
+	end
+
+	local Container
+
+	local StartTime = os.clock()
+
+	while not Container and os.clock() - StartTime < 20 do
+
+		Container = FindContainer()
+
+		if not Container then
+			task.wait(0.25)
+		end
+
+	end
+
+	if not Container then
+		warn("[Legacy chat bubble] TopBarContainer not found")
+		return
+	end
+
+	local IsCount = function(Text)
+		return type(Text) == "string"
+			and (Text:match("^%d+%+?$") ~= nil or Text == "!")
+	end
+
+	-- Chat buttons: objects whose name starts with "Chat".
+	local ChatButtons = function()
+
+		local List = {}
+
+		for _, Object in ipairs(Container:GetDescendants()) do
+
+			if
+				Object:IsA("GuiObject")
+				and Object.Name:lower():find("^chat")
+				and not IsOurs(Object)
+			then
+				table.insert(List, Object)
+			end
+
+		end
+
+		return List
+
+	end
+
+	local NearChat = function(Label, Chats)
+
+		local Center = Label.AbsolutePosition + Label.AbsoluteSize / 2
+
+		for _, Chat in ipairs(Chats) do
+
+			local Position, Size = Chat.AbsolutePosition, Chat.AbsoluteSize
+
+			if
+				Size.X > 0
+				and Center.X >= Position.X - 24
+				and Center.X <= Position.X + Size.X + 24
+				and Center.Y >= Position.Y - 24
+				and Center.Y <= Position.Y + Size.Y + 24
+			then
+				return true
+			end
+
+		end
+
+		return false
+
+	end
+
+	local SetIfDifferent = function(Object, Property, Value)
+		pcall(function()
+			if Object[Property] ~= Value then
+				Object[Property] = Value
+			end
+		end)
+	end
+
+	-- The small frame / image the number sits on (never the chat icon).
+	local LooksLikeCounter = function(Object)
+
+		if not (Object and Object:IsA("GuiObject")) then
+			return false
+		end
+
+		local Name = Object.Name:lower()
+
+		if Name:find("counter") or Name:find("badge") or Name:find("unread") or Name:find("notif") then
+			return true
+		end
+
+		if Name:find("chat") or Name:find("icon") then
+			return false
+		end
+
+		if Object:IsA("ImageLabel") or Object:IsA("ImageButton") then
+
+			local Image = Object.Image:lower()
+
+			if Image:find("counter") or Image:find("badge") then
+				return true
+			end
+
+			if Image:find("chat") then
+				return false
+			end
+
+		end
+
+		local Size = Object.AbsoluteSize
+
+		return Size.X > 0 and Size.X <= 26 and Size.Y <= 26
+
+	end
+
+	-- The chat icon the counter belongs to: the first image above it
+	-- that is bigger than it.
+	local FindIcon = function(Counter)
+
+		local Current = Counter.Parent
+
+		while Current and Current ~= Container and Current:IsA("GuiObject") do
+
+			if
+				(Current:IsA("ImageLabel") or Current:IsA("ImageButton"))
+				and Current.Image ~= ""
+				and Current.AbsoluteSize.X > Counter.AbsoluteSize.X * 1.2
+			then
+				return Current
+			end
+
+			Current = Current.Parent
+
+		end
+
+		local Parent = Counter.Parent
+
+		return Parent and Parent:IsA("GuiObject") and Parent or nil
+
+	end
+
+	local HideOurBadge = function()
+
+		for _, Object in ipairs(Container:GetDescendants()) do
+
+			if Object.Name == "LegacyChatBadge" and Object:IsA("GuiObject") then
+				SetIfDifferent(Object, "Visible", false)
+			end
+
+		end
+
+	end
+
+	-- One entry per 2019 counter: { Counter, Label, Icon, Badge, BadgeLabel }
+	local Replaced = {}
+	local Known = setmetatable({}, { __mode = "k" })
+
+	local Replace = function(Label)
+
+		local Counter = LooksLikeCounter(Label.Parent) and Label.Parent or Label
+
+		if Known[Counter] then
+			return
+		end
+
+		local Icon = FindIcon(Counter)
+
+		if not Icon then
+			return
+		end
+
+		Known[Counter] = true
+
+		local Badge, BadgeLabel = MakeLegacy2017Badge(Icon, "Legacy2017Bubble")
+
+		table.insert(Replaced, {
+			Counter = Counter,
+			Label = Label,
+			Icon = Icon,
+			Badge = Badge,
+			BadgeLabel = BadgeLabel,
+		})
+
+		NativeChatCounter = true
+
+		HideOurBadge()
+
+		print("[Legacy chat bubble] 2017 badge on:", Icon:GetFullName(), "for", Counter:GetFullName())
+
+	end
+
+	-- Look for counters a few times a second (the top bar can build
+	-- or rebuild one at any time).
+	task.spawn(function()
+
+		while Container.Parent do
+
+			pcall(function()
+
+				local Chats = ChatButtons()
+
+				for _, Object in ipairs(Container:GetDescendants()) do
+
+					if
+						(Object:IsA("TextLabel") or Object:IsA("TextButton"))
+						and not IsOurs(Object)
+						and IsCount(Object.Text)
+						and Object.AbsoluteSize.Y <= 30
+						and NearChat(Object, Chats)
+					then
+						Replace(Object)
+					end
+
+				end
+
+			end)
+
+			task.wait(0.25)
+
+		end
+
+	end)
+
+	-- Shown when the 2019 counter would be: it and everything between
+	-- it and the icon visible, with a number above 0.
+	local IsShown = function(Entry)
+
+		local Text = Entry.Label.Text
+
+		if not IsCount(Text) or Text == "0" then
+			return false
+		end
+
+		local Current = Entry.Label
+
+		while Current and Current ~= Entry.Icon do
+
+			if Current:IsA("GuiObject") and not Current.Visible then
+				return false
+			end
+
+			Current = Current.Parent
+
+		end
+
+		return true
+
+	end
+
+	-- Every frame: the 2019 counter stays invisible and the 2017 badge
+	-- follows it.
+	RunService.RenderStepped:Connect(function()
+
+		local Index = 1
+
+		while Index <= #Replaced do
+
+			local Entry = Replaced[Index]
+			local Counter, Label, Badge = Entry.Counter, Entry.Label, Entry.Badge
+
+			if not (Counter.Parent and Label.Parent and Badge.Parent) then
+
+				pcall(function()
+					Badge:Destroy()
+				end)
+
+				Known[Counter] = nil
+
+				table.remove(Replaced, Index)
+
+				continue
+
+			end
+
+			-- The 2019 counter: nothing of it drawn.
+			for _, Object in ipairs({ Counter, table.unpack(Counter:GetDescendants()) }) do
+
+				if Object:IsA("GuiObject") then
+					SetIfDifferent(Object, "BackgroundTransparency", 1)
+				end
+
+				if Object:IsA("ImageLabel") or Object:IsA("ImageButton") then
+					SetIfDifferent(Object, "ImageTransparency", 1)
+				elseif Object:IsA("TextLabel") or Object:IsA("TextButton") then
+					SetIfDifferent(Object, "TextTransparency", 1)
+					SetIfDifferent(Object, "TextStrokeTransparency", 1)
+				elseif Object:IsA("UIStroke") then
+					SetIfDifferent(Object, "Enabled", false)
+				end
+
+			end
+
+			-- The 2017 badge.
+			local Shown = IsShown(Entry)
+
+			SetIfDifferent(Badge, "Visible", Shown)
+
+			if Shown then
+				SetIfDifferent(Entry.BadgeLabel, "Text", Label.Text)
+			end
+
+			SetIfDifferent(Badge, "ZIndex", Entry.Icon.ZIndex + 10)
+			SetIfDifferent(Entry.BadgeLabel, "ZIndex", Entry.Icon.ZIndex + 11)
+
+			Index = Index + 1
+
+		end
+
+	end)
+
+end)
 
 -- CHAT HISTORY
 --
