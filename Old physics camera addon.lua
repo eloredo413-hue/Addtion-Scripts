@@ -80,6 +80,7 @@ local CLIMB_BOX = Vector3.new(1, 1, 1)
 local MAX_CLIMB_PART = 3.5
 local CLIMB_UP_SPEED = 13       -- upward kick each frame while climbing
 local CLIMB_PUSH_SPEED = 24     -- push into the part
+local GRAB_GRACE = 0.25          -- seconds the climb is held between two rungs / bricks
 local TOP_OUT_TIME = 0.4        -- seconds after the last grab in which you are still topping out
 local TOP_OUT_MIN_RISE = 1.5    -- studs climbed before the top-out hop counts
 local TOP_OUT_SPEED = 14        -- hop forward over the top
@@ -334,7 +335,9 @@ local function setupCharacter(char)
 	overlapParams.RespectCanCollide = true
 
 	local function climbablePartAhead()
-		local checkPos = torso.Position - Vector3.new(0, 1, 0)
+		-- (the hip height is taken out: the Old physics squashes it after a fall, which would lower the
+		-- search box into the ground and miss the bottom of a ladder)
+		local checkPos = torso.Position - Vector3.new(0, 1 + humanoid.HipHeight, 0)
 		local boxCFrame = CFrame.new(checkPos + torso.CFrame.LookVector / 2) * CFrame.new(0, -0.5, 0)
 		local parts = Workspace:GetPartBoundsInBox(boxCFrame, CLIMB_BOX, overlapParams)
 		for _, part in ipairs(parts) do
@@ -419,7 +422,7 @@ local function setupCharacter(char)
 			lastGrab = now
 		elseif grabStartY then
 			local sinceGrab = now - lastGrab
-			if sinceGrab > TOP_OUT_TIME or humanoid:GetState() == Enum.HumanoidStateType.Running then
+			if sinceGrab > TOP_OUT_TIME then
 				grabStartY = nil
 			elseif moving and not releasing and torso.Position.Y - grabStartY >= TOP_OUT_MIN_RISE then
 				local v = torso.AssemblyLinearVelocity
@@ -428,8 +431,13 @@ local function setupCharacter(char)
 			end
 		end
 
-		grabbingNow = walkingIntoPart
-		climbWanted = walkingIntoPart or humanoid:GetState() == Enum.HumanoidStateType.Climbing
+		-- Between two rungs nothing is in front of the feet for a moment: the climb is held through
+		-- that (else the state, and so the animation, drops to walking or falling on every gap).
+		local holdingGrab = walkingIntoPart
+			or (grabStartY ~= nil and moving and not releasing and now - lastGrab <= GRAB_GRACE
+				and velocity.Y > -MAX_FALL_TO_GRAB)
+		grabbingNow = holdingGrab
+		climbWanted = holdingGrab or humanoid:GetState() == Enum.HumanoidStateType.Climbing
 		-- (2007 Animation.lua reads this to show its climbing pose, not its falling one)
 		BPGenv.BPClimbing = climbWanted or nil
 		climbActive = walkingIntoPart or releasing
