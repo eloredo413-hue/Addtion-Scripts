@@ -80,6 +80,8 @@ local CLIMB_BOX = Vector3.new(1, 1, 1)
 local MAX_CLIMB_PART = 3.5
 local CLIMB_UP_SPEED = 13       -- upward kick each frame while climbing
 local CLIMB_PUSH_SPEED = 24     -- push into the part
+local BLOCKED_SPEED = 0.35       -- slower than this share of WalkSpeed while walking = blocked by the part
+local BLOCKED_TIME = 0.15        -- ...for this long (seconds) before a climb starts: stairs are walked up
 local GRAB_GRACE = 0.25          -- seconds the climb is held between two rungs / bricks
 local TOP_OUT_TIME = 0.4        -- seconds after the last grab in which you are still topping out
 local TOP_OUT_MIN_RISE = 1.5    -- studs climbed before the top-out hop counts
@@ -154,6 +156,8 @@ local function setupCharacter(char)
 	-- so the animation you picked plays ITS OWN climbing animation.
 	local climbWanted = false -- true while the 2006 climbing is at work
 	local grabbingNow = false -- a part is in front of the feet right now (this frame)
+	local blockedFor = 0      -- how long (seconds) you have been walking without getting anywhere
+	local lastFrame = os.clock()
 	local grabStartY, lastGrab = nil, 0 -- where the current climb began, and when a part was last in front
 
 	local lastFallSpeed = 0
@@ -402,8 +406,26 @@ local function setupCharacter(char)
 		-- you walk into it, exactly as in the 2006 physics (while the Climbing state is switched
 		-- off after letting go, the state change does nothing but the kick still lifts you).
 		local velocity = torso.AssemblyLinearVelocity
+		local frameNow = os.clock()
+		local frameDt = math.min(frameNow - lastFrame, 0.1)
+		lastFrame = frameNow
+
+		-- Stairs are walked up, not climbed: a climb only STARTS once the part has really stopped you
+		-- (you push and hardly move for BLOCKED_TIME). Going up stairs keeps you moving, so it never
+		-- does. Once climbing, or between two rungs, no such wait.
+		local rootV = rootPart.AssemblyLinearVelocity
+		local flatSpeed = math.sqrt(rootV.X * rootV.X + rootV.Z * rootV.Z)
+		if moving and flatSpeed < humanoid.WalkSpeed * BLOCKED_SPEED then
+			blockedFor = blockedFor + frameDt
+		else
+			blockedFor = 0
+		end
+		local alreadyClimbing = humanoid:GetState() == Enum.HumanoidStateType.Climbing
+			or (grabStartY ~= nil and frameNow - lastGrab <= GRAB_GRACE)
+		local blocked = blockedFor >= BLOCKED_TIME or alreadyClimbing
+
 		-- (not while letting go, and not in a real fall: dropping past a wall must not grab it)
-		local walkingIntoPart = moving and not releasing and velocity.Y > -MAX_FALL_TO_GRAB
+		local walkingIntoPart = moving and blocked and not releasing and velocity.Y > -MAX_FALL_TO_GRAB
 			and not cantClimbNow() and climbablePartAhead()
 		if walkingIntoPart then
 			humanoid:ChangeState(Enum.HumanoidStateType.Climbing)
