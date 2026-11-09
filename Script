@@ -189,10 +189,13 @@ local URL_BUBBLE_2015_2016  = "https://gist.githubusercontent.com/eloredo413-hue
 
 -- GUIs More guis loads, swapped for the copies in this repo before More guis runs (no need to
 -- change the More guis gist):
---   * 2015 early (E2015 Gui.lua): the leaderboard kept thin on phones
+--   * 2015 early (E2015 Gui.lua): the leaderboard kept thin on phones, the PC chat bar on touch-screen PCs
+--   * 2013 mobile (2013 Mobile Gui.lua): joystick drives vehicles, a backpack that works with touch and mouse
 -- (2019 is not swapped: More guis has a 2019 GUI of its own.)
 local MORE_GUIS_SWAPS = {
     URL_2015EARLY = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/E2015%20Gui.lua",
+    -- 2013 mobile (2013 Mobile Gui.lua): the backpack takes touch and mouse, ten slots on tablets and PC
+    URL_2013MOB   = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2013%20Mobile%20Gui.lua",
 }
 
 -- The 2017 GUI script's address: the same one More guis loads for the 2017 topbar (read from
