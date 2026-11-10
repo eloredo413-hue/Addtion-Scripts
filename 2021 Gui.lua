@@ -16,6 +16,21 @@ pcall(function() setfflag("EnableMenuControlsABTest", "False") end)
 pcall(function() setfflag("EnableV3MenuABTest3", "False") end)
 pcall(function() setfflag("EnableInGameMenuSongbirdABTest", "False") end)
 
+-- (Addtion-Scripts) Say whether this executor can set Roblox flags at all. The look of this GUI comes from the flags
+-- above plus a rejoin; an executor without setfflag (or one that does not keep the flags) leaves Roblox's own menu.
+do
+    local canSet = type(setfflag) == "function"
+    local readBack = "(this executor has no getfflag)"
+    if type(getfflag) == "function" then
+        pcall(function() readBack = tostring(getfflag("EnableInGameMenuModernization")) end)
+    end
+    print("[Flags] setfflag: " .. (canSet and "available" or "NOT available") .. "; EnableInGameMenuModernization reads back as " .. readBack
+        .. " (should be True)")
+    if not canSet then
+        warn("[Flags] this executor has no setfflag, so this GUI cannot use flags here: Roblox's own menu stays.")
+    end
+end
+
 -- ============================================================
 -- ON-SCREEN STATUS
 --

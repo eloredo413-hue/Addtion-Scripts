@@ -189,6 +189,21 @@ pcall(function() setfflag("WebBrowserSTM6353MemoryTelemetry", "False") end)
 pcall(function() setfflag("NewInGameMenuPercentRollout3", "0") end)
 pcall(function() setfflag("RelocateMobileMenuButtonsVariant", "0") end)
 
+-- (Addtion-Scripts) Say whether this executor can set Roblox flags at all. The look of this GUI comes from the flags
+-- above plus a rejoin; an executor without setfflag (or one that does not keep the flags) leaves Roblox's own menu.
+do
+    local canSet = type(setfflag) == "function"
+    local readBack = "(this executor has no getfflag)"
+    if type(getfflag) == "function" then
+        pcall(function() readBack = tostring(getfflag("NewInGameMenuPercentRollout3")) end)
+    end
+    print("[Flags] setfflag: " .. (canSet and "available" or "NOT available") .. "; NewInGameMenuPercentRollout3 reads back as " .. readBack
+        .. " (should be 0)")
+    if not canSet then
+        warn("[Flags] this executor has no setfflag, so this GUI cannot use flags here: Roblox's own menu stays.")
+    end
+end
+
 -- Combined Script Payload (TopBar Hooking + EzperienceChat Loader)
 local scriptToRun = string.format([[
     --============================================================*
