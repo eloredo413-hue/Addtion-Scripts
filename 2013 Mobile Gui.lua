@@ -1522,5 +1522,17 @@ end
 
 task.spawn(function()
     local legacyGui = CoreGui:WaitForChild("NewRobloxGui", 30)
-    if legacyGui then startPhoneBackpack(legacyGui, not isPhoneScreen()) end
+    if not legacyGui then
+        warn("[2013 backpack] the 2013 GUI (NewRobloxGui) did not appear")
+        return
+    end
+    if legacyGui:GetAttribute("Backpack2013Started") then return end   -- (the addition script's copy already runs)
+    legacyGui:SetAttribute("Backpack2013Started", true)
+    local ok, err = pcall(startPhoneBackpack, legacyGui, not isPhoneScreen())
+    if not ok then
+        legacyGui:SetAttribute("Backpack2013Started", nil)
+        warn("[2013 backpack] did not start: " .. tostring(err))
+    else
+        print("[2013 backpack] started (" .. (isPhoneScreen() and "phone" or "tablet / PC") .. ")")
+    end
 end)

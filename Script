@@ -15,6 +15,7 @@
 -- + Terrain Hook: "What terrain do you want?" (2013 / 2014 / none) in Bloxy's setup
 -- + 2007 Animation: "2007" next to 2008 / 2006 / 2014 / Normal in Bloxy's "Choose your animations" (R6)
 -- + The "Old" physics (Old physics camera addon.lua) climbs like the 2006 physics
+-- + 2013 (regular too): a backpack that works with touch and mouse (2013 Backpack.lua); tools you drag are not lost
 -- + 2015/2016 use the real 2017 chat bubbles: the bubble chat block of your 2017 GUI script, taken out of it
 --   as it is and run (not a copy); if it shows nothing, Roblox's own bubbles come back
 -- + 2015 early keeps its own chat bubbles (no bubble script of ours) and uses Roblox's default dialogs
@@ -178,6 +179,8 @@ local mainAddons = {
 -- "More guis" gist (a pinned copy: change this link to update it).
 local URL_MORE_GUIS         = "https://gist.githubusercontent.com/eloredo413-hue/4aac0bc41207ca96d85235d1d07dd234/raw/917476c48b64151bc5ee9a27700dab7ea2080134/More%2520guis"
 local URL_SAFECHAT_HOOK     = "https://gist.githubusercontent.com/eloredo413-hue/47847c9c0567c5b365c8bfa249d59190/raw/036418365fc79e40e7dc1d1120fca6de9e4600a0/Safe%2520chat%2520Hook"
+-- the 2013 GUI's backpack that works with touch and mouse (2013 Backpack.lua in this repo): loaded when 2013 is the topbar
+local URL_BACKPACK_2013     = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2013%20Backpack.lua"
 -- adds "2007" (the old avatar's animation) to Bloxy's "Choose your animations" step (2007 Animation.lua in this repo)
 local URL_ANIM_2007         = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2007%20Animation.lua"
 -- adds "What terrain do you want?" (2013 / 2014 / none) to Bloxy's setup, before "old particles"
@@ -2570,6 +2573,7 @@ end
         print("[Loader] no dialog bubbles over NPCs (2008)")
     end
 
+    local backpack2013Loaded = false
     local function evaluateAndLoad()
         local era, raw = getSelectedEra()
         if confirmedVariant then
@@ -2593,6 +2597,18 @@ end
 
         -- The game's own (modern) speedometer only shows from 2015 on. Up to 2014 it is switched off:
         -- 2010-2014 get the old speedometer in its place, 2005 / 2006 have none.
+        -- 2013 (regular and mobile): its backpack takes touch and mouse (the 2013 GUI's own one loses tools you drag)
+        if era == "classic" and tostring(raw) == "2013" and not backpack2013Loaded then
+            backpack2013Loaded = true
+            task.spawn(function()
+                local _, why = loadUrl(URL_BACKPACK_2013, "2013 Backpack")
+                if why == "download" then
+                    backpack2013Loaded = false
+                    warn("[Loader] 2013 Backpack couldn't be downloaded")
+                end
+            end)
+        end
+
         -- (the 2008 GUI of More guis is a "y2010" for the bubbles, but older than 2010: no speedometer)
         local is2008 = tostring(raw) == "2008"
         if not (is2008 and era == "y2010") then stopDialogBubbleHider() end
