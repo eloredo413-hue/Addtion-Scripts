@@ -7,7 +7,7 @@
 
 getgenv().LegacySettings = {
     Year = 2013,
-    OldGraphics = true,
+    OldGraphics = false,
     HideDisplayName = true,
     SafeChat = true,
     OldConsole = false,
