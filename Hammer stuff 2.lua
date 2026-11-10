@@ -65,6 +65,7 @@ task.spawn(function()
 		isOldCameraSoundEnabled = config.isOldCameraSoundEnabled or false,
 		isOldPartSoundsEnabled  = config.isOldPartSoundsEnabled or false,
 		isRemoveLeaderboardEnabled = config.isRemoveLeaderboardEnabled or false,
+		is2013DynamicEnabled    = config.is2013DynamicEnabled or false,
 	}
 
 	-- Hammer stuff 1 (and the base GUI) save to the same file, so re-read it first and
@@ -3084,6 +3085,61 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
+	-- 14. 2013 DYNAMIC LIGHTS ("2013 dyn")
+	-- Runs the 2013 Dynamic Lights script (SurfaceLights -> 2013-style SpotLights / PointLights, key 8 switches
+	-- between the two). The script is downloaded once and kept; unticking calls its Destroy, which gives every
+	-- SurfaceLight back and removes the key listener, and ticking again just runs the kept copy.
+	------------------------------------------------------------
+	do
+		local LIGHTS_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2013%20Dynamic%20Lights.lua"
+		local genv = (getgenv and getgenv()) or _G
+		local source = nil
+		local loading = false
+
+		local function runningApi()
+			local api = genv.SurfaceLightConverter or _G.SurfaceLightConverter
+			if type(api) == "table" and type(api.Destroy) == "function" then return api end
+			return nil
+		end
+
+		function actions.apply2013Dynamic()
+			if loading then return end
+			local api = runningApi()
+			if api then
+				pcall(api.SetEnabled, true)
+				print("[2013 Dynamic] On.")
+				return
+			end
+			loading = true
+			local ok, err = pcall(function()
+				source = source or game:HttpGet(LIGHTS_URL)
+				local fn, compileErr = loadstring(source)
+				if not fn then error(compileErr, 0) end
+				fn()
+			end)
+			loading = false
+			if ok then
+				print("[2013 Dynamic] Loaded via loadstring. Press 8 to switch between the 2013 lights and SurfaceLights.")
+				-- Unticked while it was downloading
+				if not state.is2013DynamicEnabled then actions.restore2013Dynamic() end
+			else
+				warn("[2013 Dynamic] Loadstring failed: " .. tostring(err))
+			end
+		end
+
+		function actions.restore2013Dynamic()
+			local api = runningApi()
+			if not api then return end
+			pcall(api.Destroy)
+			genv.SurfaceLightConverter = nil
+			genv.__SurfaceLightConverterCleanup = nil
+			if _G.SurfaceLightConverter == api then _G.SurfaceLightConverter = nil end
+			_G.__SurfaceLightConverterCleanup = nil
+			print("[2013 Dynamic] Off, SurfaceLights back.")
+		end
+	end
+
+	------------------------------------------------------------
 	-- 10. HIDE GAME GUI (LOADSTRING HOOK)
 	-- The GUI Hider gist hides the game's own ScreenGuis (TopbarPlus,
 	-- HUDs, shop buttons) and leaves Bloxy Paradox and the era GUIs alone.
@@ -3292,14 +3348,14 @@ task.spawn(function()
 	-- closing dropdowns) never pushes things further down than they belong.
 	local ROW_HEIGHT = 30
 	local startY     = destroyBtn.Position.Y.Offset
-	local decalBtnY  = startY + 12 * ROW_HEIGHT + 10
+	local decalBtnY  = startY + 13 * ROW_HEIGHT + 10
 
 	-- Ran before: start where our first row already is, not at the (already moved)
 	-- destroy button.
 	local previousFirstRow = scroll:FindFirstChild("HealthESPContainer")
 	if previousFirstRow then
 		startY = previousFirstRow.Position.Y.Offset
-		decalBtnY = startY + 12 * ROW_HEIGHT + 10
+		decalBtnY = startY + 13 * ROW_HEIGHT + 10
 	end
 
 	local spacer = scroll:FindFirstChild("BPBottomSpacer")
@@ -3701,6 +3757,18 @@ task.spawn(function()
 		helpText      = "Removes the leaderboard (the player list): Roblox's own and the era GUIs'. Phone GUIs had none for a long time. Untick to bring it back."
 	})
 
+	createAddonRow({
+		containerName = "Dynamic2013Container",
+		checkboxName  = "Dynamic2013Checkbox",
+		helpName      = "Dynamic2013HelpButton",
+		label         = "2013 dyn",
+		yPos          = startY + 12 * ROW_HEIGHT,
+		stateKey      = "is2013DynamicEnabled",
+		onEnable      = actions.apply2013Dynamic,
+		onDisable     = actions.restore2013Dynamic,
+		helpText      = "2013 dynamic lights: turns the game's SurfaceLights into 2013-style SpotLights and PointLights. Press 8 to switch between the 2013 lights and the SurfaceLights. Untick to put every SurfaceLight back."
+	})
+
 	------------------------------------------------------------
 	-- OLD DECAL RENDERING BUTTON
 	------------------------------------------------------------
@@ -3841,6 +3909,7 @@ task.spawn(function()
 	if state.isOldCameraSoundEnabled then task.spawn(actions.applyOldCameraSound) end
 	if state.isOldPartSoundsEnabled then task.spawn(actions.applyOldPartSounds) end
 	if state.isRemoveLeaderboardEnabled then task.spawn(actions.applyRemoveLeaderboard) end
+	if state.is2013DynamicEnabled then task.spawn(actions.apply2013Dynamic) end
 
 	print("[Addon] All options loaded into GUI.")
 end)
