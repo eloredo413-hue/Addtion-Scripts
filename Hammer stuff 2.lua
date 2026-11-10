@@ -64,6 +64,7 @@ task.spawn(function()
 		isLegacyLightingEnabled = config.isLegacyLightingEnabled or false,
 		isOldCameraSoundEnabled = config.isOldCameraSoundEnabled or false,
 		isOldPartSoundsEnabled  = config.isOldPartSoundsEnabled or false,
+		isRemoveLeaderboardEnabled = config.isRemoveLeaderboardEnabled or false,
 	}
 
 	-- Hammer stuff 1 (and the base GUI) save to the same file, so re-read it first and
@@ -2998,6 +2999,91 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
+	-- 13. REMOVE LEADERBOARD
+	-- Takes the leaderboard off the screen: Roblox's own (CoreGui) and the era GUIs' (anything in CoreGui named like
+	-- a player list or a leaderboard, and such a screen GUI of the game's). Phones had none for a long time.
+	-- Event-driven: what is there is looked at once, what appears later as it is added. Unticking puts it all back.
+	------------------------------------------------------------
+	do
+		local CoreGuiService = game:GetService("CoreGui")
+		local StarterGui = game:GetService("StarterGui")
+		local held = {}        -- gui -> { prop, was, conn }
+		local conns = {}
+		local active = false
+		local coreWas = nil    -- whether Roblox's PlayerList was on before
+
+		local function isLeaderboardName(name)
+			name = string.lower(name)
+			return string.find(name, "playerlist", 1, true) ~= nil or string.find(name, "leaderboard", 1, true) ~= nil
+		end
+
+		local function hold(gui)
+			if held[gui] or not active then return end
+			local prop = gui:IsA("LayerCollector") and "Enabled" or (gui:IsA("GuiObject") and "Visible") or nil
+			if not prop then return end
+			local entry = { prop = prop, was = gui[prop] }
+			held[gui] = entry
+			pcall(function() gui[prop] = false end)
+			entry.conn = gui:GetPropertyChangedSignal(prop):Connect(function()
+				if active and gui[prop] == true then
+					entry.was = true
+					pcall(function() gui[prop] = false end)
+				end
+			end)
+		end
+
+		local function consider(obj)
+			if not (obj:IsA("GuiObject") or obj:IsA("LayerCollector")) then return end
+			if not isLeaderboardName(obj.Name) then return end
+			-- not something already inside one that is held
+			local up = obj.Parent
+			while up and up ~= game do
+				if held[up] then return end
+				up = up.Parent
+			end
+			task.defer(hold, obj)
+		end
+
+		function actions.applyRemoveLeaderboard()
+			if active then return end
+			active = true
+			pcall(function()
+				coreWas = StarterGui:GetCoreGuiEnabled(Enum.CoreGuiType.PlayerList)
+				StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)
+			end)
+			table.insert(conns, StarterGui.CoreGuiChangedSignal:Connect(function(coreType, enabled)
+				if active and enabled and (coreType == Enum.CoreGuiType.PlayerList or coreType == Enum.CoreGuiType.All) then
+					pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false) end)
+				end
+			end))
+			pcall(function()
+				for _, obj in ipairs(CoreGuiService:GetDescendants()) do consider(obj) end
+				table.insert(conns, CoreGuiService.DescendantAdded:Connect(consider))
+			end)
+			-- the game's own screen GUIs: only the top level, and only by name
+			table.insert(conns, pg.ChildAdded:Connect(consider))
+			for _, child in ipairs(pg:GetChildren()) do consider(child) end
+			print("[Remove Leaderboard] On.")
+		end
+
+		function actions.restoreRemoveLeaderboard()
+			if not active then return end
+			active = false
+			for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
+			table.clear(conns)
+			for gui, entry in pairs(held) do
+				pcall(function() entry.conn:Disconnect() end)
+				pcall(function() if gui.Parent then gui[entry.prop] = entry.was end end)
+			end
+			held = {}
+			pcall(function()
+				if coreWas ~= false then StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, true) end
+			end)
+			print("[Remove Leaderboard] Off.")
+		end
+	end
+
+	------------------------------------------------------------
 	-- 10. HIDE GAME GUI (LOADSTRING HOOK)
 	-- The GUI Hider gist hides the game's own ScreenGuis (TopbarPlus,
 	-- HUDs, shop buttons) and leaves Bloxy Paradox and the era GUIs alone.
@@ -3206,14 +3292,14 @@ task.spawn(function()
 	-- closing dropdowns) never pushes things further down than they belong.
 	local ROW_HEIGHT = 30
 	local startY     = destroyBtn.Position.Y.Offset
-	local decalBtnY  = startY + 11 * ROW_HEIGHT + 10
+	local decalBtnY  = startY + 12 * ROW_HEIGHT + 10
 
 	-- Ran before: start where our first row already is, not at the (already moved)
 	-- destroy button.
 	local previousFirstRow = scroll:FindFirstChild("HealthESPContainer")
 	if previousFirstRow then
 		startY = previousFirstRow.Position.Y.Offset
-		decalBtnY = startY + 11 * ROW_HEIGHT + 10
+		decalBtnY = startY + 12 * ROW_HEIGHT + 10
 	end
 
 	local spacer = scroll:FindFirstChild("BPBottomSpacer")
@@ -3603,6 +3689,18 @@ task.spawn(function()
 		helpText      = "The old clattering sounds when parts hit each other (a classic sound pack, saved in your executor's ClassicSounds folder the first time). Loose parts and dead characters only. Untick to mute it."
 	})
 
+	createAddonRow({
+		containerName = "RemoveLeaderboardContainer",
+		checkboxName  = "RemoveLeaderboardCheckbox",
+		helpName      = "RemoveLeaderboardHelpButton",
+		label         = "no leaderboard",
+		yPos          = startY + 11 * ROW_HEIGHT,
+		stateKey      = "isRemoveLeaderboardEnabled",
+		onEnable      = actions.applyRemoveLeaderboard,
+		onDisable     = actions.restoreRemoveLeaderboard,
+		helpText      = "Removes the leaderboard (the player list): Roblox's own and the era GUIs'. Phone GUIs had none for a long time. Untick to bring it back."
+	})
+
 	------------------------------------------------------------
 	-- OLD DECAL RENDERING BUTTON
 	------------------------------------------------------------
@@ -3742,6 +3840,7 @@ task.spawn(function()
 	if state.isLegacyLightingEnabled then task.spawn(actions.applyLegacyLighting) end
 	if state.isOldCameraSoundEnabled then task.spawn(actions.applyOldCameraSound) end
 	if state.isOldPartSoundsEnabled then task.spawn(actions.applyOldPartSounds) end
+	if state.isRemoveLeaderboardEnabled then task.spawn(actions.applyRemoveLeaderboard) end
 
 	print("[Addon] All options loaded into GUI.")
 end)
