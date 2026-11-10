@@ -305,15 +305,11 @@ do
 		-- chat box lined up with the menu button (2px from the left)
 		{ "\t\t\tName = 'ChatWindowContainer';\n\t\t\tSize = UDim2.new(0.3, 0, 0.25, 0);\n\t\t\tPosition = UDim2.new(0, 8, 0, 37);",
 			"\t\t\tName = 'ChatWindowContainer';\n\t\t\tSize = UDim2.new(0.3, 0, 0.25, 0);\n\t\t\tPosition = UDim2.new(0, 2, 0, 37);" },
-		-- PC chat bar right under the chat box; phones have no chat bar. A PC with a touch screen counts as a PC
-		-- (it has a keyboard), so it gets the bar too
-		-- (no strip or "click here" text at the bottom), the keyboard is it
-		{ "\t\t\tName = 'ChatBarContainer';\n\t\t\tPosition = UDim2.new(0, 0, 1, 0);\n\t\t\tSize = UDim2.new(1, 0, 0, 20);",
-			"\t\t\tName = 'ChatBarContainer';\n\t\t\tPosition = (Util.IsTouchDevice() and not game:GetService('UserInputService').KeyboardEnabled) and UDim2.new(0, 0, 1, 0) or UDim2.new(0, 2, 0.25, 2);\n\t\t\tSize = (Util.IsTouchDevice() and not game:GetService('UserInputService').KeyboardEnabled) and UDim2.new(1, 0, 0, 20) or UDim2.new(0.3, -2, 0, 20);" },
-		{ "\t\t\tBackgroundColor3 = Color3.new(0, 0, 0);\n\t\t\tBackgroundTransparency = 0.25;",
-			"\t\t\tBackgroundColor3 = Color3.new(0, 0, 0);\n\t\t\tBackgroundTransparency = (Util.IsTouchDevice() and not game:GetService('UserInputService').KeyboardEnabled) and 1 or 0.25;" },
-		{ "Text = 'To chat click here or press \"/\" key';",
-			"Text = (Util.IsTouchDevice() and not game:GetService('UserInputService').KeyboardEnabled) and '' or 'To chat click here or press \"/\" key';" },
+		-- The "To chat click here or press / key" bar is the chat script's own: along the bottom of the screen on
+		-- PC (the script reserves that strip), and none on phones. (It used to be moved under the chat box.)
+		-- "/" also works when something else took the key but no text box has focus
+		{ "if key.KeyCode == Enum.KeyCode.Slash and not proc then",
+			"if key.KeyCode == Enum.KeyCode.Slash and (not proc or not game:GetService('UserInputService'):GetFocusedTextBox()) then" },
 		{ "Please press the '...' icon to chat", "Please press the Chat button to chat" },
 		-- phones: tapping the chat box darkens it and lets you scroll, no
 		-- need to press the Chat button
