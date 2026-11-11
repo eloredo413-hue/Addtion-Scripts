@@ -70,7 +70,7 @@ local ExperienceChat = CoreGui:WaitForChild("ExperienceChat")
 local ChatBubbles = ExperienceChat:WaitForChild("bubbleChat")
 
 -- (Addtion-Scripts) a touch-screen PC (it has a keyboard) is a PC, not a phone
-local IsTouchDevice = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+local IsTouchDevice = UserInputService.TouchEnabled and not (UserInputService.KeyboardEnabled and UserInputService.MouseEnabled)
 
 -- Types
 
