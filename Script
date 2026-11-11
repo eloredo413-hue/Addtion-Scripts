@@ -1724,7 +1724,7 @@ end
         }
         local TONE_COLORS = {
             Neutral  = Color3.fromRGB(0, 0, 175),
-            Friendly = Color3.fromRGB(0, 95, 10),
+            Friendly = Color3.fromRGB(0, 70, 0),
             Enemy    = Color3.fromRGB(135, 0, 0),
         }
 
@@ -1768,7 +1768,7 @@ end
         local noticeGui = Instance.new("ScreenGui")
         noticeGui.Name = "ClassicDialogNoticeGui"
         noticeGui.ResetOnSpawn = false
-        noticeGui.DisplayOrder = 101
+        noticeGui.DisplayOrder = 5000 -- above every GUI (the kept dialog box sits at 1000)
         noticeGui.Parent = parentGui
 
         local function showSystemNotice(text, duration)
@@ -2414,6 +2414,7 @@ end
             end)
 
             if not myHead or not activeNPC.Parent or (myHead.Position - activeNPC.Position).Magnitude > (maxDist + 5) then
+                print("[ClassicDialog] chat ended: walked away")
                 showSystemNotice("Chat ended because you walked away", 2.5)
                 endDialog()
             end
