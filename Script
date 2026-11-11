@@ -139,6 +139,17 @@ local function keepDialogBox()
     return true
 end
 
+-- The kept box is only wanted where Roblox's own dialogs are what you use. With our classic dialogs
+-- (2010 to 2014 / mobile) it is switched off, so it does not show up next to them.
+local function setDialogBoxShown(shown)
+    local hui = nil
+    pcall(function() hui = gethui and gethui() end)
+    for _, container in ipairs({ CoreGui, hui }) do
+        local kept = container and container:FindFirstChild("DialogBoxHost")
+        if kept then pcall(function() kept.Enabled = shown end) end
+    end
+end
+
 if not keepDialogBox() then
     -- Roblox's dialog script may not have set its box up yet: look again for a little while
     task.spawn(function()
@@ -2621,6 +2632,8 @@ end
         else
             stopSpeedometer()
         end
+
+        setDialogBoxShown(not (era == "classic" or (era == "y2010" and not is2008)))
 
         if era == "none" then
             if getgenv().ClassicDialogCleanup then pcall(getgenv().ClassicDialogCleanup) end
