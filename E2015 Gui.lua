@@ -831,8 +831,30 @@ end
 				if not string.find(string.lower(t), "to chat click here", 1, true) then return end
 				pcall(function()
 					local strip = obj.Parent
-					if strip and strip:IsA("Frame") then strip.Visible = false end
-					obj.Visible = false
+					local function pin(g)
+						if not g or not g:IsA("GuiObject") then return end
+						g.Visible = false
+						g:GetPropertyChangedSignal("Visible"):Connect(function()
+							if g.Visible then g.Visible = false end
+						end)
+					end
+					pin(obj)
+					if strip and strip:IsA("Frame") then
+						pin(strip)
+						-- the bar's own parent too, when it is only the bar (named like one)
+						local up = strip.Parent
+						if up and up:IsA("Frame") and string.find(string.lower(up.Name), "chatbar", 1, true) then pin(up) end
+						-- the type button / "/" must not drop you into the hidden box
+						for _, d in ipairs(strip:GetDescendants()) do
+							if d:IsA("TextBox") then d.Focused:Connect(function() task.defer(function() d:ReleaseFocus() end) end) end
+						end
+						if strip:IsA("Frame") then
+							strip.DescendantAdded:Connect(function(d)
+								if d:IsA("TextBox") then d.Focused:Connect(function() task.defer(function() d:ReleaseFocus() end) end) end
+							end)
+						end
+					end
+					if obj:IsA("TextBox") then obj.Focused:Connect(function() task.defer(function() obj:ReleaseFocus() end) end) end
 				end)
 			end
 			hide()
