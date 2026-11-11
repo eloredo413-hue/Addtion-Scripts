@@ -291,9 +291,9 @@ do
 
 	local CHAT_CHANGES = {
 		-- A PC with a touch screen is a PC: the chat script treated any touch device as a phone, which turned
-		-- off the "/" key, the "To chat click here" bar and the mode buttons. A phone has no keyboard.
+		-- off the "/" key, the "To chat click here" bar and the mode buttons. A phone has no mouse, so it stays a phone.
 		{ "pcall(function() touchEnabled = InputService.TouchEnabled end)\n\t\treturn touchEnabled",
-			"pcall(function() touchEnabled = InputService.TouchEnabled and not InputService.KeyboardEnabled end)\n\t\treturn touchEnabled" },
+			"pcall(function() touchEnabled = InputService.TouchEnabled and not (InputService.KeyboardEnabled and InputService.MouseEnabled) end)\n\t\treturn touchEnabled" },
 		-- no top bar: the dot before each name, the Chat button, the darker
 		-- box while you type
 		{ "\treturn true\nend\n\nlocal function GetChatMovedUpPlaceIdCutoffFlag",
