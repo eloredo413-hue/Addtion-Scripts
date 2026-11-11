@@ -820,5 +820,38 @@ end
 	else
 		warn("[Early 2015] Couldn't swap in the 2015 chat bubbles, using the base's.")
 	end
+	-- No "To chat click here or press / key" bar at all: whatever shows that text is hidden, with the strip it sits on.
+	task.spawn(function()
+		local Players = game:GetService("Players")
+		local function check(obj)
+			if not (obj:IsA("TextLabel") or obj:IsA("TextBox") or obj:IsA("TextButton")) then return end
+			local function hide()
+				local t = obj.Text or ""
+				if obj:IsA("TextBox") and t == "" then t = obj.PlaceholderText or "" end
+				if not string.find(string.lower(t), "to chat click here", 1, true) then return end
+				pcall(function()
+					local strip = obj.Parent
+					if strip and strip:IsA("Frame") then strip.Visible = false end
+					obj.Visible = false
+				end)
+			end
+			hide()
+			pcall(function() obj:GetPropertyChangedSignal("Text"):Connect(hide) end)
+		end
+		local roots = {}
+		pcall(function() table.insert(roots, game:GetService("CoreGui")) end)
+		local lp = Players.LocalPlayer
+		if lp then
+			local pg = lp:FindFirstChildOfClass("PlayerGui") or lp:WaitForChild("PlayerGui", 10)
+			if pg then table.insert(roots, pg) end
+		end
+		for _, root in ipairs(roots) do
+			pcall(function()
+				for _, d in ipairs(root:GetDescendants()) do check(d) end
+				root.DescendantAdded:Connect(check)
+			end)
+		end
+	end)
+
 	loadstring(base)()
 end
