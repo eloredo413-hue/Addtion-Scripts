@@ -160,6 +160,33 @@ local function setupCharacter(char)
 	local lastFrame = os.clock()
 	local grabStartY, lastGrab = nil, 0 -- where the current climb began, and when a part was last in front
 
+	-- Standing still after a fall or a jump, the walking animation kept playing: the animation scripts
+	-- choose idle or walk from Humanoid.Running, which was not told the speed went to 0. Once you have
+	-- stood still for a moment, the state is passed through Landed once, so Running fires again with 0.
+	local stillFor, idleNudged = 0, false
+	local nudgedAt = -1 -- (the Landed made here is not a landing: no trampoline bounce)
+	addConnection(RunService.Heartbeat:Connect(function(dt)
+		if destroyed or not char.Parent or humanoid.Health <= 0 then return end
+		local v = rootPart.AssemblyLinearVelocity
+		local flat = Vector3.new(v.X, 0, v.Z).Magnitude
+		local state = humanoid:GetState()
+		if state == Enum.HumanoidStateType.Running and humanoid.MoveDirection.Magnitude < 0.01
+			and flat < 0.5 and math.abs(v.Y) < 1 and not humanoid.Sit then
+			stillFor = stillFor + dt
+			if stillFor > 0.2 and not idleNudged then
+				idleNudged = true
+				nudgedAt = os.clock()
+				pcall(function() humanoid:ChangeState(Enum.HumanoidStateType.Landed) end)
+			end
+		else
+			stillFor = 0
+			if humanoid.MoveDirection.Magnitude >= 0.01 or state ~= Enum.HumanoidStateType.Running
+				and state ~= Enum.HumanoidStateType.Landed then
+				idleNudged = false
+			end
+		end
+	end))
+
 	local lastFallSpeed = 0
 	addConnection(RunService.Heartbeat:Connect(function()
 		if destroyed or not char.Parent or humanoid.Health <= 0 then return end
@@ -168,7 +195,7 @@ local function setupCharacter(char)
 	end))
 
 	addConnection(humanoid.StateChanged:Connect(function(_, newState)
-		if newState ~= Enum.HumanoidStateType.Landed then return end
+		if newState ~= Enum.HumanoidStateType.Landed or os.clock() - nudgedAt < 0.3 then return end
 		local bounceMultiplier = 1
 		local rayParams = RaycastParams.new()
 		rayParams.FilterDescendantsInstances = {char}
@@ -278,7 +305,10 @@ local function setupCharacter(char)
 			humanoid.HipHeight = math.sign(lastLevel - level) * math.clamp(dist - 3, 0, 1)
 			lastLevel = level
 		else
-			humanoid.HipHeight = humanoid.HipHeight * (decayRate ^ (dt * 60))
+			local h = humanoid.HipHeight * (decayRate ^ (dt * 60))
+			-- settle at exactly 0 (it never got there, so the character kept moving a tiny bit)
+			if math.abs(h) < 0.02 then h = 0 end
+			if humanoid.HipHeight ~= h then humanoid.HipHeight = h end
 		end
 	end)
 

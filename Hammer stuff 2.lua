@@ -66,6 +66,8 @@ task.spawn(function()
 		isOldPartSoundsEnabled  = config.isOldPartSoundsEnabled or false,
 		isRemoveLeaderboardEnabled = config.isRemoveLeaderboardEnabled or false,
 		is2013DynamicEnabled    = config.is2013DynamicEnabled or false,
+		is2015AudioEnabled      = config.is2015AudioEnabled or false,
+		is2016AudioEnabled      = config.is2016AudioEnabled or false,
 	}
 
 	-- Hammer stuff 1 (and the base GUI) save to the same file, so re-read it first and
@@ -3140,6 +3142,110 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
+	-- 15. WALK SOUNDS: 2015 AUDIO / 2016 AUDIO
+	-- Your walking sound, played by a sound of its own whose pitch follows how fast you move (Roblox's own
+	-- "Running" sound is muted while it is on and gets its volume back when it is off).
+	--   2015 audio: pitch = speed / 16 (1.0 at normal speed: the lower 2015 pitch)
+	--   2016 audio: pitch = speed / 16 x Roblox's own pitch for the floor (usually 1.85)
+	-- Only one at a time; it comes back after a respawn.
+	------------------------------------------------------------
+	do
+		local SOUND_NAME = "BPClassicWalkSound"
+		local mode = nil       -- "2015", "2016" or nil
+		local charConn = nil
+		local current = {}     -- { token, conn, sound, defaultRunning, wasVolume }
+
+		local function cleanupChar()
+			if current.conn then pcall(function() current.conn:Disconnect() end) end
+			if current.sound then pcall(function() current.sound:Destroy() end) end
+			if current.defaultRunning and current.wasVolume then
+				pcall(function() current.defaultRunning.Volume = current.wasVolume end)
+			end
+			current = {}
+		end
+
+		local function applyTo(character)
+			cleanupChar()
+			local token = {}
+			current.token = token
+			local rootPart = character:WaitForChild("HumanoidRootPart", 5)
+			local humanoid = character:WaitForChild("Humanoid", 5)
+			if not rootPart or not humanoid or current.token ~= token or not mode then return end
+			local existing = rootPart:FindFirstChild(SOUND_NAME)
+			if existing then existing:Destroy() end
+			-- wait for Roblox's own scripts to add the normal "Running" sound
+			task.wait(0.5)
+			if current.token ~= token or not mode then return end
+			local defaultRunning = rootPart:FindFirstChild("Running")
+
+			local walkSound = Instance.new("Sound")
+			walkSound.Name = SOUND_NAME
+			walkSound.Looped = true
+			walkSound.Volume = 0
+			walkSound.Parent = rootPart
+			walkSound:Play()
+			current.sound = walkSound
+			current.defaultRunning = defaultRunning
+			current.wasVolume = defaultRunning and defaultRunning.Volume or nil
+
+			local conn
+			conn = RunService.Heartbeat:Connect(function()
+				if not character.Parent or humanoid.Health <= 0 or not mode then
+					conn:Disconnect()
+					return
+				end
+				local basePitch = 1.85
+				if defaultRunning then
+					-- the same sound as Roblox's (keeps the grass / wood / metal sounds)
+					if walkSound.SoundId ~= defaultRunning.SoundId then
+						walkSound.SoundId = defaultRunning.SoundId
+					end
+					if defaultRunning.PlaybackSpeed > 0 then basePitch = defaultRunning.PlaybackSpeed end
+					defaultRunning.Volume = 0
+				end
+				local velocity = rootPart.AssemblyLinearVelocity
+				local currentSpeed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
+				-- only while moving on the ground
+				if currentSpeed > 0.5 and humanoid.FloorMaterial ~= Enum.Material.Air then
+					walkSound.Volume = 0.65
+					if mode == "2015" then
+						walkSound.PlaybackSpeed = math.clamp(currentSpeed / 16, 0.2, 3)
+					else
+						walkSound.PlaybackSpeed = math.clamp((currentSpeed / 16) * basePitch, 0.3, 5)
+					end
+				else
+					walkSound.Volume = 0
+				end
+			end)
+			current.conn = conn
+		end
+
+		local function enable(which)
+			mode = which
+			if not charConn then
+				charConn = player.CharacterAdded:Connect(function(character)
+					if mode then task.spawn(applyTo, character) end
+				end)
+			end
+			if player.Character then task.spawn(applyTo, player.Character) end
+			print("[" .. which .. " Audio] On.")
+		end
+
+		local function disable(which)
+			if mode ~= which then return end
+			mode = nil
+			if charConn then charConn:Disconnect() charConn = nil end
+			cleanupChar()
+			print("[" .. which .. " Audio] Off, Roblox's walking sound is back.")
+		end
+
+		function actions.apply2015Audio() enable("2015") end
+		function actions.restore2015Audio() disable("2015") end
+		function actions.apply2016Audio() enable("2016") end
+		function actions.restore2016Audio() disable("2016") end
+	end
+
+	------------------------------------------------------------
 	-- 10. HIDE GAME GUI (LOADSTRING HOOK)
 	-- The GUI Hider gist hides the game's own ScreenGuis (TopbarPlus,
 	-- HUDs, shop buttons) and leaves Bloxy Paradox and the era GUIs alone.
@@ -3348,14 +3454,14 @@ task.spawn(function()
 	-- closing dropdowns) never pushes things further down than they belong.
 	local ROW_HEIGHT = 30
 	local startY     = destroyBtn.Position.Y.Offset
-	local decalBtnY  = startY + 13 * ROW_HEIGHT + 10
+	local decalBtnY  = startY + 19 * ROW_HEIGHT + 10
 
 	-- Ran before: start where our first row already is, not at the (already moved)
 	-- destroy button.
-	local previousFirstRow = scroll:FindFirstChild("HealthESPContainer")
+	local previousFirstRow = scroll:FindFirstChild("BPCategoryGraphics") or scroll:FindFirstChild("HealthESPContainer")
 	if previousFirstRow then
 		startY = previousFirstRow.Position.Y.Offset
-		decalBtnY = startY + 13 * ROW_HEIGHT + 10
+		decalBtnY = startY + 19 * ROW_HEIGHT + 10
 	end
 
 	local spacer = scroll:FindFirstChild("BPBottomSpacer")
@@ -3560,17 +3666,44 @@ task.spawn(function()
 		end)
 	end
 
-	createAddonRow({
-		containerName = "HealthESPContainer",
-		checkboxName  = "HealthESPCheckbox",
-		helpName      = "HealthESPHelpButton",
-		label         = "health ESP",
-		yPos          = startY,
-		stateKey      = "isHealthESPEnabled",
-		onEnable      = actions.applyHealthESP,
-		onDisable     = actions.restoreHealthESP,
-		helpText      = "Old Roblox Health ESP For Players Used to See Health Range"
-	})
+	-- Category title (e.g. "graphics & lighting") above a group of options: a plain label in the
+	-- same list, placed by relayout() like the rows.
+	local function createCategory(name, title)
+		local existing = scroll:FindFirstChild(name)
+		if existing then existing:Destroy() end
+		local cont = Instance.new("Frame")
+		cont.Name = name
+		cont.Size = UDim2.new(1, -30, 0, 30)
+		cont.Position = UDim2.new(0, 15, 0, startY)
+		cont.BackgroundTransparency = 1
+		cont.ZIndex = 96
+		cont.Parent = scroll
+
+		local lbl = Instance.new("TextLabel")
+		lbl.Size = UDim2.new(1, 0, 0, 22)
+		lbl.Position = UDim2.new(0, 0, 0, 6)
+		lbl.BackgroundTransparency = 1
+		lbl.FontFace = fontBold
+		lbl.TextSize = 13
+		lbl.TextColor3 = Color3.fromRGB(255, 220, 120)
+		lbl.TextXAlignment = Enum.TextXAlignment.Left
+		lbl.Text = string.upper(title)
+		lbl.ZIndex = 97
+		lbl.Parent = cont
+
+		local line = Instance.new("Frame")
+		line.Size = UDim2.new(1, 0, 0, 1)
+		line.Position = UDim2.new(0, 0, 1, -2)
+		line.BackgroundColor3 = Color3.fromRGB(255, 220, 120)
+		line.BackgroundTransparency = 0.5
+		line.BorderSizePixel = 0
+		line.ZIndex = 97
+		line.Parent = cont
+
+		table.insert(layoutEntries, { frame = cont, extra = function() return 0 end })
+	end
+
+	createCategory("BPCategoryGraphics", "graphics & lighting")
 
 	createAddonRow({
 		containerName = "RemoveProContainer",
@@ -3582,6 +3715,30 @@ task.spawn(function()
 		onEnable      = actions.applyRemovePro,
 		onDisable     = actions.restoreRemovePro,
 		helpText      = "Removes modern post-processing (Atmosphere, Bloom, DepthOfField, etc.) and applies classic 2016-era flat lighting with Retro tonemapper. Parts are converted to SmoothPlastic. Shadows are kept. Disabling restores lighting; material changes persist."
+	})
+
+	createAddonRow({
+		containerName = "LegacyLightingContainer",
+		checkboxName  = "LegacyLightingCheckbox",
+		helpName      = "LegacyLightingHelpButton",
+		label         = "legacy lighting",
+		yPos          = startY + 8 * ROW_HEIGHT,
+		stateKey      = "isLegacyLightingEnabled",
+		onEnable      = actions.applyLegacyLighting,
+		onDisable     = actions.restoreLegacyLighting,
+		helpText      = "2017 OldGraphics lighting: Compatibility technology, no bloom, blur, sun rays, depth of field or atmosphere, and flat grey colors. Untick to put the original lighting back."
+	})
+
+	createAddonRow({
+		containerName = "Dynamic2013Container",
+		checkboxName  = "Dynamic2013Checkbox",
+		helpName      = "Dynamic2013HelpButton",
+		label         = "2013 dyn",
+		yPos          = startY + 12 * ROW_HEIGHT,
+		stateKey      = "is2013DynamicEnabled",
+		onEnable      = actions.apply2013Dynamic,
+		onDisable     = actions.restore2013Dynamic,
+		helpText      = "2013 dynamic lights: turns the game's SurfaceLights into 2013-style SpotLights and PointLights. Press 8 to switch between the 2013 lights and the SurfaceLights. Untick to put every SurfaceLight back."
 	})
 
 	createAddonRow({
@@ -3606,51 +3763,6 @@ task.spawn(function()
 		onEnable      = actions.applyLensFlare,
 		onDisable     = actions.restoreLensFlare,
 		helpText      = "Renders multi-beam classic sun lens flares aligned dynamically with the sun's trajectory, featuring Raycast-based obstacle occlusion checking."
-	})
-
-	createDropdown({
-		containerName = "AvatarDropdownContainer",
-		arrowName     = "AvatarDropdownArrow",
-		helpName      = "AvatarDropdownHelpButton",
-		label         = "avatar",
-		yPos          = startY + 4 * ROW_HEIGHT,
-		helpText      = "Press the arrow to pick an avatar era: old avatar or 2006 avatar. Only one can be on at a time.",
-		options = {
-			{
-				containerName = "OldAvatarContainer",
-				checkboxName  = "OldAvatarCheckbox",
-				helpName      = "OldAvatarHelpButton",
-				label         = "old avatar",
-				stateKey      = "isOldAvatarEnabled",
-				exclusiveWith = { "is2006AvatarEnabled" },
-				onEnable      = actions.applyOldAvatar,
-				onDisable     = actions.restoreOldAvatar,
-				helpText      = "Retro Suite 2006: 2010 Motor6D procedural animations for all players, 31-color palette quantization, 1-hat/1-hair enforcement, legacy audio, and original mesh/face textures."
-			},
-			{
-				containerName = "Avatar2006Container",
-				checkboxName  = "Avatar2006Checkbox",
-				helpName      = "Avatar2006HelpButton",
-				label         = "2006 avatar",
-				stateKey      = "is2006AvatarEnabled",
-				exclusiveWith = { "isOldAvatarEnabled" },
-				onEnable      = actions.apply2006Avatar,
-				onDisable     = actions.restore2006Avatar,
-				helpText      = "Retro Suite 2006 Executor Edition: random 2006 body colors, classic head and face, sharp R6 meshes, the 2006 T-shirt badge, retro animations and sounds for all players. Removes accessories and clothing; respawn to get them back after disabling."
-			},
-		}
-	})
-
-	createAddonRow({
-		containerName = "ClassicFaceContainer",
-		checkboxName  = "ClassicFaceCheckbox",
-		helpName      = "ClassicFaceHelpButton",
-		label         = "classic face",
-		yPos          = startY + 5 * ROW_HEIGHT,
-		stateKey      = "isClassicFaceEnabled",
-		onEnable      = actions.applyClassicFace,
-		onDisable     = actions.restoreClassicFace,
-		helpText      = "Loads the external Classic Faces script via loadstring to convert modern R15 dynamic heads into classic R6 block heads with 2D face decals."
 	})
 
 	createDropdown({
@@ -3697,29 +3809,54 @@ task.spawn(function()
 		}
 	})
 
-	createAddonRow({
-		containerName = "HideGameGuiContainer",
-		checkboxName  = "HideGameGuiCheckbox",
-		helpName      = "HideGameGuiHelpButton",
-		label         = "hide game GUI",
-		yPos          = startY + 7 * ROW_HEIGHT,
-		stateKey      = "isHideGameGuiEnabled",
-		onEnable      = actions.applyHideGameGui,
-		onDisable     = actions.restoreHideGameGui,
-		helpText      = "Hides the game's own GUI (TopbarPlus buttons, HUDs, shop buttons, menus). Bloxy Paradox, the retro top bar and every era GUI stay. Untick to show the game GUI again. Right Ctrl also switches it."
+	createCategory("BPCategoryAvatar", "avatar")
+
+	createDropdown({
+		containerName = "AvatarDropdownContainer",
+		arrowName     = "AvatarDropdownArrow",
+		helpName      = "AvatarDropdownHelpButton",
+		label         = "avatar",
+		yPos          = startY + 4 * ROW_HEIGHT,
+		helpText      = "Press the arrow to pick an avatar era: old avatar or 2006 avatar. Only one can be on at a time.",
+		options = {
+			{
+				containerName = "OldAvatarContainer",
+				checkboxName  = "OldAvatarCheckbox",
+				helpName      = "OldAvatarHelpButton",
+				label         = "old avatar",
+				stateKey      = "isOldAvatarEnabled",
+				exclusiveWith = { "is2006AvatarEnabled" },
+				onEnable      = actions.applyOldAvatar,
+				onDisable     = actions.restoreOldAvatar,
+				helpText      = "Retro Suite 2006: 2010 Motor6D procedural animations for all players, 31-color palette quantization, 1-hat/1-hair enforcement, legacy audio, and original mesh/face textures."
+			},
+			{
+				containerName = "Avatar2006Container",
+				checkboxName  = "Avatar2006Checkbox",
+				helpName      = "Avatar2006HelpButton",
+				label         = "2006 avatar",
+				stateKey      = "is2006AvatarEnabled",
+				exclusiveWith = { "isOldAvatarEnabled" },
+				onEnable      = actions.apply2006Avatar,
+				onDisable     = actions.restore2006Avatar,
+				helpText      = "Retro Suite 2006 Executor Edition: random 2006 body colors, classic head and face, sharp R6 meshes, the 2006 T-shirt badge, retro animations and sounds for all players. Removes accessories and clothing; respawn to get them back after disabling."
+			},
+		}
 	})
 
 	createAddonRow({
-		containerName = "LegacyLightingContainer",
-		checkboxName  = "LegacyLightingCheckbox",
-		helpName      = "LegacyLightingHelpButton",
-		label         = "legacy lighting",
-		yPos          = startY + 8 * ROW_HEIGHT,
-		stateKey      = "isLegacyLightingEnabled",
-		onEnable      = actions.applyLegacyLighting,
-		onDisable     = actions.restoreLegacyLighting,
-		helpText      = "2017 OldGraphics lighting: Compatibility technology, no bloom, blur, sun rays, depth of field or atmosphere, and flat grey colors. Untick to put the original lighting back."
+		containerName = "ClassicFaceContainer",
+		checkboxName  = "ClassicFaceCheckbox",
+		helpName      = "ClassicFaceHelpButton",
+		label         = "classic face",
+		yPos          = startY + 5 * ROW_HEIGHT,
+		stateKey      = "isClassicFaceEnabled",
+		onEnable      = actions.applyClassicFace,
+		onDisable     = actions.restoreClassicFace,
+		helpText      = "Loads the external Classic Faces script via loadstring to convert modern R15 dynamic heads into classic R6 block heads with 2D face decals."
 	})
+
+	createCategory("BPCategorySounds", "sounds")
 
 	createAddonRow({
 		containerName = "OldCameraSoundContainer",
@@ -3746,6 +3883,58 @@ task.spawn(function()
 	})
 
 	createAddonRow({
+		containerName = "Audio2015Container",
+		checkboxName  = "Audio2015Checkbox",
+		helpName      = "Audio2015HelpButton",
+		label         = "2015 audio",
+		yPos          = startY,
+		stateKey      = "is2015AudioEnabled",
+		exclusiveWith = { "is2016AudioEnabled" },
+		onEnable      = actions.apply2015Audio,
+		onDisable     = actions.restore2015Audio,
+		helpText      = "2015 walking sound: its pitch follows your speed (speed / 16), so normal walking sounds lower, like 2015. Only one of 2015 / 2016 audio at a time. Untick for Roblox's own walking sound."
+	})
+
+	createAddonRow({
+		containerName = "Audio2016Container",
+		checkboxName  = "Audio2016Checkbox",
+		helpName      = "Audio2016HelpButton",
+		label         = "2016 audio",
+		yPos          = startY,
+		stateKey      = "is2016AudioEnabled",
+		exclusiveWith = { "is2015AudioEnabled" },
+		onEnable      = actions.apply2016Audio,
+		onDisable     = actions.restore2016Audio,
+		helpText      = "2016 walking sound: its pitch follows your speed (speed / 16 x Roblox's pitch), so normal walking sounds like 2016. Only one of 2015 / 2016 audio at a time. Untick for Roblox's own walking sound."
+	})
+
+	createCategory("BPCategoryInterface", "interface")
+
+	createAddonRow({
+		containerName = "HealthESPContainer",
+		checkboxName  = "HealthESPCheckbox",
+		helpName      = "HealthESPHelpButton",
+		label         = "health ESP",
+		yPos          = startY,
+		stateKey      = "isHealthESPEnabled",
+		onEnable      = actions.applyHealthESP,
+		onDisable     = actions.restoreHealthESP,
+		helpText      = "Old Roblox Health ESP For Players Used to See Health Range"
+	})
+
+	createAddonRow({
+		containerName = "HideGameGuiContainer",
+		checkboxName  = "HideGameGuiCheckbox",
+		helpName      = "HideGameGuiHelpButton",
+		label         = "hide game GUI",
+		yPos          = startY + 7 * ROW_HEIGHT,
+		stateKey      = "isHideGameGuiEnabled",
+		onEnable      = actions.applyHideGameGui,
+		onDisable     = actions.restoreHideGameGui,
+		helpText      = "Hides the game's own GUI (TopbarPlus buttons, HUDs, shop buttons, menus). Bloxy Paradox, the retro top bar and every era GUI stay. Untick to show the game GUI again. Right Ctrl also switches it."
+	})
+
+	createAddonRow({
 		containerName = "RemoveLeaderboardContainer",
 		checkboxName  = "RemoveLeaderboardCheckbox",
 		helpName      = "RemoveLeaderboardHelpButton",
@@ -3755,18 +3944,6 @@ task.spawn(function()
 		onEnable      = actions.applyRemoveLeaderboard,
 		onDisable     = actions.restoreRemoveLeaderboard,
 		helpText      = "Removes the leaderboard (the player list): Roblox's own and the era GUIs'. Phone GUIs had none for a long time. Untick to bring it back."
-	})
-
-	createAddonRow({
-		containerName = "Dynamic2013Container",
-		checkboxName  = "Dynamic2013Checkbox",
-		helpName      = "Dynamic2013HelpButton",
-		label         = "2013 dyn",
-		yPos          = startY + 12 * ROW_HEIGHT,
-		stateKey      = "is2013DynamicEnabled",
-		onEnable      = actions.apply2013Dynamic,
-		onDisable     = actions.restore2013Dynamic,
-		helpText      = "2013 dynamic lights: turns the game's SurfaceLights into 2013-style SpotLights and PointLights. Press 8 to switch between the 2013 lights and the SurfaceLights. Untick to put every SurfaceLight back."
 	})
 
 	------------------------------------------------------------
@@ -3910,6 +4087,8 @@ task.spawn(function()
 	if state.isOldPartSoundsEnabled then task.spawn(actions.applyOldPartSounds) end
 	if state.isRemoveLeaderboardEnabled then task.spawn(actions.applyRemoveLeaderboard) end
 	if state.is2013DynamicEnabled then task.spawn(actions.apply2013Dynamic) end
+	if state.is2015AudioEnabled then task.spawn(actions.apply2015Audio)
+	elseif state.is2016AudioEnabled then task.spawn(actions.apply2016Audio) end
 
 	print("[Addon] All options loaded into GUI.")
 end)
