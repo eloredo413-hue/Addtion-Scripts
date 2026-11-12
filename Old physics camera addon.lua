@@ -196,20 +196,8 @@ local function setupCharacter(char)
 		lastFallSpeed = 0
 	end))
 
-	addConnection(humanoid.StateChanged:Connect(function(oldState, newState)
-		if oldState == Enum.HumanoidStateType.Freefall and newState == Enum.HumanoidStateType.Landed then
-			pcall(function()
-				humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
-			end)
-			task.delay(0.5, function()
-				if not destroyed and humanoid.Parent and humanoid.Health > 0 then
-					pcall(function()
-						humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
-					end)
-				end
-			end)
-		end
-	end))
+	-- (No jump lock after landing: switching the Jumping state off hid the jump button and could leave a
+	-- jump made while walking stuck in the walking state. The 2006 physics keeps its own.)
 
 	addConnection(humanoid.StateChanged:Connect(function(_, newState)
 		if newState == Enum.HumanoidStateType.RunningNoPhysics then
