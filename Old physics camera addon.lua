@@ -160,30 +160,42 @@ local function setupCharacter(char)
 	local lastFrame = os.clock()
 	local grabStartY, lastGrab = nil, 0 -- where the current climb began, and when a part was last in front
 
-	-- Standing still after a fall or a jump, the walking animation kept playing: the animation scripts
-	-- choose idle or walk from Humanoid.Running, which was not told the speed went to 0. Once you have
-	-- stood still for a moment, the state is passed through Landed once, so Running fires again with 0.
-	local stillFor, idleNudged = 0, false
-	local nudgedAt = -1 -- (the Landed made here is not a landing: no trampoline bounce)
+	-- Standing still after a fall, the walking animation sometimes kept playing: the animation scripts pick
+	-- idle or walk from Humanoid.Running, and the last speed it gave them was a moving one. When you are
+	-- standing still but the last speed Running gave was not 0, the animation scripts are given 0 (only
+	-- them: the humanoid's state is not touched).
+	local nudgedAt = -1 -- (kept for the trampoline check below)
+	local lastRunSpeed = 0
+	local lastFix = 0
+	local stillFor = 0
+	addConnection(humanoid.Running:Connect(function(speed) lastRunSpeed = speed end))
+	local function tellAnimationsStopped()
+		local fired = false
+		if typeof(firesignal) == "function" then
+			fired = pcall(firesignal, humanoid.Running, 0)
+		end
+		if not fired and typeof(getconnections) == "function" then
+			pcall(function()
+				for _, c in ipairs(getconnections(humanoid.Running)) do
+					if c.Fire then pcall(c.Fire, c, 0) elseif c.Function then task.spawn(c.Function, 0) end
+				end
+			end)
+		end
+		lastRunSpeed = 0
+	end
 	addConnection(RunService.Heartbeat:Connect(function(dt)
 		if destroyed or not char.Parent or humanoid.Health <= 0 then return end
 		local v = rootPart.AssemblyLinearVelocity
 		local flat = Vector3.new(v.X, 0, v.Z).Magnitude
-		local state = humanoid:GetState()
-		if state == Enum.HumanoidStateType.Running and humanoid.MoveDirection.Magnitude < 0.01
-			and flat < 0.5 and math.abs(v.Y) < 1 and not humanoid.Sit then
+		if humanoid:GetState() == Enum.HumanoidStateType.Running and humanoid.MoveDirection.Magnitude < 0.01
+			and flat < 0.5 and not humanoid.Sit then
 			stillFor = stillFor + dt
-			if stillFor > 0.2 and not idleNudged then
-				idleNudged = true
-				nudgedAt = os.clock()
-				pcall(function() humanoid:ChangeState(Enum.HumanoidStateType.Landed) end)
+			if stillFor > 0.15 and lastRunSpeed > 0.01 and os.clock() - lastFix > 0.3 then
+				lastFix = os.clock()
+				tellAnimationsStopped()
 			end
 		else
 			stillFor = 0
-			if humanoid.MoveDirection.Magnitude >= 0.01 or state ~= Enum.HumanoidStateType.Running
-				and state ~= Enum.HumanoidStateType.Landed then
-				idleNudged = false
-			end
 		end
 	end))
 
