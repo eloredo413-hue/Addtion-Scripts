@@ -56,6 +56,68 @@ do
 	------------------------------------------------------------
 	-- THE 2007 ANIMATION (the old avatar's, from Hammer stuff 2)
 	------------------------------------------------------------
+	-- The old animation scripts (this 2007 one and Bloxy's 2008) count any speed above 0 as running.
+	-- After a fall the humanoid can report a tiny leftover speed and then nothing more, so the walking
+	-- animation stayed on while standing still. Below this it is standing.
+	local RUN_MIN = 0.1
+
+	-- Bloxy's 2008 animation keeps its pose to itself, so it is told directly: when you have been
+	-- standing still for a moment but the last speed Humanoid.Running gave was not 0, Running is fired
+	-- again with 0 for the animation scripts listening to it (needs the executor's firesignal or
+	-- getconnections; the humanoid's state is not touched).
+	do
+		local plr = Players.LocalPlayer
+		local lastSpeed, stillFor, lastFix = 0, 0, 0
+		local hum, root = nil, nil
+		local runConn = nil
+		local function track(char)
+			if runConn then pcall(function() runConn:Disconnect() end) runConn = nil end
+			hum, root = nil, nil
+			if not char then return end
+			task.spawn(function()
+				local h = char:WaitForChild("Humanoid", 10)
+				local r = char:WaitForChild("HumanoidRootPart", 10)
+				if not h or not r or not alive then return end
+				hum, root, lastSpeed = h, r, 0
+				runConn = h.Running:Connect(function(speed) lastSpeed = speed end)
+				table.insert(connections, runConn)
+			end)
+		end
+		local function tellStopped(h)
+			local done = false
+			if typeof(firesignal) == "function" then
+				done = pcall(firesignal, h.Running, 0)
+			end
+			if not done and typeof(getconnections) == "function" then
+				pcall(function()
+					for _, c in ipairs(getconnections(h.Running)) do
+						if c.Fire then pcall(c.Fire, c, 0)
+						elseif c.Function then task.spawn(c.Function, 0) end
+					end
+				end)
+			end
+			lastSpeed = 0
+		end
+		if plr then
+			track(plr.Character)
+			connect(plr.CharacterAdded, track)
+			connect(RunService.Heartbeat, function(dt)
+				if not hum or not root or not hum.Parent or hum.Health <= 0 then return end
+				local v = root.AssemblyLinearVelocity
+				if hum:GetState() == Enum.HumanoidStateType.Running and hum.MoveDirection.Magnitude < 0.01
+					and Vector3.new(v.X, 0, v.Z).Magnitude < 0.5 then
+					stillFor = stillFor + dt
+					if stillFor > 0.15 and lastSpeed > 0 and os.clock() - lastFix > 0.3 then
+						lastFix = os.clock()
+						tellStopped(hum)
+					end
+				else
+					stillFor = 0
+				end
+			end)
+		end
+	end
+
 	local engine = {}
 	do
 		local player = Players.LocalPlayer
@@ -226,7 +288,7 @@ do
 			localJoints[char] = { RightShoulder, LeftShoulder, RightHip, LeftHip }
 			holdAnimateOff(char, humanoid, conns)
 
-			table.insert(conns, humanoid.Running:Connect(function(speed) pose = (speed > 0) and "Running" or "Standing" end))
+			table.insert(conns, humanoid.Running:Connect(function(speed) pose = (speed > RUN_MIN) and "Running" or "Standing" end))
 			table.insert(conns, humanoid.Died:Connect(function() pose = "Dead" end))
 			table.insert(conns, humanoid.Jumping:Connect(function() pose = "Jumping" end))
 			table.insert(conns, humanoid.Climbing:Connect(function() pose = "Climbing" end))
@@ -279,7 +341,7 @@ do
 			}
 
 			table.insert(entry.conns, hum.AnimationPlayed:Connect(function(t) t:Stop(0) end))
-			table.insert(entry.conns, hum.Running:Connect(function(s) entry.pose = (s > 0) and "Running" or "Standing" end))
+			table.insert(entry.conns, hum.Running:Connect(function(s) entry.pose = (s > RUN_MIN) and "Running" or "Standing" end))
 			table.insert(entry.conns, hum.Jumping:Connect(function() entry.pose = "Jumping" end))
 			table.insert(entry.conns, hum.FreeFalling:Connect(function() entry.pose = "FreeFall" end))
 			table.insert(entry.conns, hum.Seated:Connect(function() entry.pose = "Seated" end))
