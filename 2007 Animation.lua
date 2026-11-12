@@ -61,15 +61,22 @@ do
 	-- animation stayed on while standing still. Below this it is standing.
 	local RUN_MIN = 0.1
 
-	-- Bloxy's 2008 animation keeps its pose to itself, so it is told directly: when you have been
-	-- standing still for a moment but the last speed Humanoid.Running gave was not 0, Running is fired
-	-- again with 0 for the animation scripts listening to it (needs the executor's firesignal or
+	-- Bloxy's 2008 animation keeps its pose to itself, so it is told directly: the moment you stand
+	-- still (no stick / keys, under 1 stud a second) while the last speed Humanoid.Running gave was not
+	-- 0, Running is fired again with 0 for the animation scripts listening to it (needs the executor's firesignal or
 	-- getconnections; the humanoid's state is not touched).
 	do
 		local plr = Players.LocalPlayer
-		local lastSpeed, stillFor, lastFix = 0, 0, 0
+		local lastSpeed, lastFix = 0, 0
 		local hum, root = nil, nil
 		local runConn = nil
+		local function stoppedNow(h, r)
+			local v = r.AssemblyLinearVelocity
+			return h.MoveDirection.Magnitude < 0.01 and Vector3.new(v.X, 0, v.Z).Magnitude < 1
+				and h:GetState() ~= Enum.HumanoidStateType.Freefall
+				and h:GetState() ~= Enum.HumanoidStateType.Jumping
+		end
+		local tellStopped
 		local function track(char)
 			if runConn then pcall(function() runConn:Disconnect() end) runConn = nil end
 			hum, root = nil, nil
@@ -79,11 +86,19 @@ do
 				local r = char:WaitForChild("HumanoidRootPart", 10)
 				if not h or not r or not alive then return end
 				hum, root, lastSpeed = h, r, 0
-				runConn = h.Running:Connect(function(speed) lastSpeed = speed end)
+				runConn = h.Running:Connect(function(speed)
+					lastSpeed = speed
+					-- a moving speed while you are not moving (landing after a fall): straight back to 0,
+					-- right after this event reaches the animation scripts
+					if speed > 0 and stoppedNow(h, r) and os.clock() - lastFix > 0.05 then
+						lastFix = os.clock()
+						task.defer(tellStopped, h)
+					end
+				end)
 				table.insert(connections, runConn)
 			end)
 		end
-		local function tellStopped(h)
+		tellStopped = function(h)
 			local done = false
 			if typeof(firesignal) == "function" then
 				done = pcall(firesignal, h.Running, 0)
@@ -103,16 +118,11 @@ do
 			connect(plr.CharacterAdded, track)
 			connect(RunService.Heartbeat, function(dt)
 				if not hum or not root or not hum.Parent or hum.Health <= 0 then return end
-				local v = root.AssemblyLinearVelocity
-				if hum:GetState() == Enum.HumanoidStateType.Running and hum.MoveDirection.Magnitude < 0.01
-					and Vector3.new(v.X, 0, v.Z).Magnitude < 0.5 then
-					stillFor = stillFor + dt
-					if stillFor > 0.15 and lastSpeed > 0 and os.clock() - lastFix > 0.3 then
-						lastFix = os.clock()
-						tellStopped(hum)
-					end
-				else
-					stillFor = 0
+				-- (no waiting: the moment you stand still with a moving speed left over)
+				if hum:GetState() == Enum.HumanoidStateType.Running and stoppedNow(hum, root)
+					and lastSpeed > 0 and os.clock() - lastFix > 0.1 then
+					lastFix = os.clock()
+					tellStopped(hum)
 				end
 			end)
 		end
@@ -235,6 +245,12 @@ do
 					lastClimb = time
 				end
 				local pose = (time - lastClimb < CLIMB_HOLD and "Climbing") or pose
+				-- not moving (no stick / keys, hardly any speed): standing, whatever Running said last
+				if pose == "Running" and humanoid.MoveDirection.Magnitude < 0.01 then
+					local rp = humanoid.RootPart
+					local v = rp and rp.AssemblyLinearVelocity
+					if not v or Vector3.new(v.X, 0, v.Z).Magnitude < 1 then pose = "Standing" end
+				end
 				if (pose == "Jumping") then moveJump() return end
 				if (pose == "FreeFall") then moveFreeFall() return end
 				if (pose == "Seated") then moveSit() return end
