@@ -163,19 +163,28 @@ if not keepDialogBox() then
 end
 
 --========================================================
--- ESCAPE MENU: A GAP UNDER THE TAB BAR
--- The older escape menus (the GUIs before 2023 old) start their pages right under the tab bar
--- (Players, Settings, Report, Help), so Reset Character / Leave Game sat against it. The menu's
--- page view (SettingsHub's "PageView", inside "PageViewClipper") gets padding at its top, which
--- moves every page down a little and does not fight the menu's own positioning.
+-- ESCAPE MENU (the GUIs before 2023 old)
+--   * 2016 and older: a gap under the tab bar (Players, Settings, Report, Help), so Reset Character /
+--     Leave Game don't sit against it: padding at the top of the menu's page view (SettingsHub's
+--     "PageView", inside "PageViewClipper").
+--   * 2017 up to 2021: also the 2023 old buttons on the Players page: Leave Game, Reset Character and
+--     Resume Game side by side across the whole page.
+-- The topbar year comes from the loader (getgenv().BloxyTopbarRaw, set when the topbar is picked).
 --========================================================
 do
     local GAP = 18
 
-    local function onAdded(obj)
+    local function topbarYear()
+        local raw = tostring(getgenv().BloxyTopbarRaw or "")
+        return tonumber(string.match(raw, "(20%d%d)"))
+    end
+
+    local function padPageView(obj)
         if obj.Name ~= "PageView" or not obj:IsA("ScrollingFrame") then return end
         local clipper = obj.Parent
         if not clipper or clipper.Name ~= "PageViewClipper" then return end
+        local year = topbarYear()
+        if not year or year >= 2023 then return end
         if obj:FindFirstChild("BPMenuGap") then return end
         local pad = Instance.new("UIPadding")
         pad.Name = "BPMenuGap"
@@ -183,21 +192,106 @@ do
         pad.Parent = obj
     end
 
-    task.spawn(function()
-    local roots = { CoreGui }
-    pcall(function()
-        local hui = gethui and gethui()
-        if hui and hui ~= CoreGui then table.insert(roots, hui) end
-    end)
-    pcall(function()
-        table.insert(roots, Players.LocalPlayer:WaitForChild("PlayerGui", 10))
-    end)
-    for _, root in ipairs(roots) do
+    local function closeMenu()
         pcall(function()
-            for _, obj in ipairs(root:GetDescendants()) do onAdded(obj) end
-            root.DescendantAdded:Connect(onAdded)
+            local vim = game:GetService("VirtualInputManager")
+            vim:SendKeyEvent(true, Enum.KeyCode.Escape, false, game)
+            task.wait()
+            vim:SendKeyEvent(false, Enum.KeyCode.Escape, false, game)
         end)
     end
+
+    local function labelOf(button)
+        for _, d in ipairs(button:GetDescendants()) do
+            if d:IsA("TextLabel") then return d end
+        end
+        return button:IsA("TextButton") and button or nil
+    end
+
+    local styled = setmetatable({}, { __mode = "k" })
+    local function threeButtons(parent)
+        if styled[parent] then return end
+        local year = topbarYear()
+        if not year or year < 2017 or year >= 2023 then return end
+        local reset, leave = parent:FindFirstChild("ResetButton"), parent:FindFirstChild("LeaveButton")
+        if not (reset and leave and reset:IsA("GuiObject") and leave:IsA("GuiObject")) then return end
+        styled[parent] = true
+
+        local resume = parent:FindFirstChild("ResumeButton")
+        if not resume then
+            resume = leave:Clone()
+            resume.Name = "ResumeButton"
+            local lbl = labelOf(resume)
+            if lbl then lbl.Text = "Resume Game" end
+            resume.Parent = parent
+            if resume:IsA("GuiButton") then resume.Activated:Connect(closeMenu) end
+        end
+        resume.Visible = true
+
+        local order = { leave, reset, resume }
+        local grid = parent:FindFirstChildWhichIsA("UIGridLayout")
+        if grid then
+            grid.CellSize = UDim2.new(1 / 3, -12, 0, grid.CellSize.Y.Offset)
+            grid.CellPadding = UDim2.new(0, 16, 0, grid.CellPadding.Y.Offset)
+            for i, button in ipairs(order) do button.LayoutOrder = i end
+        else
+            local list = parent:FindFirstChildWhichIsA("UIListLayout")
+            if list then
+                for i, button in ipairs(order) do
+                    button.LayoutOrder = i
+                    button.Size = UDim2.new(1 / 3, -11, button.Size.Y.Scale, button.Size.Y.Offset)
+                end
+            else
+                -- placed by hand: three across, the same height and top as before
+                local y = reset.Position.Y
+                for i, button in ipairs(order) do
+                    button.AnchorPoint = Vector2.new(0, 0)
+                    button.Size = UDim2.new(1 / 3, -11, button.Size.Y.Scale, button.Size.Y.Offset)
+                    button.Position = UDim2.new((i - 1) / 3, (i - 1) * 5.5, y.Scale, y.Offset)
+                end
+            end
+        end
+    end
+
+    -- The menu can be built before the topbar is picked: what was seen is looked at again for a while.
+    local seenViews, seenParents = setmetatable({}, { __mode = "k" }), setmetatable({}, { __mode = "k" })
+    local function onAdded(obj)
+        if obj.Name == "PageView" then
+            seenViews[obj] = true
+            padPageView(obj)
+        end
+        if obj.Name == "ResetButton" or obj.Name == "LeaveButton" then
+            task.defer(function()
+                if obj.Parent then
+                    seenParents[obj.Parent] = true
+                    pcall(threeButtons, obj.Parent)
+                end
+            end)
+        end
+    end
+    task.spawn(function()
+        for _ = 1, 90 do
+            task.wait(2)
+            for view in pairs(seenViews) do pcall(padPageView, view) end
+            for parent in pairs(seenParents) do pcall(threeButtons, parent) end
+        end
+    end)
+
+    task.spawn(function()
+        local roots = { CoreGui }
+        pcall(function()
+            local hui = gethui and gethui()
+            if hui and hui ~= CoreGui then table.insert(roots, hui) end
+        end)
+        pcall(function()
+            table.insert(roots, Players.LocalPlayer:WaitForChild("PlayerGui", 10))
+        end)
+        for _, root in ipairs(roots) do
+            pcall(function()
+                for _, obj in ipairs(root:GetDescendants()) do onAdded(obj) end
+                root.DescendantAdded:Connect(onAdded)
+            end)
+        end
     end)
 end
 
@@ -2639,6 +2733,7 @@ end
         end
         print("[Loader] topbar choice \"" .. tostring(raw) .. "\" -> era: " .. era)
         getgenv().BloxyEra = era
+        getgenv().BloxyTopbarRaw = tostring(raw)
         -- the bubble script each era runs (none for "none", 2015 early, 2010, 2006 and 2005)
         local bubbleEra = era
         if era == "none" or era == "early2015" or era == "y2010" or era == "y2006" or era == "y2005" then
