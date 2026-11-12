@@ -162,6 +162,66 @@ if not keepDialogBox() then
     end)
 end
 
+--========================================================
+-- ESCAPE MENU ON PHONES: A GAP UNDER THE TAB BAR
+-- The older escape menus (the GUIs before 2023 old) put Reset Character / Leave Game / Resume Game
+-- 14 pixels from the top of the Players page, which ends up right against the tab bar (Players,
+-- Settings, Report, Help). They, and the player rows under them, are moved down a little.
+--========================================================
+do
+    local GAP = 18
+    local BUTTONS = { ResetButton = true, LeaveButton = true, ResumeButton = true }
+    local donePages = setmetatable({}, { __mode = "k" })
+
+    local function shiftDown(obj)
+        if obj:GetAttribute("BPMenuGap") then return end
+        local p = obj.Position
+        obj:SetAttribute("BPMenuGap", true)
+        obj.Position = UDim2.new(p.X.Scale, p.X.Offset, p.Y.Scale, p.Y.Offset + GAP)
+    end
+
+    local function fixPage(page)
+        if donePages[page] then return end
+        -- only the phone layout: the buttons sit near the top of the page
+        -- (both Reset and Leave on the same page: other GUIs have a "ResetButton" of their own)
+        local reset, leave = page:FindFirstChild("ResetButton"), page:FindFirstChild("LeaveButton")
+        if not (reset and leave and reset:IsA("GuiObject") and leave:IsA("GuiObject")) then return end
+        if reset.Position.Y.Scale ~= 0 or reset.Position.Y.Offset >= 30 then return end
+        donePages[page] = true
+        local function consider(child)
+            if not child:IsA("GuiObject") or child.Position.Y.Scale ~= 0 then return end
+            if BUTTONS[child.Name] or string.sub(child.Name, 1, 11) == "PlayerLabel" then
+                shiftDown(child)
+            end
+        end
+        for _, child in ipairs(page:GetChildren()) do consider(child) end
+        page.ChildAdded:Connect(function(child) task.defer(consider, child) end)
+        -- the page's height is set again every time it is shown: keep room for the gap
+        local lastSet = nil
+        local function grow()
+            local s = page.Size
+            if s.Y.Scale ~= 0 or s.Y.Offset == lastSet then return end
+            lastSet = s.Y.Offset + GAP
+            page.Size = UDim2.new(s.X.Scale, s.X.Offset, 0, lastSet)
+        end
+        grow()
+        page:GetPropertyChangedSignal("Size"):Connect(grow)
+    end
+
+    local function onAdded(obj)
+        if BUTTONS[obj.Name] and obj.Parent then
+            task.defer(function()
+                if obj.Parent then pcall(fixPage, obj.Parent) end
+            end)
+        end
+    end
+
+    pcall(function()
+        for _, obj in ipairs(CoreGui:GetDescendants()) do onAdded(obj) end
+        CoreGui.DescendantAdded:Connect(onAdded)
+    end)
+end
+
 -- Wizard smooth v10 (Wizard smooth.lua in this repo): the same as v9, but its hooks are only on while a
 -- setup question is on screen (v9 kept them on for the whole game, which slowed everything down).
 -- If it can't be downloaded, v9 (the gist) is used instead, so the setup is still smooth.
