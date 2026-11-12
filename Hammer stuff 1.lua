@@ -2248,6 +2248,23 @@ task.spawn(function()
 		line.BorderSizePixel = 0
 		line.ZIndex = 97
 		line.Parent = title
+
+		-- No empty space above the title: the list starts at the top of the panel, so it opens
+		-- already showing the title and the first options.
+		local TOP_MARGIN = 6
+		local up = firstY - TOP_MARGIN
+		if up > 0 then
+			for _, child in ipairs(hammerPanel:GetChildren()) do
+				if child:IsA("GuiObject") and child.Position.Y.Scale == 0
+					and child.Position.Y.Offset >= firstY then
+					local p = child.Position
+					child.Position = UDim2.new(p.X.Scale, p.X.Offset, 0, p.Y.Offset - up)
+				end
+			end
+		end
+		if hammerPanel:IsA("ScrollingFrame") then
+			hammerPanel.CanvasPosition = Vector2.new(0, 0)
+		end
 	end)
 
 	------------------------------------------------------------
