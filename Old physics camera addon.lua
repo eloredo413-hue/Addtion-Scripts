@@ -276,6 +276,14 @@ local function setupCharacter(char)
 		end
 		local level, dist = getFloorLevel()
 		local yVelocity = rootPart.AssemblyLinearVelocity.Y
+		-- The raised hip height can make the humanoid think it still stands on the floor in mid-air, so a jump
+		-- while walking stayed in the walking state (and its animation). Well above the floor and still
+		-- "Running": it is falling.
+		if rootPart.Position.Y - level > 5 and not humanoid.Sit
+			and (humanoid:GetState() == Enum.HumanoidStateType.Running
+				or humanoid:GetState() == Enum.HumanoidStateType.RunningNoPhysics) then
+			pcall(function() humanoid:ChangeState(Enum.HumanoidStateType.Freefall) end)
+		end
 		if math.abs(yVelocity) > 8 then
 			humanoid.HipHeight = moveTowards(humanoid.HipHeight, math.sign(yVelocity), stepRate * dt)
 		elseif lastLevel ~= level then
