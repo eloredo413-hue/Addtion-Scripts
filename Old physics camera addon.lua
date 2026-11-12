@@ -160,45 +160,6 @@ local function setupCharacter(char)
 	local lastFrame = os.clock()
 	local grabStartY, lastGrab = nil, 0 -- where the current climb began, and when a part was last in front
 
-	-- Standing still after a fall, the walking animation sometimes kept playing: the animation scripts pick
-	-- idle or walk from Humanoid.Running, and the last speed it gave them was a moving one. When you are
-	-- standing still but the last speed Running gave was not 0, the animation scripts are given 0 (only
-	-- them: the humanoid's state is not touched).
-	local nudgedAt = -1 -- (kept for the trampoline check below)
-	local lastRunSpeed = 0
-	local lastFix = 0
-	local stillFor = 0
-	addConnection(humanoid.Running:Connect(function(speed) lastRunSpeed = speed end))
-	local function tellAnimationsStopped()
-		local fired = false
-		if typeof(firesignal) == "function" then
-			fired = pcall(firesignal, humanoid.Running, 0)
-		end
-		if not fired and typeof(getconnections) == "function" then
-			pcall(function()
-				for _, c in ipairs(getconnections(humanoid.Running)) do
-					if c.Fire then pcall(c.Fire, c, 0) elseif c.Function then task.spawn(c.Function, 0) end
-				end
-			end)
-		end
-		lastRunSpeed = 0
-	end
-	addConnection(RunService.Heartbeat:Connect(function(dt)
-		if destroyed or not char.Parent or humanoid.Health <= 0 then return end
-		local v = rootPart.AssemblyLinearVelocity
-		local flat = Vector3.new(v.X, 0, v.Z).Magnitude
-		if humanoid:GetState() == Enum.HumanoidStateType.Running and humanoid.MoveDirection.Magnitude < 0.01
-			and flat < 0.5 and not humanoid.Sit then
-			stillFor = stillFor + dt
-			if stillFor > 0.15 and lastRunSpeed > 0.01 and os.clock() - lastFix > 0.3 then
-				lastFix = os.clock()
-				tellAnimationsStopped()
-			end
-		else
-			stillFor = 0
-		end
-	end))
-
 	local lastFallSpeed = 0
 	addConnection(RunService.Heartbeat:Connect(function()
 		if destroyed or not char.Parent or humanoid.Health <= 0 then return end
@@ -207,7 +168,7 @@ local function setupCharacter(char)
 	end))
 
 	addConnection(humanoid.StateChanged:Connect(function(_, newState)
-		if newState ~= Enum.HumanoidStateType.Landed or os.clock() - nudgedAt < 0.3 then return end
+		if newState ~= Enum.HumanoidStateType.Landed then return end
 		local bounceMultiplier = 1
 		local rayParams = RaycastParams.new()
 		rayParams.FilterDescendantsInstances = {char}
@@ -303,29 +264,13 @@ local function setupCharacter(char)
 		end
 		local level, dist = getFloorLevel()
 		local yVelocity = rootPart.AssemblyLinearVelocity.Y
-		-- The raised hip height can make the humanoid think it still stands on the floor in mid-air, so a jump
-		-- while walking stayed in the walking state (and its animation). Well above the floor and still
-		-- "Running": it is falling.
-		-- (Standing, the root is about 3 studs above the floor plus the hip height; a jump that is a bit
-		-- higher than that, and still moving up or down, is in the air.)
-		local airGap = rootPart.Position.Y - level - (3 + math.max(humanoid.HipHeight, 0))
-		if ((airGap > 1.25 and math.abs(yVelocity) > 2) or airGap > 2) and not humanoid.Sit
-			and (humanoid:GetState() == Enum.HumanoidStateType.Running
-				or humanoid:GetState() == Enum.HumanoidStateType.RunningNoPhysics) then
-			pcall(function() humanoid:ChangeState(Enum.HumanoidStateType.Freefall) end)
-		end
 		if math.abs(yVelocity) > 8 then
-			-- only squashed on the way down: raised on the way up, the feet reached the floor from
-			-- mid-air and the humanoid stayed in the walking state through the jump
-			humanoid.HipHeight = moveTowards(humanoid.HipHeight, math.min(math.sign(yVelocity), 0), stepRate * dt)
+			humanoid.HipHeight = moveTowards(humanoid.HipHeight, math.sign(yVelocity), stepRate * dt)
 		elseif lastLevel ~= level then
 			humanoid.HipHeight = math.sign(lastLevel - level) * math.clamp(dist - 3, 0, 1)
 			lastLevel = level
 		else
-			local h = humanoid.HipHeight * (decayRate ^ (dt * 60))
-			-- settle at exactly 0 (it never got there, so the character kept moving a tiny bit)
-			if math.abs(h) < 0.02 then h = 0 end
-			if humanoid.HipHeight ~= h then humanoid.HipHeight = h end
+			humanoid.HipHeight = humanoid.HipHeight * (decayRate ^ (dt * 60))
 		end
 	end)
 
