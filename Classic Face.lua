@@ -819,6 +819,15 @@ local CLASSIC_SHAPES = {
 	{ key = "Woman",            assetId = 86498113,  mesh = 8635368421,  exact = { "woman" }, items = { 10725626210 } },
 }
 local SHAPE_BY_ASSET, SHAPE_BY_MESH, SHAPE_BY_KEY = {}, {}, {}
+local SHAPE_BY_COMPACT = {}
+local function compact(text)
+	return (string.gsub(string.lower(text or ""), "[^%w]", ""))
+end
+for _, shape in ipairs(CLASSIC_SHAPES) do
+	for _, list in ipairs({ { shape.key }, shape.words or {}, shape.loose or {}, shape.exact or {} }) do
+		for _, word in ipairs(list) do SHAPE_BY_COMPACT[compact(word)] = shape end
+	end
+end
 for _, shape in ipairs(CLASSIC_SHAPES) do
 	SHAPE_BY_ASSET[shape.assetId] = shape
 	for _, itemId in ipairs(shape.items or {}) do SHAPE_BY_ASSET[itemId] = shape end
@@ -884,7 +893,7 @@ end
 
 -- The head shape Roblox gives a dynamic head (BodyPartDescription.HeadShape), if there is one
 local function headShapeOf(desc)
-	if not desc then return nil end
+	if not desc then return nil, nil end
 	local value = nil
 	pcall(function()
 		for _, part in ipairs(desc:GetChildren()) do
@@ -893,10 +902,13 @@ local function headShapeOf(desc)
 			end
 		end
 	end)
-	if type(value) ~= "string" or value == "" then return nil end
-	-- (a classic head item's id, or a shape's name)
+	if type(value) ~= "string" or value == "" then return nil, nil end
+	-- (a classic head item's id, or a shape's name in any spelling: "Man", "ManHead", "Man_Head", "man head")
 	local numeric = string.match(value, "^%s*(%d+)%s*$")
-	return (numeric and shapeFromAsset(numeric)) or SHAPE_BY_KEY[string.lower(value)] or shapeFromName(value)
+	local c = compact(value)
+	local shape = (numeric and shapeFromAsset(numeric)) or SHAPE_BY_KEY[string.lower(value)]
+		or SHAPE_BY_COMPACT[c] or SHAPE_BY_COMPACT[(string.gsub(c, "head$", ""))] or shapeFromName(value)
+	return shape, value
 end
 
 -- A headless head: left as it is (no face is put on nothing).
@@ -939,11 +951,16 @@ local function headKind(character, head)
 		or textured
 		or (headName ~= nil and string.find(string.lower(headName), "dynamic head", 1, true) ~= nil)
 	if not baked then return "classic" end
-	local shape = headShapeOf(desc)
+	local shapeFromRoblox, headShapeValue = headShapeOf(desc)
+	local shape = shapeFromRoblox
 		or (meshId and SHAPE_BY_MESH[meshId])
 		or (headId and SHAPE_BY_ASSET[headId])
 		or shapeFromName(headName)
-	return "dynamic", shape
+	-- what was seen, for the console when the shape isn't known
+	local seen = string.format("head item %s (%s), Roblox head shape %s, mesh %s",
+		tostring(headName or "?"), tostring(headId or "?"), headShapeValue and ('"' .. headShapeValue .. '"') or "none",
+		tostring(meshId or "?"))
+	return "dynamic", shape, seen
 end
 
 local function headSkinColor(character, head)
@@ -1012,7 +1029,7 @@ local function apply(player, character)
 	states[character] = st
 	hideOwnDecals(head, st)
 
-	local kind, shape = headKind(character, head)
+	local kind, shape, seen = headKind(character, head)
 	if generation[character] ~= gen then return end
 	if kind == "headless" then
 		-- nothing put on a headless head
@@ -1068,6 +1085,7 @@ local function apply(player, character)
 		fakeHeads[character] = st
 		st.report = "dynamic head -> classic head" .. (shape and (" (" .. shape.key .. ")") or "")
 			.. ", face from " .. tostring(source)
+			.. (shape and "" or (" [its shape isn't known, so the plain head: " .. tostring(seen) .. "]"))
 	else
 		-- a classic head (R6 mesh, R15 classic head, or the plain head): kept, with the face on it
 		if not head:IsA("MeshPart") and not head:FindFirstChildWhichIsA("DataModelMesh") then
