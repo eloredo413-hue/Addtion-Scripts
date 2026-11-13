@@ -8,14 +8,18 @@
 --     option of the hammer's side panel (Bloxy's, Hammer stuff 1's and Hammer stuff 2's, the dropdowns too),
 --     and the old physics and explosion picks
 --   * the setup steps that keep their pick in a file of their own: terrain (BloxyTerrainChoice.json), the
---     2007 animation (BloxyAnimation2007Choice.json) and the topbar picked in More guis (BloxyTopbarPick.json:
---     2013 mobile, 2023 old... Bloxy itself only saves the year they press)
+--     2007 animation (BloxyAnimation2007Choice.json) and the topbar picked in More guis (BloxyTopbarPick.json)
+--   * the answers given in the setup, in order (BloxySetupAnswers.json: recorded here each time the setup is
+--     answered, by whichever Bloxy and More guis are running)
 --
--- Loading puts those files back, with "skip setup" on (so the next start uses the loaded setup instead of
--- asking again), and ticks / unticks the hammer's boxes to match straight away (by pressing them, so each
--- option turns itself on or off as usual). Setup choices (topbar, physics, ...) only take effect when the
--- scripts start, so when those are different the load button then offers "rejoin?": a second tap rejoins
--- this server and runs the scripts again there.
+-- Loading, without a rejoin:
+--   * the hammer's options change straight away (their boxes are pressed, so each option turns itself on or
+--     off as usual)
+--   * the setup answers itself with the saved answers: right away if the setup is on screen, and at every
+--     start after that (the loaded one is the one used), so running the script loads it by itself. A file
+--     saved before answers were recorded uses "skip setup" instead (Bloxy loads the saved setup by itself).
+--   * Bloxy writes its settings file with only its own settings in it, which dropped the other scripts' (the
+--     hammer options were off at the next start); what it leaves out is kept now.
 --
 -- The loader loads it, and so do the 2021 / 2023 old / 2023 new GUIs after the rejoin they do (the loader
 -- doesn't run in the server they rejoin). Running it again replaces the earlier copy.
@@ -51,12 +55,14 @@ local CONFIG_FILE = "BloxyParadoxConfig.json"
 local ANIM_FILE = "BloxyAnimation2007Choice.json"
 local TERRAIN_FILE = "BloxyTerrainChoice.json"
 local TOPBAR_PICK_FILE = "BloxyTopbarPick.json"
-local SETTINGS_FILES = { CONFIG_FILE, ANIM_FILE, TERRAIN_FILE, TOPBAR_PICK_FILE }
+local SETUP_FILE = "BloxySetupAnswers.json"
+local SETTINGS_FILES = { CONFIG_FILE, ANIM_FILE, TERRAIN_FILE, TOPBAR_PICK_FILE, SETUP_FILE }
 -- written when the saved settings had no such file (that step was never picked: the same as no file)
 local WHEN_MISSING = {
 	[ANIM_FILE] = '{"Animation2007":false}',
 	[TERRAIN_FILE] = '{}',
 	[TOPBAR_PICK_FILE] = '{}',
+	[SETUP_FILE] = '{}',
 }
 
 local ICON_IMAGE = "rbxthumb://type=Asset&id=90842402386374&w=420&h=420"
@@ -72,7 +78,7 @@ local CONFIRM_TIME = 3
 local ICON_SIZE = 46
 local ICON_HIDDEN = UDim2.new(1, 40, 0.5, 50)
 local ICON_REST = UDim2.new(1, -38, 0.5, 50)
-local ICON_OUT = UDim2.new(1, -58, 0.5, 50)
+local ICON_OUT = UDim2.new(1, -46, 0.5, 50) -- (only a little over the open panel)
 local PANEL_CLOSED = UDim2.new(1, 40, 0, -40)
 local PANEL_OPEN = UDim2.new(0.65, -40, 0, -40)
 local HAMMER_REST = UDim2.new(1, -40, 0.5, -40)
@@ -119,22 +125,14 @@ local HAMMER_BOXES = {
 }
 local OLD_DECAL_BUTTON, OLD_DECAL_KEY = "BPOldDecalButton", "isOldDecalEnabled"
 
--- the settings that loading changes straight away (by pressing the boxes); any other difference needs the
--- scripts to start again
-local LIVE_KEYS = { dontShowHidePopup = true, [OLD_DECAL_KEY] = true }
-for _, key in pairs(BLOXY_BOXES) do LIVE_KEYS[key] = true end
-for _, key in pairs(HAMMER_BOXES) do LIVE_KEYS[key] = true end
-
--- run again after the rejoin that applies loaded setup choices: this loader, then Bloxy (if it isn't there)
-local LOADER_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/refs/heads/main/Script"
-local BLOXY_URL = "https://raw.githubusercontent.com/MOCCAPAZZA/BLOXY-PARADOX-OFFICIAL/refs/heads/main/BLOXY%20PARADOX%20SOURCE%20CODE"
-local REJOIN_OFFER_TIME = 30
-
 ------------------------------------------------------------
 -- FILES
 ------------------------------------------------------------
+-- the executor's own writefile (kept from the first run: later the global one is the hook below)
+local rawWritefile = Env.BPRawWritefile or writefile
+Env.BPRawWritefile = rawWritefile
 local canRead = type(readfile) == "function" and type(isfile) == "function"
-local canWrite = type(writefile) == "function"
+local canWrite = type(rawWritefile) == "function"
 
 local function readText(file)
 	if not canRead then return nil end
@@ -148,7 +146,7 @@ end
 
 local function writeText(file, text)
 	if not canWrite then return false end
-	local ok = pcall(writefile, file, text)
+	local ok = pcall(rawWritefile, file, text)
 	return ok
 end
 
@@ -163,6 +161,26 @@ local function encode(value)
 	local ok, text = pcall(function() return HttpService:JSONEncode(value) end)
 	if ok then return text end
 	return nil
+end
+
+-- Bloxy writes its settings file with only its own settings in it, which dropped every other script's (the
+-- hammer options, the explosion / physics picks...): those were then off at the next start. Writes to that
+-- file by the other scripts now keep what the new text leaves out (nothing is ever removed on purpose).
+if canWrite and canRead then
+	local function keepingWritefile(path, text)
+		if path == CONFIG_FILE and type(text) == "string" then
+			local new, old = decode(text), decode(readText(CONFIG_FILE))
+			if type(new) == "table" and type(old) == "table" then
+				local added = false
+				for key, value in pairs(old) do
+					if new[key] == nil then new[key] = value added = true end
+				end
+				if added then text = encode(new) or text end
+			end
+		end
+		return rawWritefile(path, text)
+	end
+	pcall(function() Env.writefile = keepingWritefile end)
 end
 
 local function indexOf(list, value)
@@ -280,6 +298,11 @@ local function oldDecalIsOn(button)
 	return string.find(button.Text or "", ": ON", 1, true) ~= nil
 end
 
+-- "Colors2012Checkbox" -> "Colors2012", for the console
+local function shortName(boxName)
+	return (string.gsub(boxName, "Checkbox$", ""))
+end
+
 ------------------------------------------------------------
 -- STATE
 ------------------------------------------------------------
@@ -292,7 +315,8 @@ local hammerOpen = false -- Bloxy's hammer panel (counted from its taps)
 local applying = false   -- a load is going on
 local destroyed = false
 local refreshList
-local rejoinOffer = nil   -- { name, at }: the load button of that one says "rejoin?" for a while
+local replaying = false  -- the setup is being answered with saved answers
+local tookOver = false   -- the player tapped an answer themselves meanwhile: the rest is theirs
 
 local function connect(signal, fn)
 	local c = signal:Connect(fn)
@@ -400,43 +424,174 @@ local function findIn(parent, name)
 	return nil
 end
 
-local function deepEqual(a, b)
-	if type(a) ~= type(b) then return false end
-	if type(a) ~= "table" then return a == b end
-	for k, v in pairs(a) do
-		if not deepEqual(v, b[k]) then return false end
+------------------------------------------------------------
+-- THE SETUP: ITS ANSWERS RECORDED, AND ANSWERED WITH SAVED ONES
+-- Each question of Bloxy's setup (and of the addons' steps in it) is a frame in Bloxy's GUI with a title
+-- ("Which topbar do you prefer?", "Choose your explosion style:") and answer buttons. Every answer tapped is
+-- recorded (title and button), so a saved file can answer the same questions again later, the same way,
+-- with whichever Bloxy and More guis are running.
+------------------------------------------------------------
+local recording = { answers = {} }
+
+-- the setup question a button is in (a frame right inside Bloxy's GUI, not its hammer panel), or nil
+local function questionFrameOf(obj)
+	if not bloxyGui then return nil end
+	local frame = obj
+	while frame and frame.Parent ~= bloxyGui do frame = frame.Parent end
+	if not frame or not frame:IsA("Frame") or frame == hammerPanel or frame.Name == "HammerBigPanel" then
+		return nil
 	end
-	for k in pairs(b) do
-		if a[k] == nil then return false end
-	end
-	return true
+	return frame
 end
 
--- Are the setup choices (anything loading can't change straight away) different between these files?
-local function setupDiffers(nowFiles, savedFiles)
-	for _, file in ipairs(SETTINGS_FILES) do
-		local nowText = nowFiles[file] or WHEN_MISSING[file]
-		local savedText = savedFiles[file] or WHEN_MISSING[file]
-		local nowData, savedData = decode(nowText), decode(savedText)
-		if file == CONFIG_FILE then
-			nowData, savedData = type(nowData) == "table" and nowData or {}, type(savedData) == "table" and savedData or {}
-			for _, data in ipairs({ nowData, savedData }) do
-				for key in pairs(LIVE_KEYS) do data[key] = nil end
-			end
-			if not deepEqual(nowData, savedData) then return true end
-		elseif nowData ~= nil or savedData ~= nil then
-			if not deepEqual(nowData, savedData) then return true end
-		elseif nowText ~= savedText then
-			return true
+-- a question's title: its longest label, if it reads like a question ("...?" or "...:")
+local function questionTitle(frame)
+	local best = nil
+	for _, d in ipairs(frame:GetDescendants()) do
+		if d:IsA("TextLabel") and d.Visible and type(d.Text) == "string" and #d.Text > (best and #best or 0) then
+			best = d.Text
 		end
+	end
+	if best and (string.find(best, "?", 1, true) or string.find(best, ":", 1, true)) then return best end
+	return nil
+end
+
+local function isAnswerText(text)
+	return type(text) == "string" and text ~= "" and not string.find(text, "▼", 1, true)
+		and not string.find(text, "▲", 1, true)
+end
+
+local function saveRecording()
+	local text = encode({ answers = recording.answers, at = os.time() })
+	if text then writeText(SETUP_FILE, text) end
+end
+
+-- What Bloxy's own saves leave out of its settings file is put back (also done by the writefile hook above,
+-- this is for executors where Bloxy doesn't go through it): the latest value seen for every setting.
+local knownSettings = {}
+local function keepOtherSettings()
+	local now = decode(readText(CONFIG_FILE))
+	if type(now) ~= "table" then return end
+	local added = false
+	for key, value in pairs(knownSettings) do
+		if now[key] == nil then now[key] = value added = true end
+	end
+	for key, value in pairs(now) do knownSettings[key] = value end
+	if added then
+		local text = encode(now)
+		if text then writeText(CONFIG_FILE, text) end
+	end
+end
+
+local hookedAnswers = setmetatable({}, { __mode = "k" })
+local function hookAnswerButton(btn)
+	if hookedAnswers[btn] or not btn:IsA("TextButton") then return end
+	if hammerPanel and btn:IsDescendantOf(hammerPanel) then return end
+	hookedAnswers[btn] = true
+	-- (a real tap presses down first; the saved answers are given without that)
+	connect(btn.MouseButton1Down, function()
+		if replaying then tookOver = true end
+	end)
+	-- Recorded when a real tap is let go, not on MouseButton1Click: More guis calls the first MouseButton1Click
+	-- connection of Bloxy's buttons to press them, and clears those of its own copies, so it is left alone.
+	connect(btn.MouseButton1Up, function()
+		if replaying then return end
+		local frame = questionFrameOf(btn)
+		local title = frame and questionTitle(frame)
+		local text = btn.Text
+		if not title or not isAnswerText(text) then return end
+		-- the topbar question starts the setup: a new set of answers
+		local last = recording.answers[#recording.answers]
+		if string.find(string.lower(title), "topbar", 1, true) and (not last or last.q ~= title) then
+			recording = { answers = {} }
+		end
+		table.insert(recording.answers, { q = title, a = text })
+		saveRecording()
+		task.delay(0.5, keepOtherSettings)
+	end)
+end
+
+local function visibleQuestion(title)
+	if not bloxyGui then return nil end
+	for _, frame in ipairs(bloxyGui:GetChildren()) do
+		if frame:IsA("Frame") and frame.Visible and frame ~= hammerPanel and questionTitle(frame) == title then
+			return frame
+		end
+	end
+	return nil
+end
+
+local function setupOnScreen()
+	if not bloxyGui then return false end
+	for _, frame in ipairs(bloxyGui:GetChildren()) do
+		if frame:IsA("Frame") and frame.Visible and frame ~= hammerPanel and questionTitle(frame) then return true end
 	end
 	return false
 end
 
--- The setup the game is running: what the files said before the first load (or when the setup was changed
--- since, by the setup itself), not what a load put in them (that only takes effect after a rejoin).
-local runningFiles = nil
-local lastLoadedFiles = nil
+local function answerButton(frame, text)
+	for _, d in ipairs(frame:GetDescendants()) do
+		if d:IsA("TextButton") and d.Visible and d.Text == text then return d end
+	end
+	return nil
+end
+
+-- Answer the setup with saved answers, in order: each one when its question is on screen. A question that
+-- doesn't come (another version asks other things) is skipped after a while; one that isn't saved is left
+-- for the player to answer.
+local function answerSetup(answers, name, firstWait)
+	if replaying or type(answers) ~= "table" or #answers == 0 then return false end
+	replaying = true
+	tookOver = false
+	task.spawn(function()
+		-- a load in the middle of the setup: from the question on screen now
+		local start = 1
+		for i, step in ipairs(answers) do
+			if visibleQuestion(step.q) then start = i break end
+		end
+		print(string.format("[Saved Settings] answering the setup with \"%s\" (%d answers)", name, #answers - start + 1))
+		local given, missed = 0, {}
+		for i = start, #answers do
+			local step = answers[i]
+			local deadline = os.clock() + ((i == start) and (firstWait or 30) or 25)
+			local btn = nil
+			repeat
+				local frame = visibleQuestion(step.q)
+				btn = frame and answerButton(frame, step.a)
+				if not btn then task.wait(0.25) end
+			until btn or os.clock() > deadline or destroyed or tookOver
+			if destroyed then break end
+			if tookOver then
+				print("[Saved Settings] you answered the setup yourself: the rest of it is up to you")
+				break
+			end
+			if btn then
+				task.wait(0.35) -- (it has just slid in)
+				if tookOver then
+					print("[Saved Settings] you answered the setup yourself: the rest of it is up to you")
+					break
+				end
+				-- (still there: not answered meanwhile)
+				if btn.Parent and btn.Visible and press(btn) then given = given + 1 else table.insert(missed, step.a) end
+				task.wait(0.3)
+			else
+				table.insert(missed, step.q .. " " .. step.a)
+			end
+		end
+		replaying = false
+		task.delay(1, keepOtherSettings)
+		print(string.format("[Saved Settings] setup answered with \"%s\": %d answer%s given%s", name, given,
+			given == 1 and "" or "s", #missed > 0 and ("; not found: " .. table.concat(missed, ", ")) or ""))
+	end)
+	return true
+end
+
+local function savedAnswers(files)
+	local data = decode(files[SETUP_FILE])
+	local answers = type(data) == "table" and data.answers or nil
+	if type(answers) == "table" and #answers > 0 then return answers end
+	return nil
+end
 
 local function loadSettings(name)
 	local profile = store.profiles[name]
@@ -446,24 +601,28 @@ local function loadSettings(name)
 		return false, "no files"
 	end
 	applying = true
-	local before = captureFiles()
-	if not runningFiles or not lastLoadedFiles or setupDiffers(before, lastLoadedFiles) then
-		runningFiles = before
-	end
-	-- the saved files, with "skip setup" on: the next start (a rejoin, or running the script again) uses
-	-- this setup instead of asking the setup questions again, which would write over it
 	local files = {}
 	for file, text in pairs(profile.files) do files[file] = text end
-	local config = decode(profile.files[CONFIG_FILE])
+	local answers = savedAnswers(files)
+	-- With saved answers the setup is asked (and answers itself); without, "skip setup" makes Bloxy load the
+	-- saved setup by itself at the next start
+	local config = decode(files[CONFIG_FILE])
 	if type(config) ~= "table" then config = {} end
-	if config.isSkipped ~= true then
-		config.isSkipped = true
+	local skip = answers == nil
+	if config.isSkipped ~= skip then
+		config.isSkipped = skip
 		files[CONFIG_FILE] = encode(config) or files[CONFIG_FILE]
 	end
+	for key, value in pairs(config) do knownSettings[key] = value end
 	local wanted = function(key) return config[key] == true end
-	local changed, couldNot = 0, 0
-	local function pressBox(box)
-		if press(box) then changed = changed + 1 else couldNot = couldNot + 1 end
+	local turnedOn, turnedOff, failed = {}, {}, {}
+	local function pressBox(box, boxName)
+		local on = boxIsOn(box)
+		if press(box) then
+			table.insert(on and turnedOff or turnedOn, shortName(boxName))
+		else
+			table.insert(failed, shortName(boxName))
+		end
 		task.wait(0.05)
 	end
 
@@ -471,7 +630,7 @@ local function loadSettings(name)
 		-- 1. Bloxy's own boxes (each press writes Bloxy's whole file, so first)
 		for boxName, key in pairs(BLOXY_BOXES) do
 			local box = findIn(hammerPanel, boxName)
-			if box and boxIsOn(box) ~= wanted(key) then pressBox(box) end
+			if box and boxIsOn(box) ~= wanted(key) then pressBox(box, boxName) end
 		end
 		-- 2. the files
 		putFilesBack(files)
@@ -482,18 +641,18 @@ local function loadSettings(name)
 			if box then
 				local on = boxIsOn(box)
 				if on and not wanted(key) then
-					pressBox(box)
+					pressBox(box, boxName)
 				elseif not on and wanted(key) then
-					table.insert(turnOn, box)
+					table.insert(turnOn, { box = box, name = boxName })
 				end
 			end
 		end
-		for _, box in ipairs(turnOn) do
-			if not boxIsOn(box) then pressBox(box) end
+		for _, item in ipairs(turnOn) do
+			if not boxIsOn(item.box) then pressBox(item.box, item.name) end
 		end
 		local decal = findIn(hammerPanel, OLD_DECAL_BUTTON)
-		if decal and oldDecalIsOn(decal) ~= wanted(OLD_DECAL_KEY) then pressBox(decal) end
-		-- 4. the files once more, exactly as saved (the presses wrote their own copies on the way)
+		if decal and oldDecalIsOn(decal) ~= wanted(OLD_DECAL_KEY) then pressBox(decal, "OldDecalRendering") end
+		-- 4. the files once more, exactly as loaded (the presses wrote their own copies on the way)
 		task.wait(0.3)
 		putFilesBack(files)
 	end)
@@ -505,66 +664,29 @@ local function loadSettings(name)
 		warn("[Saved Settings] something went wrong while loading \"" .. name .. "\"; its files were put back")
 		putFilesBack(files)
 	end
-	lastLoadedFiles = files
-	local needsRestart = couldNot > 0 or setupDiffers(runningFiles, files)
-	print(string.format("[Saved Settings] loaded \"%s\": %d hammer option%s changed now%s", name, changed,
-		changed == 1 and "" or "s",
-		couldNot > 0 and (" (" .. couldNot .. " couldn't be pressed here)") or ""))
-	if needsRestart then
-		print("[Saved Settings] its setup choices (topbar, physics, ...) take effect when the scripts start:"
-			.. " tap \"rejoin?\" on it to rejoin this server and run them again with these settings"
-			.. " (or rejoin and run your script yourself: skip setup is on, so they are used)")
-	elseif changed == 0 then
-		print("[Saved Settings] \"" .. name .. "\" is already what is in use: nothing to change")
+	-- the report
+	if not hammerPanel then
+		print("[Saved Settings] loaded \"" .. name .. "\": Bloxy's hammer panel isn't there, so its options are used at the next start")
+	elseif #turnedOn + #turnedOff + #failed == 0 then
+		print("[Saved Settings] loaded \"" .. name .. "\": the hammer's options were already like that")
+	else
+		print(string.format("[Saved Settings] loaded \"%s\": turned on: %s; turned off: %s%s", name,
+			#turnedOn > 0 and table.concat(turnedOn, ", ") or "none", #turnedOff > 0 and table.concat(turnedOff, ", ") or "none",
+			#failed > 0 and ("; couldn't press (used at the next start): " .. table.concat(failed, ", ")) or ""))
 	end
-	return true, changed, couldNot, needsRestart
-end
-
--- Rejoin this server and run the scripts again there, with "skip setup" on so the loaded setup is used
-local function rejoinWithSettings()
-	local queue = queue_on_teleport or (syn and syn.queue_on_teleport)
-	if type(queue) ~= "function" then
-		warn("[Saved Settings] this executor can't run scripts after a rejoin: rejoin and run the script yourself")
-		return false
-	end
-	local config = decode(readText(CONFIG_FILE))
-	if type(config) == "table" and config.isSkipped ~= true then
-		config.isSkipped = true
-		local text = encode(config)
-		if text then writeText(CONFIG_FILE, text) end
-		print("[Saved Settings] \"skip setup\" turned on, so the loaded setup is used after the rejoin")
-	end
-	local rerun = string.format([[
-if not game:IsLoaded() then game.Loaded:Wait() end
-task.spawn(function()
-	pcall(function() loadstring(game:HttpGet(%q))() end)
-end)
--- Bloxy after More guis is in (it swaps its topbars in when Bloxy loads the saved one)
-local env = (getgenv and getgenv()) or _G
-local t0 = os.clock()
-repeat task.wait(0.5) until env.BP_TrueLS ~= nil or os.clock() - t0 > 40
-task.wait(1)
-local player = game:GetService("Players").LocalPlayer
-local playerGui = player and player:WaitForChild("PlayerGui", 30)
-if playerGui and not playerGui:FindFirstChild("BloxyParadoxProject") then
-	pcall(function() loadstring(game:HttpGet(%q))() end)
-end
-]], LOADER_URL, BLOXY_URL)
-	if not pcall(queue, rerun) then
-		warn("[Saved Settings] couldn't set the scripts to run after the rejoin: rejoin and run the script yourself")
-		return false
-	end
-	print("[Saved Settings] rejoining this server...")
-	local TeleportService = game:GetService("TeleportService")
-	local ok, err = pcall(function()
-		if #Players:GetPlayers() <= 1 then
-			TeleportService:Teleport(game.PlaceId, LocalPlayer)
+	local setupNow = false
+	if answers then
+		if setupOnScreen() then
+			setupNow = answerSetup(answers, name, 5)
 		else
-			TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+			print("[Saved Settings] its setup answers itself the next time the setup comes up (every time you run"
+				.. " the script; the topbar and the other setup choices only change when the setup runs)")
 		end
-	end)
-	if not ok then warn("[Saved Settings] couldn't rejoin: " .. tostring(err)) end
-	return ok
+	else
+		print("[Saved Settings] it was saved before setup answers were kept: \"skip setup\" is on, so Bloxy loads"
+			.. " its setup by itself the next time you run the script (save it again after a setup to keep its answers)")
+	end
+	return true, setupNow
 end
 
 ------------------------------------------------------------
@@ -592,6 +714,7 @@ local function guardBloxyBox(box)
 			now.Choices = snapshot.Choices
 			local text = encode(now)
 			if text then writeText(CONFIG_FILE, text) end
+			for key, value in pairs(now) do knownSettings[key] = value end
 		end)
 	end)
 end
@@ -624,6 +747,14 @@ local function hookBloxy(sg)
 			if box then guardBloxyBox(box) end
 		end
 	end
+	-- the setup's answer buttons (recorded when tapped)
+	for _, d in ipairs(sg:GetDescendants()) do
+		if d:IsA("TextButton") then hookAnswerButton(d) end
+	end
+	connect(sg.DescendantAdded, function(d)
+		if d:IsA("TextButton") then task.defer(hookAnswerButton, d) end
+	end)
+	keepOtherSettings()
 	if hammer then
 		-- "hide hammer ui" removes the hammer: this goes too (running the script again brings both back)
 		connect(hammer.AncestryChanged, function(child, parent)
@@ -678,7 +809,6 @@ local BUTTON_COLORS = {
 	green = { Color3.fromRGB(30, 140, 30), Color3.fromRGB(80, 220, 80) },
 	grey = { Color3.fromRGB(70, 70, 70), Color3.fromRGB(160, 160, 160) },
 	red = { Color3.fromRGB(200, 40, 40), Color3.fromRGB(255, 80, 80) },
-	orange = { Color3.fromRGB(215, 120, 20), Color3.fromRGB(255, 180, 80) },
 }
 
 local function button(parent, name, text, kind, size, pos)
@@ -781,7 +911,7 @@ local function makeRow(name, order)
 
 	local nameLabel = label(row, "NameLabel", name, UDim2.new(1, -16, 0, 18), UDim2.new(0, 8, 0, 4), 15)
 	if loaded then nameLabel.TextColor3 = Color3.fromRGB(150, 255, 150) end
-	local whenLabel = label(row, "WhenLabel", savedWhen(profile) .. (loaded and "  •  loaded" or ""),
+	local whenLabel = label(row, "WhenLabel", savedWhen(profile) .. (loaded and "  •  loaded, used at every start" or ""),
 		UDim2.new(1, -16, 0, 12), UDim2.new(0, 8, 0, 22), 11)
 	whenLabel.TextTransparency = 0.15
 
@@ -803,22 +933,8 @@ local function makeRow(name, order)
 	layout.Parent = buttons
 
 	local third = UDim2.new(1 / 3, -4, 1, 0)
-	local loadBtn, paintLoad = button(buttons, "LoadButton", "load", "green", third)
+	local loadBtn = button(buttons, "LoadButton", "load", "green", third)
 	loadBtn.LayoutOrder = 1
-	-- just loaded, with setup choices that need the scripts to start again: "rejoin?" for a while
-	local offerAt = rejoinOffer and rejoinOffer.name == name and rejoinOffer.at or nil
-	if offerAt and os.clock() - offerAt <= REJOIN_OFFER_TIME then
-		loadBtn.Text = "rejoin?"
-		paintLoad("orange")
-		task.delay(REJOIN_OFFER_TIME - (os.clock() - offerAt), function()
-			if loadBtn.Parent and loadBtn.Text == "rejoin?" then
-				loadBtn.Text = "load"
-				paintLoad("green")
-			end
-		end)
-	else
-		offerAt = nil
-	end
 	local renameBtn = button(buttons, "RenameButton", "rename", "grey", third)
 	renameBtn.LayoutOrder = 2
 	local deleteBtn, paintDelete = button(buttons, "DeleteButton", "delete", "red", third)
@@ -857,24 +973,11 @@ local function makeRow(name, order)
 			finishRename()
 			return
 		end
-		if applying then return end
-		if offerAt and os.clock() - offerAt <= REJOIN_OFFER_TIME and loadBtn.Text == "rejoin?" then
-			rejoinOffer = nil
-			loadBtn.Text = "rejoining…"
-			task.spawn(function()
-				if not rejoinWithSettings() and loadBtn.Parent then
-					loadBtn.Text = "load"
-					paintLoad("green")
-					flash(loadBtn, "can't")
-				end
-			end)
-			return
-		end
+		if applying or replaying then return end
 		loadBtn.Text = "loading…"
 		task.spawn(function()
-			local ok, _, _, needsRestart = loadSettings(name)
+			local ok = loadSettings(name)
 			if ok then
-				rejoinOffer = needsRestart and { name = name, at = os.clock() } or nil
 				refreshList()
 			elseif loadBtn.Parent then
 				loadBtn.Text = "load"
@@ -1079,7 +1182,7 @@ Env.BPSavedSettings = {
 	Open = function() if not isOpen and icon then press(icon) end end,
 	Close = function() if isOpen then closePanel() end end,
 	Save = function(name) local ok, r = saveSettings(name) if ok then refreshList() end return ok, r end,
-	Load = function(name) local ok, a, b = loadSettings(name) refreshList() return ok, a, b end,
+	Load = function(name) local ok, a = loadSettings(name) refreshList() return ok, a end,
 	Rename = function(old, new) local ok, r = renameSettings(old, new) refreshList() return ok, r end,
 	Delete = function(name) local ok = deleteSettings(name) refreshList() return ok end,
 	List = function()
@@ -1107,6 +1210,14 @@ task.spawn(function()
 	end)
 	local sg = playerGui:FindFirstChild(BLOXY_GUI) or playerGui:WaitForChild(BLOXY_GUI, 120)
 	if sg then hookWhenReady(sg) end
+	-- the loaded one answers the setup at every start (when the setup is asked: not with "skip setup")
+	local name = store.lastLoaded
+	local profile = name and store.profiles[name]
+	local answers = profile and savedAnswers(profile.files)
+	local config = decode(readText(CONFIG_FILE))
+	if bloxyGui and answers and not (type(config) == "table" and config.isSkipped == true) then
+		answerSetup(answers, name, 60)
+	end
 end)
 
 print(string.format("[Saved Settings] ready: %d saved%s", #store.order,
