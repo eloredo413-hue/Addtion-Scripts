@@ -7,7 +7,7 @@
 -- + Roblox's NPC dialog box kept for every topbar (the 2014 / 2015 / 2016 / 2017 / 2019 GUIs
 --   deleted or hid it): the choices show, and on phones the controls come back after talking
 -- + 2005: no NPC dialogs and no chat bubbles of ours (2005 had neither)
--- + More guis = the "More guis" gist (its own 2008 / 2019 / 2017 / 2021 / 2023 old GUIs)
+-- + More guis = the "More guis" gist (its own 2008 / 2019 / 2017 / 2021 / 2023 old GUIs), plus 2011 (More guis.lua)
 -- + Safe Native Dialog Bypass (No overlap, no glitching)
 -- + Player dialog bubbles render perfectly (Folder host)
 -- + Regular Chat Bubbles 100% Untouched
@@ -82,6 +82,7 @@ local MORE_GUIS_PICKS = {
     ["2017"] = { pending = "2017" },
     ["2015 early"] = { pending = "2015early" },
     ["2013 mobile"] = { pending = "2013mobile", force2008Bubbles = true },
+    ["2011"] = { pending = "2011" },
     ["2008"] = { pending = "2008" },
     ["2006"] = { pending = "2006" },
     ["2005"] = { pending = "2005" },
@@ -258,8 +259,10 @@ local mainAddons = {
     URL_EXPLOSION,
 }
 
--- "More guis" gist (a pinned copy: change this link to update it).
-local URL_MORE_GUIS         = "https://gist.githubusercontent.com/eloredo413-hue/4aac0bc41207ca96d85235d1d07dd234/raw/917476c48b64151bc5ee9a27700dab7ea2080134/More%2520guis"
+-- "More guis" (More guis.lua in this repo): the gist plus 2011 (the early 2011 client GUI, under 2012).
+-- The gist (a pinned copy) is the fallback.
+local URL_MORE_GUIS         = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/More%20guis.lua"
+local URL_MORE_GUIS_GIST    = "https://gist.githubusercontent.com/eloredo413-hue/4aac0bc41207ca96d85235d1d07dd234/raw/917476c48b64151bc5ee9a27700dab7ea2080134/More%2520guis"
 local URL_SAFECHAT_HOOK     = "https://gist.githubusercontent.com/eloredo413-hue/47847c9c0567c5b365c8bfa249d59190/raw/036418365fc79e40e7dc1d1120fca6de9e4600a0/Safe%2520chat%2520Hook"
 -- the 2013 GUI's backpack that works with touch and mouse (2013 Backpack.lua in this repo): loaded when 2013 is the topbar
 local URL_BACKPACK_2013     = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2013%20Backpack.lua"
@@ -455,7 +458,13 @@ for i, url in ipairs(mainAddons) do
     end
     task.wait(0.1)
 end
-loadUrl(URL_MORE_GUIS, "More guis", patchMoreGuis)
+do
+    local _, why = loadUrl(URL_MORE_GUIS, "More guis", patchMoreGuis)
+    if why == "download" then
+        warn("[Loader] More guis (repo copy) couldn't be downloaded: using the gist (no 2011)")
+        loadUrl(URL_MORE_GUIS_GIST, "More guis (gist)", patchMoreGuis)
+    end
+end
 task.wait(0.5)
 loadUrl(URL_SAFECHAT_HOOK, "SafeChat Hook")
 loadUrl(URL_TERRAIN_HOOK, "Terrain Hook")
@@ -2569,6 +2578,7 @@ end
     -- here too, so it is recognised whatever the saved config says.
     local TOPBAR_VARIANTS = {
         ["2015 early"] = "early2015",
+        ["2011"]       = "classic", -- (presses 2013: told apart so the 2013 backpack isn't loaded over its own)
         ["2010"]       = "y2010",
         ["2008"]       = "y2010", -- the 2010 GUI without chat bubbles: no bubbles of ours over it
         ["2006"]       = "y2006",
@@ -2576,6 +2586,7 @@ end
     }
     local PENDING_VARIANTS = {
         ["2015early"] = "early2015",
+        ["2011"]      = "classic",
         ["2008"]      = "y2010",
         ["2006"]      = "y2006",
         ["2005"]      = "y2005",
@@ -2732,6 +2743,11 @@ end
         end
         desiredBubbleEra = bubbleEra
         if bubbleEra and lastFailedEra == bubbleEra then lastFailedEra = nil end
+        -- the classic bubbles stopped by something else (the 2011 GUI clears them when it starts, so a
+        -- leftover copy from another GUI goes): marked stopped, so they are started again below
+        if activeBubbleEra == "classic" and not getgenv().ClassicBubbleCleanup then
+            stopBubbleScript("classic")
+        end
 
         if era ~= "bubble2017" then
             -- leaving 2015 / 2016: the 2017 bubbles stop
@@ -2881,7 +2897,8 @@ end
             end
         end
         confirmSeen = true
-        for _, delay in ipairs({ 0.5, 2, 4 }) do
+        -- (8 s: a GUI that takes a while to download, like 2011, has started by then)
+        for _, delay in ipairs({ 0.5, 2, 4, 8 }) do
             task.delay(delay, evaluateAndLoad)
         end
     end
