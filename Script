@@ -27,6 +27,8 @@
 -- + 2008 (More guis): treated like 2010, so no bubble script of ours runs over it (it has no chat bubbles)
 -- + Chat bubbles by era: 2005 and 2006 have none; 2010 and 2015 early draw their own (no bubble script
 --   of ours runs over them); 2011-2014 / mobile use the built-in 2011-style ones; 2015/2016 the 2017 ones
+-- + Saved settings: a floppy disk under Bloxy's hammer opens a panel to save / load / rename / delete named
+--   copies of the setup and hammer settings (Saved Settings.lua)
 --========================================================
 
 if getgenv().ClassicDialogCleanup then
@@ -366,6 +368,14 @@ local URL_ESCAPE_MENU = "https://raw.githubusercontent.com/eloredo413-hue/Addtio
 task.spawn(function()
     local _, why = loadUrl(URL_ESCAPE_MENU, "Escape menu")
     if why == "download" then warn("[Loader] Escape Menu.lua couldn't be downloaded") end
+end)
+
+-- SAVED SETTINGS (Saved Settings.lua in this repo): the floppy disk under Bloxy's hammer opens a panel to save
+-- the setup and hammer settings under a name, and load, rename or delete them (kept after leaving the game)
+local URL_SAVED_SETTINGS = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Saved%20Settings.lua"
+task.spawn(function()
+    local _, why = loadUrl(URL_SAVED_SETTINGS, "Saved Settings")
+    if why == "download" then warn("[Loader] Saved Settings.lua couldn't be downloaded") end
 end)
 
 --========================================================
