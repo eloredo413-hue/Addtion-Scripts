@@ -99,6 +99,15 @@ local scriptToRun = "local SHOW_STATUS = " .. tostring(SHOW_STATUS) .. "\n"
         end
     end)
 
+    -- (Addtion-Scripts) The saved settings panel (the floppy disk under Bloxy's hammer). The loader doesn't run
+    -- in the server this GUI rejoins, so it is loaded from here too.
+    task.spawn(function()
+        local ok, err = pcall(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Saved%20Settings.lua"))()
+        end)
+        if not ok then warn("[2021] saved settings panel not loaded: " .. tostring(err)) end
+    end)
+
     local STATUS_GUI_NAME = "Legacy2019StatusGui"
     local HUD_GUI_NAME = "Legacy2019HudGui"
 
