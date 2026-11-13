@@ -135,25 +135,38 @@ local function hide(obj)
 	end)
 end
 
-local placedPos, placedSize = nil, nil
+local function setIfDifferent(obj, prop, value)
+	if obj[prop] ~= value then obj[prop] = value end
+end
+
+-- Ours is put on the same kind of screen as the GUI's bar (the same top-bar inset, the same room kept
+-- from the screen's edges, the same layer), and given the bar's own position and size. Measuring where
+-- the bar was on screen went wrong at spawn (read before the GUI had laid itself out, then kept), which
+-- put ours up behind the hotbar.
 local function placeOnTop(foundTray)
-	if not tray then return end
+	if not tray or not gui then return end
 	source = foundTray
+	local holder = foundTray:FindFirstAncestorWhichIsA("LayerCollector")
+	if holder then
+		pcall(setIfDifferent, gui, "IgnoreGuiInset", holder.IgnoreGuiInset)
+		pcall(setIfDifferent, gui, "ScreenInsets", holder.ScreenInsets)
+		pcall(setIfDifferent, gui, "DisplayOrder", holder.DisplayOrder)
+	end
+	if foundTray.Parent == holder then
+		-- right in its GUI: the same position and size
+		setIfDifferent(tray, "AnchorPoint", foundTray.AnchorPoint)
+		setIfDifferent(tray, "Position", foundTray.Position)
+		setIfDifferent(tray, "Size", foundTray.Size)
+		return
+	end
+	-- inside other frames: where it is in its GUI (the same coordinates as ours now)
 	local pos, size = foundTray.AbsolutePosition, foundTray.AbsoluteSize
 	if size.X < 20 or size.Y < 4 then return end
-	if pos == placedPos and size == placedSize then return end
-	placedPos, placedSize = pos, size
-	-- the GUI's own bar is measured on screen; ours is placed on screen too (IgnoreGuiInset on our gui),
-	-- plus the top bar's inset when the GUI's bar is below it
-	local inset = Vector2.new(0, 0)
-	pcall(function()
-		local holder = foundTray:FindFirstAncestorWhichIsA("ScreenGui")
-		if holder and not holder.IgnoreGuiInset then
-			inset = game:GetService("GuiService"):GetGuiInset()
-		end
-	end)
-	tray.Position = UDim2.new(0, pos.X + inset.X, 0, pos.Y + inset.Y)
-	tray.Size = UDim2.new(0, size.X, 0, size.Y)
+	local origin = Vector2.new(0, 0)
+	pcall(function() origin = holder.AbsolutePosition end)
+	setIfDifferent(tray, "AnchorPoint", Vector2.new(0, 0))
+	setIfDifferent(tray, "Position", UDim2.new(0, pos.X - origin.X, 0, pos.Y - origin.Y))
+	setIfDifferent(tray, "Size", UDim2.new(0, size.X, 0, size.Y))
 end
 
 local function consider(obj)
