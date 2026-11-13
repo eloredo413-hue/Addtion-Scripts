@@ -12,14 +12,18 @@
 --   * the answers given in the setup, in order (BloxySetupAnswers.json: recorded here each time the setup is
 --     answered, by whichever Bloxy and More guis are running)
 --
--- Loading, without a rejoin:
+-- How it is used: go through the setup and pick the hammer's options, then save. Later (after a rejoin), run
+-- the script and, while the setup is showing, load the file:
+--   * the setup answers itself with the saved answers, press by press, with whichever Bloxy and More guis are
+--     running (the GUI, safe chat, explosion, terrain...). Tapping an answer yourself meanwhile stops it, and so
+--     does an answer that isn't there (More guis' 2013 mobile, say), so nothing else gets confirmed instead.
 --   * the hammer's options change straight away (their boxes are pressed, so each option turns itself on or
 --     off as usual)
---   * the setup answers itself with the saved answers: right away if the setup is on screen, and at every
---     start after that (the loaded one is the one used), so running the script loads it by itself. A file
---     saved before answers were recorded uses "skip setup" instead (Bloxy loads the saved setup by itself).
+--   * "skip setup" is left as it is (older versions turned it on, so Bloxy skipped the setup and loaded its
+--     plain year: that is undone once)
 --   * Bloxy writes its settings file with only its own settings in it, which dropped the other scripts' (the
 --     hammer options were off at the next start); what it leaves out is kept now.
+-- Nothing is loaded by itself at start.
 --
 -- The loader loads it, and so do the 2021 / 2023 old / 2023 new GUIs after the rejoin they do (the loader
 -- doesn't run in the server they rejoin). Running it again replaces the earlier copy.
@@ -220,10 +224,12 @@ local function readStore()
 	if type(data.lastLoaded) == "string" and store.profiles[data.lastLoaded] then
 		store.lastLoaded = data.lastLoaded
 	end
+	store.skipRepaired = data.skipRepaired == true or nil
 end
 
 local function writeStore()
-	local text = encode({ version = 1, order = store.order, profiles = store.profiles, lastLoaded = store.lastLoaded })
+	local text = encode({ version = 1, order = store.order, profiles = store.profiles, lastLoaded = store.lastLoaded,
+		skipRepaired = store.skipRepaired })
 	return text ~= nil and writeText(STORE_FILE, text)
 end
 
@@ -492,10 +498,15 @@ local function hookAnswerButton(btn)
 	connect(btn.MouseButton1Down, function()
 		if replaying then tookOver = true end
 	end)
-	-- Recorded when a real tap is let go, not on MouseButton1Click: More guis calls the first MouseButton1Click
-	-- connection of Bloxy's buttons to press them, and clears those of its own copies, so it is left alone.
-	connect(btn.MouseButton1Up, function()
+	-- Recorded from a real tap (Activated, or MouseButton1Up: whichever comes first, once), not from
+	-- MouseButton1Click: More guis calls the first MouseButton1Click connection of Bloxy's buttons to press
+	-- them, and clears those of its own copies, so that one is left alone.
+	local lastAt = -1
+	local function recordTap()
 		if replaying then return end
+		local now = os.clock()
+		if now - lastAt < 0.3 then return end
+		lastAt = now
 		local frame = questionFrameOf(btn)
 		local title = frame and questionTitle(frame)
 		local text = btn.Text
@@ -508,7 +519,9 @@ local function hookAnswerButton(btn)
 		table.insert(recording.answers, { q = title, a = text })
 		saveRecording()
 		task.delay(0.5, keepOtherSettings)
-	end)
+	end
+	connect(btn.Activated, recordTap)
+	connect(btn.MouseButton1Up, recordTap)
 end
 
 local function visibleQuestion(title)
@@ -530,10 +543,43 @@ local function setupOnScreen()
 end
 
 local function answerButton(frame, text)
+	local lower = string.lower(text)
 	for _, d in ipairs(frame:GetDescendants()) do
-		if d:IsA("TextButton") and d.Visible and d.Text == text then return d end
+		if d:IsA("TextButton") and d.Visible and string.lower(d.Text or "") == lower then return d end
 	end
 	return nil
+end
+
+-- The answers to give: of the taps on one question only the last pick before its last tap ("2019", then
+-- "2013 mobile", then "confirm" gives "2013 mobile", "confirm"), so a change of mind isn't pressed again.
+local function finalAnswers(answers)
+	local out = {}
+	local i = 1
+	while i <= #answers do
+		local q = answers[i].q
+		local j = i
+		while j + 1 <= #answers and answers[j + 1].q == q do j = j + 1 end
+		if j > i then table.insert(out, answers[j - 1]) end
+		table.insert(out, answers[j])
+		i = j + 1
+	end
+	return out
+end
+
+-- A file saved before answers were kept: at least its topbar (More guis' pick, else Bloxy's)
+local TOPBAR_QUESTION = "Which topbar do you prefer?"
+local TOPBAR_TEXTS = { ["2013mobile"] = "2013 mobile", ["2023_WIP"] = "2023 new", ["2023_FFlags"] = "2024(fflags)",
+	["2016_Adv"] = "2016(no chat)", ["2016_Simp"] = "2016", ["2015early"] = "2015 early" }
+local function topbarAnswers(files)
+	local pick = decode(files[TOPBAR_PICK_FILE])
+	local text = type(pick) == "table" and type(pick.Pick) == "string" and pick.Pick or nil
+	if not text then
+		local config = decode(files[CONFIG_FILE])
+		local id = type(config) == "table" and type(config.Choices) == "table" and config.Choices.Topbar or nil
+		text = type(id) == "string" and (TOPBAR_TEXTS[id] or id) or nil
+	end
+	if not text or text == "" or text == "none" then return nil end
+	return { { q = TOPBAR_QUESTION, a = TOPBAR_TEXTS[text] or text }, { q = TOPBAR_QUESTION, a = "confirm" } }
 end
 
 -- Answer the setup with saved answers, in order: each one when its question is on screen. A question that
@@ -541,6 +587,7 @@ end
 -- for the player to answer.
 local function answerSetup(answers, name, firstWait)
 	if replaying or type(answers) ~= "table" or #answers == 0 then return false end
+	answers = finalAnswers(answers)
 	replaying = true
 	tookOver = false
 	task.spawn(function()
@@ -554,10 +601,17 @@ local function answerSetup(answers, name, firstWait)
 		for i = start, #answers do
 			local step = answers[i]
 			local deadline = os.clock() + ((i == start) and (firstWait or 30) or 25)
-			local btn = nil
+			local btn, frame = nil, nil
+			local seenAt = nil
 			repeat
-				local frame = visibleQuestion(step.q)
+				frame = visibleQuestion(step.q)
 				btn = frame and answerButton(frame, step.a)
+				-- the question is there but not that answer: More guis may still be adding its topbars, so
+				-- wait a bit longer (from when the question showed), then stop
+				if frame and not btn and not seenAt then
+					seenAt = os.clock()
+					deadline = math.max(deadline, seenAt + 40)
+				end
 				if not btn then task.wait(0.25) end
 			until btn or os.clock() > deadline or destroyed or tookOver
 			if destroyed then break end
@@ -574,6 +628,12 @@ local function answerSetup(answers, name, firstWait)
 				-- (still there: not answered meanwhile)
 				if btn.Parent and btn.Visible and press(btn) then given = given + 1 else table.insert(missed, step.a) end
 				task.wait(0.3)
+			elseif frame then
+				-- its question is on screen without that answer: the rest is left to the player (giving the
+				-- next answers anyway could confirm something else, like Bloxy's plain 2013)
+				table.insert(missed, step.q .. " " .. step.a)
+				print("[Saved Settings] \"" .. step.a .. "\" isn't in \"" .. step.q .. "\" here: the rest of the setup is up to you")
+				break
 			else
 				table.insert(missed, step.q .. " " .. step.a)
 			end
@@ -604,15 +664,23 @@ local function loadSettings(name)
 	local files = {}
 	for file, text in pairs(profile.files) do files[file] = text end
 	local answers = savedAnswers(files)
-	-- With saved answers the setup is asked (and answers itself); without, "skip setup" makes Bloxy load the
-	-- saved setup by itself at the next start
+	local onlyTopbar = false
+	if not answers then
+		answers = topbarAnswers(files)
+		onlyTopbar = answers ~= nil
+	end
+	-- "skip setup" stays as it is now (the player's own choice, not part of a file: a file with it on made
+	-- Bloxy skip the setup and load its plain year, 2013 for 2013 mobile)
 	local config = decode(files[CONFIG_FILE])
 	if type(config) ~= "table" then config = {} end
-	local skip = answers == nil
-	if config.isSkipped ~= skip then
-		config.isSkipped = skip
+	local current = decode(readText(CONFIG_FILE))
+	local skipNow = type(current) == "table" and current.isSkipped == true
+	if config.isSkipped ~= skipNow then
+		config.isSkipped = skipNow
 		files[CONFIG_FILE] = encode(config) or files[CONFIG_FILE]
 	end
+	-- what is kept from now on is exactly this file (not settings it doesn't have, from before)
+	table.clear(knownSettings)
 	for key, value in pairs(config) do knownSettings[key] = value end
 	local wanted = function(key) return config[key] == true end
 	local turnedOn, turnedOff, failed = {}, {}, {}
@@ -674,17 +742,20 @@ local function loadSettings(name)
 			#turnedOn > 0 and table.concat(turnedOn, ", ") or "none", #turnedOff > 0 and table.concat(turnedOff, ", ") or "none",
 			#failed > 0 and ("; couldn't press (used at the next start): " .. table.concat(failed, ", ")) or ""))
 	end
+	-- the setup (GUI, safe chat, explosion, ...): answered now if it is on screen, or as soon as it shows
 	local setupNow = false
 	if answers then
-		if setupOnScreen() then
-			setupNow = answerSetup(answers, name, 5)
-		else
-			print("[Saved Settings] its setup answers itself the next time the setup comes up (every time you run"
-				.. " the script; the topbar and the other setup choices only change when the setup runs)")
+		if not setupOnScreen() then
+			print("[Saved Settings] the setup isn't on screen: it is answered if it shows in the next 20 seconds"
+				.. " (load right after running the script, while the setup is showing)")
+		end
+		setupNow = answerSetup(answers, name, setupOnScreen() and 5 or 20)
+		if onlyTopbar then
+			print("[Saved Settings] this file was saved before setup answers were kept: only its topbar is picked;"
+				.. " answer the rest, then save it again so it keeps all of them")
 		end
 	else
-		print("[Saved Settings] it was saved before setup answers were kept: \"skip setup\" is on, so Bloxy loads"
-			.. " its setup by itself the next time you run the script (save it again after a setup to keep its answers)")
+		print("[Saved Settings] this file has no setup answers: save it again after going through the setup")
 	end
 	return true, setupNow
 end
@@ -911,7 +982,7 @@ local function makeRow(name, order)
 
 	local nameLabel = label(row, "NameLabel", name, UDim2.new(1, -16, 0, 18), UDim2.new(0, 8, 0, 4), 15)
 	if loaded then nameLabel.TextColor3 = Color3.fromRGB(150, 255, 150) end
-	local whenLabel = label(row, "WhenLabel", savedWhen(profile) .. (loaded and "  •  loaded, used at every start" or ""),
+	local whenLabel = label(row, "WhenLabel", savedWhen(profile) .. (loaded and "  •  loaded" or ""),
 		UDim2.new(1, -16, 0, 12), UDim2.new(0, 8, 0, 22), 11)
 	whenLabel.TextTransparency = 0.15
 
@@ -1210,15 +1281,38 @@ task.spawn(function()
 	end)
 	local sg = playerGui:FindFirstChild(BLOXY_GUI) or playerGui:WaitForChild(BLOXY_GUI, 120)
 	if sg then hookWhenReady(sg) end
-	-- the loaded one answers the setup at every start (when the setup is asked: not with "skip setup")
-	local name = store.lastLoaded
-	local profile = name and store.profiles[name]
-	local answers = profile and savedAnswers(profile.files)
-	local config = decode(readText(CONFIG_FILE))
-	if bloxyGui and answers and not (type(config) == "table" and config.isSkipped == true) then
-		answerSetup(answers, name, 60)
-	end
 end)
+
+-- Older versions of this panel turned "skip setup" on when loading, so Bloxy skipped the setup and loaded
+-- its plain year (2013 for 2013 mobile) at every start. Turned off again, once.
+do
+	local raw = decode(readText(STORE_FILE))
+	local config = decode(readText(CONFIG_FILE))
+	if type(raw) == "table" and raw.lastLoaded and not raw.skipRepaired and type(config) == "table" then
+		if config.isSkipped == true then
+			config.isSkipped = false
+			local text = encode(config)
+			if text then writeText(CONFIG_FILE, text) end
+			print("[Saved Settings] \"skip setup\" had been turned on by an older version of this panel: it is off"
+				.. " again, so the setup shows the next time you run the script")
+			-- Bloxy's own box too, so it doesn't write it back on
+			task.spawn(function()
+				local t0 = os.clock()
+				while not hammerPanel and os.clock() - t0 < 60 and not destroyed do task.wait(1) end
+				local box = findIn(hammerPanel, "SkipCheckbox")
+				if box and boxIsOn(box) then
+					applying = true
+					press(box)
+					task.wait(0.2)
+					applying = false
+					keepOtherSettings()
+				end
+			end)
+		end
+		store.skipRepaired = true
+		writeStore()
+	end
+end
 
 print(string.format("[Saved Settings] ready: %d saved%s", #store.order,
 	(canRead and canWrite) and "" or " (this executor can't read or write files: saving is off)"))
