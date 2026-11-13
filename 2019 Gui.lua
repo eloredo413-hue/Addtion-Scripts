@@ -3128,8 +3128,12 @@ end)
 	-- edge), and the escape menu, which is in the same GUI, gets the same room back as padding so it
 	-- stays exactly where it was. The icons keep some room on the left so the menu button isn't on
 	-- the edge of the screen.
+	if not TopBarContainer then
+		warn("[2019 GUI] the top bar (TopBarContainer) wasn't found: its icons can't be moved")
+	end
 	if TopBarContainer then
 		local TopGui = TopBarContainer:FindFirstAncestorWhichIsA("ScreenGui")
+		print("[2019 GUI] top bar found in " .. TopBarContainer:GetFullName())
 		if TopGui then
 			task.spawn(function()
 				local function Width()
