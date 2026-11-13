@@ -83,6 +83,22 @@ local scriptToRun = "local SHOW_STATUS = " .. tostring(SHOW_STATUS) .. "\n"
     .. "local FIRST_BUTTON_BLUE = " .. tostring(FIRST_BUTTON_BLUE) .. "\n"
     .. [=[
     local Env = (getgenv and getgenv()) or _G
+
+    -- (Addtion-Scripts) The old escape menu's gap and three buttons (Leave / Reset Character / Resume),
+    -- the same as the other GUIs get from the loader. The loader doesn't run in the server this GUI
+    -- rejoins, so the file is loaded from here too (it runs only once per server).
+    task.spawn(function()
+        if Env.BloxyTopbarPick == nil then Env.BloxyTopbarPick = "2021" end
+        local ok, err = pcall(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Escape%20Menu.lua"))()
+        end)
+        if ok then
+            print("[2021] escape menu: gap and three buttons loaded")
+        else
+            warn("[2021] escape menu fix not loaded: " .. tostring(err))
+        end
+    end)
+
     local STATUS_GUI_NAME = "Legacy2019StatusGui"
     local HUD_GUI_NAME = "Legacy2019HudGui"
 
