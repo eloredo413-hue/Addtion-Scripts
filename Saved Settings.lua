@@ -456,8 +456,10 @@ end
 local function questionTitle(frame)
 	local best, bestZ = nil, -math.huge
 	for _, d in ipairs(frame:GetDescendants()) do
-		if d:IsA("TextLabel") and d.Visible and type(d.Text) == "string" and d.Text ~= "" then
+		if d:IsA("TextLabel") and d.Visible and type(d.Text) == "string" and string.find(d.Text, "%a")
+		   and not d:FindFirstAncestorWhichIsA("GuiButton") then
 			-- the one drawn on top (an addon's question laid over Bloxy's box), else the longest
+			-- (labels inside buttons, like the physics dropdown's "▼", and ones without letters aren't titles)
 			local z = d.ZIndex or 1
 			if z > bestZ or (z == bestZ and #d.Text > #best) then
 				best, bestZ = d.Text, z
@@ -541,7 +543,20 @@ local function setupOnScreen()
 	return false
 end
 
+-- (an answer that means "open the dropdown": the button with a "▼" label in it, as in the physics step)
+local DROPDOWN = "\1dropdown"
+
 local function answerButton(frame, text)
+	if text == DROPDOWN then
+		for _, d in ipairs(frame:GetDescendants()) do
+			if d:IsA("TextButton") and d.Visible then
+				for _, c in ipairs(d:GetChildren()) do
+					if c:IsA("TextLabel") and c.Text == "▼" then return d end
+				end
+			end
+		end
+		return nil
+	end
 	local lower = string.lower(text)
 	for _, d in ipairs(frame:GetDescendants()) do
 		if d:IsA("TextButton") and d.Visible and string.lower(d.Text or "") == lower then return d end
@@ -609,8 +624,15 @@ local function fromSettings(title, files)
 		return v and { tostring(v) } or nil
 	end
 	if has("physics") and has("camera") then
-		return pick({ camera = "Old Camera", both = "Both", none = "None",
-			physics = (config.physicsVariant == "2006") and "2006 Physics" or "Old Physics" }, config.physicsCameraChoice)
+		local choice = config.physicsCameraChoice
+		if choice == "camera" then return { "Old Camera" } end
+		if choice == "none" then return { "None" } end
+		if choice == "physics" or choice == "both" then
+			-- the dropdown shows the type picked last time, which may not be this one: open it, pick, then press
+			local label = (config.physicsVariant == "2006") and "2006" or "Old"
+			return { DROPDOWN, label .. " Physics", choice == "both" and "Both" or (label .. " Physics") }
+		end
+		return nil
 	end
 	if has("safe chat") then return yesNo(choices.SafeChat) end
 	if has("backpack") then return pick({ none = "No", simple = "Simple 2008 remake", advanced = "Advanced" }, choices.Backpack) end
@@ -677,7 +699,17 @@ local function answerSetup(answers, files, name, firstWait)
 			elseif frame == lastFrame and title == lastTitle and os.clock() - lastAt < 1.2 then
 				task.wait(0.2) -- (just answered: it is on its way out)
 			else
-				-- its answers: recorded ones first, then (once) the saved settings'
+				-- its answers: recorded ones first, then (once) the saved settings'. The physics step from the
+				-- saved settings first: its recorded taps depend on what its dropdown showed back then.
+				local lowerTitle = string.lower(title)
+				if not fromFile[title] and string.find(lowerTitle, "physics", 1, true) and string.find(lowerTitle, "camera", 1, true) then
+					local list = fromSettings(title, files)
+					if list then
+						fromFile[title] = true
+						queues[title] = list
+						fromSettingsCount = fromSettingsCount + #list
+					end
+				end
 				if (not queues[title] or #queues[title] == 0) and not fromFile[title] then
 					fromFile[title] = true
 					local list = fromSettings(title, files)
