@@ -180,9 +180,6 @@ local URL_OLD_PHYSICS_GIST = "https://gist.githubusercontent.com/eloredo413-hue/
 -- Hammer stuff 1 (Hammer stuff 1.lua in this repo): the gist plus a "sky & world" category title. The gist is the fallback.
 local URL_HAMMER_1          = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Hammer%20stuff%201.lua"
 local URL_HAMMER_1_GIST     = "https://gist.githubusercontent.com/eloredo413-hue/df4c1c582f4d9c634682b91b13395c4b/raw/5d71a838cd858c860cfcf646c27e02cd26447294/Hammer%2520stuff%25201"
--- Explosion Replace Addon (Explosion Replace Addon.lua in this repo): 2010 and 2013 like their recordings. The gist is the fallback.
-local URL_EXPLOSION         = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Explosion%20Replace%20Addon.lua"
-local URL_EXPLOSION_GIST    = "https://gist.githubusercontent.com/eloredo413-hue/85e4840f74edb2acaf0845da534c3d18/raw/e1de3a906c34929de562bc36aea179fa0e4eb7fe/Explosion%2520Replace%2520Addon"
 
 local mainAddons = {
     -- FF Fix Hook goes first: it hooks loadstring itself, so it has to see the real one
@@ -195,7 +192,7 @@ local mainAddons = {
     URL_WIZARD_SMOOTH,
     "https://gist.githubusercontent.com/eloredo413-hue/f156101652b68d2fdcbbeae4dc0481d6/raw/028c65e676eda5d90f9c3a0595347b102df2a0b9/2010%2520hook",
     URL_OLD_PHYSICS,
-    URL_EXPLOSION,
+    "https://gist.githubusercontent.com/eloredo413-hue/85e4840f74edb2acaf0845da534c3d18/raw/e1de3a906c34929de562bc36aea179fa0e4eb7fe/Explosion%2520Replace%2520Addon",
 }
 
 -- "More guis" gist (a pinned copy: change this link to update it).
@@ -375,9 +372,6 @@ for i, url in ipairs(mainAddons) do
     if why == "download" and url == URL_WIZARD_SMOOTH then
         warn("[Loader] Wizard smooth v10 couldn't be downloaded: using v9")
         loadUrl(URL_WIZARD_SMOOTH_V9, "Wizard smooth v9")
-    elseif why == "download" and url == URL_EXPLOSION then
-        warn("[Loader] Explosion Replace Addon (repo copy) couldn't be downloaded: using the gist")
-        loadUrl(URL_EXPLOSION_GIST, "Explosion Replace Addon (gist)")
     elseif why == "download" and url == URL_HAMMER_1 then
         warn("[Loader] Hammer stuff 1 (repo copy) couldn't be downloaded: using the gist")
         loadUrl(URL_HAMMER_1_GIST, "Hammer stuff 1 (gist)")
