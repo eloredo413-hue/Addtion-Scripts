@@ -3153,7 +3153,7 @@ end)
 		pcall(function()
 			local Room = Instance.new("UIPadding")
 			Room.Name = "BPEdgeRoom"
-			Room.PaddingLeft = UDim.new(0, 20)
+			Room.PaddingLeft = UDim.new(0, 36)
 			Room.Parent = TopBarContainer
 		end)
 	end
