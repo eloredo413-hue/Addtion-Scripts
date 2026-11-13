@@ -281,8 +281,8 @@ do
             if child:IsA("GuiObject") then
                 local t = string.lower(buttonText(child) or "")
                 if t == "reset character" then found.reset = child
-                elseif t == "leave game" then found.leave = child
-                elseif t == "resume game" then found.resume = child end
+                elseif t == "leave game" or t == "leave" then found.leave = child
+                elseif t == "resume game" or t == "resume" then found.resume = child end
             end
         end
         return found
@@ -296,6 +296,12 @@ do
             cur = cur.Parent
         end
         return nil
+    end
+
+    -- (newer menus, 2021 among them, say "Leave" / "Resume")
+    local function isMenuWord(text)
+        local t = string.lower(text or "")
+        return t == "reset character" or t == "leave game" or t == "leave"
     end
 
     local styled = setmetatable({}, { __mode = "k" })
@@ -312,11 +318,15 @@ do
         if not resume then
             resume = leave:Clone()
             resume.Name = "ResumeButton"
-            if resume:IsA("TextButton") then resume.Text = "Resume Game" end
+            -- the same wording as the menu's Leave: "Leave Game" -> "Resume Game", "Leave" -> "Resume"
+            local function resumeWords(obj)
+                local t = string.lower(obj.Text or "")
+                if t == "leave game" then obj.Text = "Resume Game"
+                elseif t == "leave" then obj.Text = "Resume" end
+            end
+            if resume:IsA("TextButton") then resumeWords(resume) end
             for _, d in ipairs(resume:GetDescendants()) do
-                if (d:IsA("TextLabel") or d:IsA("TextButton")) and string.lower(d.Text) == "leave game" then
-                    d.Text = "Resume Game"
-                end
+                if d:IsA("TextLabel") or d:IsA("TextButton") then resumeWords(d) end
             end
             resume.Parent = parent
             if resume:IsA("GuiButton") then resume.Activated:Connect(closeMenu) end
@@ -386,15 +396,18 @@ do
 
     -- The menu can be built before the topbar is picked: what was seen is looked at again for a while.
     local seenViews, seenParents = setmetatable({}, { __mode = "k" }), setmetatable({}, { __mode = "k" })
+    local seenHubs = setmetatable({}, { __mode = "k" }) -- the escape menus (what holds a HubBar)
     local function onAdded(obj)
         if obj.Name == "PageView" then
             seenViews[obj] = true
             padPageView(obj)
         end
+        if obj.Name == "HubBar" and obj.Parent then
+            seenHubs[obj.Parent] = true
+        end
         if obj:IsA("TextLabel") or obj:IsA("TextButton") then
             task.defer(function()
-                local t = string.lower(obj.Text or "")
-                if t ~= "reset character" and t ~= "leave game" then return end
+                if not isMenuWord(obj.Text) then return end
                 local button = buttonOf(obj)
                 if button and button.Parent then
                     seenParents[button.Parent] = true
@@ -408,6 +421,22 @@ do
     -- so the menu parts seen are looked at again at Confirm and every few seconds after (only those).
     local function recheck()
         for view in pairs(seenViews) do pcall(padPageView, view) end
+        -- the menus themselves are looked through too: some put the words on their buttons after the
+        -- buttons are made, which the check when a text is added can miss
+        for hub in pairs(seenHubs) do
+            if hub.Parent then
+                pcall(function()
+                    for _, d in ipairs(hub:GetDescendants()) do
+                        if (d:IsA("TextLabel") or d:IsA("TextButton")) and isMenuWord(d.Text) then
+                            local button = buttonOf(d)
+                            if button and button.Parent and not styled[button.Parent] then
+                                seenParents[button.Parent] = true
+                            end
+                        end
+                    end
+                end)
+            end
+        end
         for parent in pairs(seenParents) do
             if parent.Parent then
                 pcall(padAround, parent)
