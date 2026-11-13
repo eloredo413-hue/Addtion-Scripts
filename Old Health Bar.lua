@@ -8,7 +8,7 @@
 -- was, at its size. With none to be found it goes at the bottom middle, 170 x 18 (the size the GUIs use).
 --
 -- getgenv().OldHealthBar = { Start, Stop, IsRunning }: the loader starts it for the GUIs before 2014 (the
--- 2013 mobile GUI only with Hammer stuff 2's "old healthbar" ticked) and stops it for the others.
+-- 2013 and 2013 mobile GUIs only with Hammer stuff 2's "old healthbar" ticked) and stops it for the others.
 
 local Env = (getgenv and getgenv()) or _G
 if Env.OldHealthBar and type(Env.OldHealthBar.Stop) == "function" then
