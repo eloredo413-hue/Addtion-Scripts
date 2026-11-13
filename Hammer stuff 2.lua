@@ -192,7 +192,42 @@ task.spawn(function()
 							pName.Text = char.Name
 							health.Adornee = head
 							if hPlayer then health.PlayerToHideFrom = hPlayer end
-							health.Parent = head
+
+							-- Text only (no bar) when the humanoid only shows a name: MaxHealth 0, health display
+							-- switched off, or a model with no body (games use a Head + Humanoid as a label, like
+							-- the city names on a map).
+							local function barWanted()
+								if h.MaxHealth <= 0 then return false end
+								local okType, displayType = pcall(function() return h.HealthDisplayType end)
+								if okType and displayType == Enum.HumanoidHealthDisplayType.AlwaysOff then return false end
+								return char:FindFirstChild("Torso") ~= nil or char:FindFirstChild("UpperTorso") ~= nil
+									or char:FindFirstChild("HumanoidRootPart") ~= nil
+							end
+
+							-- Three sizes by distance. A size is only changed after the camera has moved a few
+							-- studs past where it changes (so it doesn't flip back and forth, and the label doesn't
+							-- jump), and nothing is written when nothing changed.
+							local SIZES = {
+								{ font = 20, width = 60, height = 8 }, -- nearer than 25
+								{ font = 15, width = 50, height = 7 }, -- nearer than 50
+								{ font = 12, width = 40, height = 6 }, -- farther
+							}
+							local tier = nil
+							local lastRatio, lastBar, lastText, lastColor, lastEnabled = nil, nil, nil, nil, nil
+							local gap = 2
+
+							local function tierFor(dist)
+								local margin = 3
+								if tier == 1 then
+									if dist < 25 + margin then return 1 end
+								elseif tier == 2 then
+									if dist >= 25 - margin and dist < 50 + margin then return 2 end
+								elseif tier == 3 then
+									if dist >= 50 - margin then return 3 end
+								end
+								if dist < 25 then return 1 elseif dist < 50 then return 2 end
+								return 3
+							end
 
 							local function update()
 								if not head or not head.Parent then return end
@@ -200,58 +235,63 @@ task.spawn(function()
 								if not camera then return end
 
 								local dist = (camera.CFrame.Position - head.Position).Magnitude
-								local fontSize = 12
-								local barWidth = 40
-								local barHeight = 6
-
-								if dist < 25 then
-									fontSize = 20
-									barWidth = 60
-									barHeight = 8
-								elseif dist < 50 then
-									fontSize = 15
-									barWidth = 50
-									barHeight = 7
+								local newTier = tierFor(dist)
+								if newTier ~= tier then
+									tier = newTier
+									local sz = SIZES[tier]
+									pName.TextSize = sz.font
+									pName.Size = UDim2.new(1, 0, 0, sz.font)
+									pName.Position = UDim2.new(0.5, 0, 0, 0)
+									pName.AnchorPoint = Vector2.new(0.5, 0)
+									pName.TextXAlignment = Enum.TextXAlignment.Center
+									rBar.AnchorPoint = Vector2.new(0.5, 0)
+									rBar.Position = UDim2.new(0.5, 0, 0, sz.font + gap)
+									rBar.Size = UDim2.new(0, sz.width, 0, sz.height)
+									health.Size = UDim2.new(0, 200, 0, sz.font + gap + sz.height + 10)
 								end
 
-								local gap = 2
+								local enabled = (dist <= MAX_DISTANCE and head.Transparency < 1)
+								if enabled ~= lastEnabled then
+									lastEnabled = enabled
+									health.Enabled = enabled
+								end
 
-								pName.TextSize = fontSize
-								pName.Size = UDim2.new(1, 0, 0, fontSize)
-								pName.Position = UDim2.new(0.5, 0, 0, 0)
-								pName.AnchorPoint = Vector2.new(0.5, 0)
-								pName.TextXAlignment = Enum.TextXAlignment.Center
-
-								rBar.AnchorPoint = Vector2.new(0.5, 0)
-								rBar.Position = UDim2.new(0.5, 0, 0, fontSize + gap)
-								rBar.Size = UDim2.new(0, barWidth, 0, barHeight)
-
-								health.Size = UDim2.new(0, 200, 0, fontSize + gap + barHeight + 10)
-								health.Enabled = (dist <= MAX_DISTANCE and head.Transparency < 1)
-								health.StudsOffsetWorldSpace = Vector3.new(0, HEIGHT_OFFSET, 0)
-
+								local showBar = barWanted()
 								local ratio = (h.MaxHealth > 0) and (h.Health / h.MaxHealth) or 0
-								if isFinite(ratio) then
-									rBar.Visible = true
+								if not isFinite(ratio) then showBar = false end
+								if showBar ~= lastBar then
+									lastBar = showBar
+									rBar.Visible = showBar
+								end
+								if showBar and ratio ~= lastRatio then
+									lastRatio = ratio
 									rBar.BackgroundTransparency = (ratio >= 1) and 1 or 0
 									gBar.Size = UDim2.new(math.clamp(ratio, 0, 1), 0, 1, 0)
-								else
-									rBar.Visible = false
 								end
 
+								local color = Color3.new(1, 1, 1)
 								if hPlayer and Teams:FindFirstChildOfClass("Team") then
-									pName.TextColor3 = hPlayer.TeamColor.Color
-								else
-									pName.TextColor3 = Color3.new(1, 1, 1)
+									color = hPlayer.TeamColor.Color
+								end
+								if color ~= lastColor then
+									lastColor = color
+									pName.TextColor3 = color
 								end
 
+								local text = char.Name
 								local overWriter = char:FindFirstChild("NameOverwrite")
 								if overWriter and overWriter:IsA("StringValue") then
-									pName.Text = overWriter.Value
-								else
-									pName.Text = char.Name
+									text = overWriter.Value
+								end
+								if text ~= lastText then
+									lastText = text
+									pName.Text = text
 								end
 							end
+
+							-- sized and filled in before it is shown, so it never appears at the wrong size first
+							update()
+							health.Parent = head
 
 							updateCon = RunService.RenderStepped:Connect(update)
 							table.insert(hpState.connections, updateCon)

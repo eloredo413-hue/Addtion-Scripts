@@ -3123,39 +3123,48 @@ end)
 	-- right of the first chat icon, and the emote button directly right
 	-- of the backpack.
 
-	-- 2019 put its top bar icons right at the left edge of the screen. The GUI holding the top bar
-	-- was pushed in by the phone's safe area (about the width of an icon), which left a gap before
-	-- the menu icon and a dark strip where the bar starts. No inset for it (kept off if it is reset).
+	-- 2019's top bar went right to the left edge of the screen. The GUI holding it is kept in from the
+	-- edge by the phone's safe area, and the escape menu is in that same GUI, so the GUI is left as it
+	-- is (changing it moved the menu too) and only the bar is stretched out to the screen's left edge.
+	-- Its icons keep some room on the left so the menu button isn't on the edge of the screen.
 	if TopBarContainer then
-		local TopGui = TopBarContainer:FindFirstAncestorWhichIsA("ScreenGui")
-		if TopGui then
-			local function NoInset()
-				pcall(function()
-					if TopGui.ScreenInsets ~= Enum.ScreenInsets.None then
-						TopGui.ScreenInsets = Enum.ScreenInsets.None
-					end
-				end)
-				pcall(function()
-					if TopGui.SafeAreaCompatibility ~= Enum.SafeAreaCompatibility.None then
-						TopGui.SafeAreaCompatibility = Enum.SafeAreaCompatibility.None
-					end
-				end)
-			end
-			NoInset()
-			pcall(function() TopGui:GetPropertyChangedSignal("ScreenInsets"):Connect(NoInset) end)
-			pcall(function() TopGui:GetPropertyChangedSignal("SafeAreaCompatibility"):Connect(NoInset) end)
-		end
-	end
+		local LastPos, LastSize = nil, nil
+		local BasePos, BaseSize = TopBarContainer.Position, TopBarContainer.Size
+		local Applying = false
 
-	-- The bar itself goes to the edge, but its icons keep a little room on the left, so the menu
-	-- button isn't right on the edge of the screen (or under a rounded corner).
-	if TopBarContainer and not TopBarContainer:FindFirstChild("BPEdgeRoom") then
-		pcall(function()
-			local Room = Instance.new("UIPadding")
-			Room.Name = "BPEdgeRoom"
-			Room.PaddingLeft = UDim.new(0, 36)
-			Room.Parent = TopBarContainer
-		end)
+		local function Stretch()
+			if Applying then return end
+			Applying = true
+			pcall(function()
+				-- moved or resized by the GUI itself since: that is the new starting point
+				if TopBarContainer.Position ~= LastPos then BasePos = TopBarContainer.Position end
+				if TopBarContainer.Size ~= LastSize then BaseSize = TopBarContainer.Size end
+				local Holder = TopBarContainer.Parent
+				local Left = (Holder and Holder:IsA("GuiBase2d")) and Holder.AbsolutePosition.X or 0
+				if Left < 0 then Left = 0 end
+				LastPos = UDim2.new(BasePos.X.Scale, BasePos.X.Offset - Left, BasePos.Y.Scale, BasePos.Y.Offset)
+				LastSize = UDim2.new(BaseSize.X.Scale, BaseSize.X.Offset + Left, BaseSize.Y.Scale, BaseSize.Y.Offset)
+				TopBarContainer.Position = LastPos
+				TopBarContainer.Size = LastSize
+			end)
+			Applying = false
+		end
+
+		Stretch()
+		TopBarContainer:GetPropertyChangedSignal("Position"):Connect(Stretch)
+		TopBarContainer:GetPropertyChangedSignal("Size"):Connect(Stretch)
+		if TopBarContainer.Parent and TopBarContainer.Parent:IsA("GuiBase2d") then
+			TopBarContainer.Parent:GetPropertyChangedSignal("AbsolutePosition"):Connect(Stretch)
+		end
+
+		if not TopBarContainer:FindFirstChild("BPEdgeRoom") then
+			pcall(function()
+				local Room = Instance.new("UIPadding")
+				Room.Name = "BPEdgeRoom"
+				Room.PaddingLeft = UDim.new(0, 28)
+				Room.Parent = TopBarContainer
+			end)
+		end
 	end
 
 	local EmoteButton

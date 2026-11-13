@@ -2249,21 +2249,26 @@ task.spawn(function()
 		line.ZIndex = 97
 		line.Parent = title
 
-		-- No empty space above the title: the list starts at the top of the panel, so it opens
-		-- already showing the title and the first options.
+		-- The panel opens scrolled down to the title, so the title and the first options are at the
+		-- top. (The rows are not moved up: Bloxy places some of its own rows by their position, and
+		-- moving them made rows land on top of each other.)
 		local TOP_MARGIN = 6
-		local up = firstY - TOP_MARGIN
-		if up > 0 then
-			for _, child in ipairs(hammerPanel:GetChildren()) do
-				if child:IsA("GuiObject") and child.Position.Y.Scale == 0
-					and child.Position.Y.Offset >= firstY then
-					local p = child.Position
-					child.Position = UDim2.new(p.X.Scale, p.X.Offset, 0, p.Y.Offset - up)
-				end
-			end
-		end
 		if hammerPanel:IsA("ScrollingFrame") then
-			hammerPanel.CanvasPosition = Vector2.new(0, 0)
+			local scroller = hammerPanel
+			local function toTitle()
+				local t = scroller:FindFirstChild("BPCategoryWorld")
+				if not t then return end
+				local y = math.max(0, t.Position.Y.Offset - TOP_MARGIN)
+				scroller.CanvasPosition = Vector2.new(0, y)
+			end
+			task.defer(toTitle)
+			task.delay(0.5, toTitle)
+			-- and again every time the hammer panel is opened
+			if originalHammerPanel and originalHammerPanel:IsA("GuiObject") then
+				originalHammerPanel:GetPropertyChangedSignal("Visible"):Connect(function()
+					if originalHammerPanel.Visible then task.defer(toTitle) end
+				end)
+			end
 		end
 	end)
 

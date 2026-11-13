@@ -2010,8 +2010,8 @@ end
         }
         local TONE_COLORS = {
             Neutral  = Color3.fromRGB(0, 0, 175),
-            Friendly = Color3.fromRGB(0, 70, 0),
-            Enemy    = Color3.fromRGB(135, 0, 0),
+            Friendly = Color3.fromRGB(0, 79, 0),  -- the inside of the green bubbles
+            Enemy    = Color3.fromRGB(142, 0, 0),  -- the inside of the red bubbles
         }
 
         local function enumLeaf(val) return (tostring(val):match("[^.]+$")) or "" end
