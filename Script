@@ -195,6 +195,9 @@ do
         if not clipper or clipper.Name ~= "PageViewClipper" then return end
         local year = topbarYear()
         if not year or year >= 2023 then return end
+        -- the scroll bar (when the player list is long) no longer narrows the page on the right, which
+        -- made the page look pushed to the left of the tab bar
+        pcall(function() obj.VerticalScrollBarInset = Enum.ScrollBarInset.None end)
         local pad = obj:FindFirstChild("BPMenuGap")
         if pad then
             pad.PaddingTop = UDim.new(0, gapFor(year))
@@ -221,6 +224,7 @@ do
         -- only the escape menu's (SettingsHub: its tab bar is called HubBar)
         local hub = view.Parent and view.Parent.Parent
         if not (hub and hub:FindFirstChild("HubBar", true)) then return end
+        pcall(function() view.VerticalScrollBarInset = Enum.ScrollBarInset.None end)
         local pad = Instance.new("UIPadding")
         pad.Name = "BPMenuGap"
         pad.PaddingTop = UDim.new(0, gapFor(year))
