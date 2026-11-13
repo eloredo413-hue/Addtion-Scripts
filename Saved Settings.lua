@@ -454,10 +454,14 @@ end
 -- Bloxy's, and the addons' steps drawn on them: some titles have no "?" or ":", like "Choose your mouse
 -- cursor" and "choose your forcefield"), or one whose title reads like a question
 local function questionTitle(frame)
-	local best = nil
+	local best, bestZ = nil, -math.huge
 	for _, d in ipairs(frame:GetDescendants()) do
-		if d:IsA("TextLabel") and d.Visible and type(d.Text) == "string" and #d.Text > (best and #best or 0) then
-			best = d.Text
+		if d:IsA("TextLabel") and d.Visible and type(d.Text) == "string" and d.Text ~= "" then
+			-- the one drawn on top (an addon's question laid over Bloxy's box), else the longest
+			local z = d.ZIndex or 1
+			if z > bestZ or (z == bestZ and #d.Text > #best) then
+				best, bestZ = d.Text, z
+			end
 		end
 	end
 	if not best or best == "" then return nil end
@@ -529,16 +533,6 @@ local function hookAnswerButton(btn)
 	connect(btn.MouseButton1Up, recordTap)
 end
 
-local function visibleQuestion(title)
-	if not bloxyGui then return nil end
-	for _, frame in ipairs(bloxyGui:GetChildren()) do
-		if frame:IsA("Frame") and frame.Visible and frame ~= hammerPanel and questionTitle(frame) == title then
-			return frame
-		end
-	end
-	return nil
-end
-
 local function setupOnScreen()
 	if not bloxyGui then return false end
 	for _, frame in ipairs(bloxyGui:GetChildren()) do
@@ -587,66 +581,149 @@ local function topbarAnswers(files)
 	return { { q = TOPBAR_QUESTION, a = TOPBAR_TEXTS[text] or text }, { q = TOPBAR_QUESTION, a = "confirm" } }
 end
 
--- Answer the setup with saved answers, in order: each one when its question is on screen. A question that
--- doesn't come (another version asks other things) is skipped after a while; one that isn't saved is left
--- for the player to answer.
-local function answerSetup(answers, name, firstWait)
-	if replaying or type(answers) ~= "table" or #answers == 0 then return false end
-	answers = finalAnswers(answers)
+-- The answer to a question from the saved settings (for a question without a recorded answer: a file saved
+-- before answers were kept, or a question the recording missed). Bloxy's questions, and the addons' steps
+-- whose pick is saved. nil when it isn't known.
+local function fromSettings(title, files)
+	local t = string.lower(title or "")
+	local config = decode(files[CONFIG_FILE])
+	config = type(config) == "table" and config or {}
+	local choices = type(config.Choices) == "table" and config.Choices or {}
+	local function yesNo(v)
+		if v == true then return { "Yes" } elseif v == false then return { "No" } end
+		return nil
+	end
+	local function pick(map, v)
+		local text = v ~= nil and map[v] or nil
+		return text and { text } or nil
+	end
+	local function has(word) return string.find(t, word, 1, true) ~= nil end
+	if has("topbar") then
+		local a = topbarAnswers(files)
+		return a and { a[1].a, "confirm" } or nil
+	end
+	if has("explosion") then return config.ExplosionStyle and { tostring(config.ExplosionStyle) } or nil end
+	if has("terrain") then
+		local terrain = decode(files[TERRAIN_FILE])
+		local v = type(terrain) == "table" and terrain.Terrain or nil
+		return v and { tostring(v) } or nil
+	end
+	if has("physics") and has("camera") then
+		return pick({ camera = "Old Camera", both = "Both", none = "None",
+			physics = (config.physicsVariant == "2006") and "2006 Physics" or "Old Physics" }, config.physicsCameraChoice)
+	end
+	if has("safe chat") then return yesNo(choices.SafeChat) end
+	if has("backpack") then return pick({ none = "No", simple = "Simple 2008 remake", advanced = "Advanced" }, choices.Backpack) end
+	if has("animations") then
+		local anim = decode(files[ANIM_FILE])
+		if type(anim) == "table" and anim.Animation2007 == true then return { "2007" } end
+		return pick({ R6_2008 = "2008", R6_2006 = "2006", R6_2014 = "2014", normal = "Normal",
+			R15_2008 = "2008 FE", R15_2014 = "2014 FE", R15_Old = "Old R15" }, choices.Anims)
+	end
+	if has("old sounds") then return yesNo(choices.Sounds) end
+	if has("cursor") or has("mouse") then
+		return pick({ ["2008_full"] = "full 2008 mouse", ["2008_aspects"] = "2008 mouse aspects", ["2016"] = "2016 mouse",
+			normal = "normal" }, choices.Mouse)
+	end
+	if has("textures") then
+		return pick({ ["2008"] = "2008 textures", ["2012"] = "2012 textures", ["2016"] = "2016 textures", normal = "Normal" }, choices.Textures)
+	end
+	if has("mobile jump") then return yesNo(choices.MobileJump) end
+	if has("2006 body") then return yesNo(choices.Body2006) end
+	if has("old materials") then return yesNo(choices.Materials) end
+	if has("forcefield") then return pick({ ["2008"] = "2008(r6 only)", ["2012"] = "2012", normal = "normal" }, choices.Forcefield) end
+	if has("old particles") and not has("which") then return yesNo(choices.Particles) end
+	if has("emotes") then return yesNo(choices.Emotes) end
+	return nil
+end
+
+-- the question on screen now (and its title)
+local function currentQuestion()
+	if not bloxyGui then return nil end
+	for _, frame in ipairs(bloxyGui:GetChildren()) do
+		if frame:IsA("Frame") and frame.Visible and frame ~= hammerPanel then
+			local title = questionTitle(frame)
+			if title then return frame, title end
+		end
+	end
+	return nil
+end
+
+-- Answer the setup: each question on screen gets its recorded answer (in the order they were given), else the
+-- one in the saved settings. It stops when a question has no saved answer at all (it is left to the player,
+-- and named in the console), when the player taps an answer themselves, or when no question shows for a while.
+local function answerSetup(answers, files, name, firstWait)
+	if replaying then return false end
 	replaying = true
 	tookOver = false
+	local queues = {}
+	for _, step in ipairs(finalAnswers(answers or {})) do
+		queues[step.q] = queues[step.q] or {}
+		table.insert(queues[step.q], step.a)
+	end
+	local fromFile = {}
 	task.spawn(function()
-		-- a load in the middle of the setup: from the question on screen now
-		local start = 1
-		for i, step in ipairs(answers) do
-			if visibleQuestion(step.q) then start = i break end
-		end
-		print(string.format("[Saved Settings] answering the setup with \"%s\" (%d answers)", name, #answers - start + 1))
-		local given, missed = 0, {}
-		for i = start, #answers do
-			local step = answers[i]
-			local deadline = os.clock() + ((i == start) and (firstWait or 30) or 25)
-			local btn, frame = nil, nil
-			local seenAt = nil
-			repeat
-				frame = visibleQuestion(step.q)
-				btn = frame and answerButton(frame, step.a)
-				-- the question is there but not that answer: More guis may still be adding its topbars, so
-				-- wait a bit longer (from when the question showed), then stop
-				if frame and not btn and not seenAt then
-					seenAt = os.clock()
-					deadline = math.max(deadline, seenAt + 40)
+		print(string.format("[Saved Settings] answering the setup with \"%s\"", name))
+		local given, fromSettingsCount = 0, 0
+		local idleSince = os.clock()
+		local lastFrame, lastTitle, lastAt = nil, nil, -math.huge
+		local stopReason = nil
+		while not destroyed do
+			if tookOver then stopReason = "you answered the setup yourself: the rest of it is up to you" break end
+			local frame, title = currentQuestion()
+			if not frame then
+				if os.clock() - idleSince > ((given == 0) and (firstWait or 20) or 12) then break end
+				task.wait(0.25)
+			elseif frame == lastFrame and title == lastTitle and os.clock() - lastAt < 1.2 then
+				task.wait(0.2) -- (just answered: it is on its way out)
+			else
+				-- its answers: recorded ones first, then (once) the saved settings'
+				if (not queues[title] or #queues[title] == 0) and not fromFile[title] then
+					fromFile[title] = true
+					local list = fromSettings(title, files)
+					if list then
+						queues[title] = list
+						fromSettingsCount = fromSettingsCount + #list
+					end
 				end
-				if not btn then task.wait(0.25) end
-			until btn or os.clock() > deadline or destroyed or tookOver
-			if destroyed then break end
-			if tookOver then
-				print("[Saved Settings] you answered the setup yourself: the rest of it is up to you")
-				break
-			end
-			if btn then
-				task.wait(0.35) -- (it has just slid in)
-				if tookOver then
-					print("[Saved Settings] you answered the setup yourself: the rest of it is up to you")
+				local queue = queues[title]
+				local isTopbar = string.find(string.lower(title), "topbar", 1, true) ~= nil
+				local btn, text = nil, nil
+				while queue and #queue > 0 and not btn and not tookOver do
+					local candidate = queue[1]
+					-- More guis may still be adding its topbars to the list: those get longer
+					local deadline = os.clock() + ((isTopbar and candidate ~= "confirm") and 40 or 3)
+					repeat
+						btn = answerButton(frame, candidate)
+						if not btn then task.wait(0.25) end
+					until btn or os.clock() > deadline or tookOver or not frame.Parent
+					table.remove(queue, 1)
+					if btn then
+						text = candidate
+					elseif isTopbar and candidate ~= "confirm" then
+						stopReason = "\"" .. candidate .. "\" isn't in the topbar list here: the rest of the setup is up to you"
+						break
+					end
+				end
+				if stopReason then break end
+				if not btn then
+					if not tookOver then
+						stopReason = "no saved answer for \"" .. title .. "\": the rest of the setup is up to you"
+					end
 					break
 				end
-				-- (still there: not answered meanwhile)
-				if btn.Parent and btn.Visible and press(btn) then given = given + 1 else table.insert(missed, step.a) end
-				task.wait(0.3)
-			elseif frame then
-				-- its question is on screen without that answer: the rest is left to the player (giving the
-				-- next answers anyway could confirm something else, like Bloxy's plain 2013)
-				table.insert(missed, step.q .. " " .. step.a)
-				print("[Saved Settings] \"" .. step.a .. "\" isn't in \"" .. step.q .. "\" here: the rest of the setup is up to you")
-				break
-			else
-				table.insert(missed, step.q .. " " .. step.a)
+				task.wait(0.35) -- (it has just slid in)
+				if tookOver then stopReason = "you answered the setup yourself: the rest of it is up to you" break end
+				if btn.Parent and btn.Visible and press(btn) then given = given + 1 end
+				lastFrame, lastTitle, lastAt = frame, title, os.clock()
+				idleSince = os.clock()
 			end
 		end
 		replaying = false
 		task.delay(1, keepOtherSettings)
+		if stopReason then print("[Saved Settings] " .. stopReason) end
 		print(string.format("[Saved Settings] setup answered with \"%s\": %d answer%s given%s", name, given,
-			given == 1 and "" or "s", #missed > 0 and ("; not found: " .. table.concat(missed, ", ")) or ""))
+			given == 1 and "" or "s", fromSettingsCount > 0 and (" (some from its saved settings)") or ""))
 	end)
 	return true
 end
@@ -668,12 +745,7 @@ local function loadSettings(name)
 	applying = true
 	local files = {}
 	for file, text in pairs(profile.files) do files[file] = text end
-	local answers = savedAnswers(files)
-	local onlyTopbar = false
-	if not answers then
-		answers = topbarAnswers(files)
-		onlyTopbar = answers ~= nil
-	end
+	local answers = savedAnswers(files) -- (nil for a file saved before answers were kept: its settings answer)
 	-- "skip setup" stays as it is now (the player's own choice, not part of a file: a file with it on made
 	-- Bloxy skip the setup and load its plain year, 2013 for 2013 mobile)
 	local config = decode(files[CONFIG_FILE])
@@ -748,20 +820,12 @@ local function loadSettings(name)
 			#failed > 0 and ("; couldn't press (used at the next start): " .. table.concat(failed, ", ")) or ""))
 	end
 	-- the setup (GUI, safe chat, explosion, ...): answered now if it is on screen, or as soon as it shows
-	local setupNow = false
-	if answers then
-		if not setupOnScreen() then
-			print("[Saved Settings] the setup isn't on screen: it is answered if it shows in the next 20 seconds"
-				.. " (load right after running the script, while the setup is showing)")
-		end
-		setupNow = answerSetup(answers, name, setupOnScreen() and 5 or 20)
-		if onlyTopbar then
-			print("[Saved Settings] this file was saved before setup answers were kept: only its topbar is picked;"
-				.. " answer the rest, then save it again so it keeps all of them")
-		end
-	else
-		print("[Saved Settings] this file has no setup answers: save it again after going through the setup")
+	local onScreen = setupOnScreen()
+	if not onScreen then
+		print("[Saved Settings] the setup isn't on screen: it is answered if it shows in the next 20 seconds"
+			.. " (load right after running the script, while the setup is showing)")
 	end
+	local setupNow = answerSetup(answers, files, name, onScreen and 5 or 20)
 	return true, setupNow
 end
 
