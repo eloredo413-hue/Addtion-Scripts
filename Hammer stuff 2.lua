@@ -68,6 +68,7 @@ task.spawn(function()
 		is2013DynamicEnabled    = config.is2013DynamicEnabled or false,
 		is2015AudioEnabled      = config.is2015AudioEnabled or false,
 		is2016AudioEnabled      = config.is2016AudioEnabled or false,
+		isOldHealthBarEnabled   = config.isOldHealthBarEnabled or false,
 	}
 
 	-- Hammer stuff 1 (and the base GUI) save to the same file, so re-read it first and
@@ -3355,6 +3356,28 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
+	-- 16. OLD HEALTHBAR (2013 MOBILE)
+	-- The other GUIs before 2014 always get the 2011-2013 health bar (the loader puts it on). The 2013
+	-- mobile GUI keeps its own unless this is ticked; it does nothing for the other GUIs.
+	------------------------------------------------------------
+	do
+		local genv = (getgenv and getgenv()) or _G
+		local function refresh()
+			if type(genv.BPRefreshHealthBar) == "function" then pcall(genv.BPRefreshHealthBar) end
+		end
+		function actions.applyOldHealthBar()
+			genv.BPOldHealthBar2013Mobile = true
+			refresh()
+			print("[Old Healthbar] On for the 2013 mobile GUI.")
+		end
+		function actions.restoreOldHealthBar()
+			genv.BPOldHealthBar2013Mobile = false
+			refresh()
+			print("[Old Healthbar] Off: the 2013 mobile GUI keeps its own health bar.")
+		end
+	end
+
+	------------------------------------------------------------
 	-- 10. HIDE GAME GUI (LOADSTRING HOOK)
 	-- The GUI Hider gist hides the game's own ScreenGuis (TopbarPlus,
 	-- HUDs, shop buttons) and leaves Bloxy Paradox and the era GUIs alone.
@@ -4055,6 +4078,18 @@ task.spawn(function()
 		helpText      = "Removes the leaderboard (the player list): Roblox's own and the era GUIs'. Phone GUIs had none for a long time. Untick to bring it back."
 	})
 
+	createAddonRow({
+		containerName = "OldHealthBarContainer",
+		checkboxName  = "OldHealthBarCheckbox",
+		helpName      = "OldHealthBarHelpButton",
+		label         = "old healthbar",
+		yPos          = startY,
+		stateKey      = "isOldHealthBarEnabled",
+		onEnable      = actions.applyOldHealthBar,
+		onDisable     = actions.restoreOldHealthBar,
+		helpText      = "For the 2013 mobile GUI only: its health bar becomes the 2011-2013 one (dark tray, green bar, HEALTH). The other GUIs before 2014 always have that one. Untick for the 2013 mobile GUI's own bar."
+	})
+
 	------------------------------------------------------------
 	-- OLD DECAL RENDERING BUTTON
 	------------------------------------------------------------
@@ -4195,6 +4230,7 @@ task.spawn(function()
 	if state.isOldCameraSoundEnabled then task.spawn(actions.applyOldCameraSound) end
 	if state.isOldPartSoundsEnabled then task.spawn(actions.applyOldPartSounds) end
 	if state.isRemoveLeaderboardEnabled then task.spawn(actions.applyRemoveLeaderboard) end
+	if state.isOldHealthBarEnabled then task.spawn(actions.applyOldHealthBar) end
 	if state.is2013DynamicEnabled then task.spawn(actions.apply2013Dynamic) end
 	if state.is2015AudioEnabled then task.spawn(actions.apply2015Audio)
 	elseif state.is2016AudioEnabled then task.spawn(actions.apply2016Audio) end

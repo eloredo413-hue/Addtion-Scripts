@@ -395,97 +395,107 @@ print("[Explosion] 2013 style LOADED and HOOKED.")
 	local handled = setmetatable({}, {__mode = "k"})
 	local busy = false
 
-	-- The explosion question is looked for about 7 times a second, not every frame (it went through every
-	-- one of Bloxy's windows and everything in them on every frame).
+	-- The explosion step goes on Bloxy's "old particles" question BEFORE the Particles addon turns that
+	-- question into its own step (after an explosion is picked, the question is put back for it). So a
+	-- new question is looked at the moment it is added (it is built in one go, so it is complete a
+	-- moment later), not by going through all of Bloxy's windows on every frame.
+	local function tryFrame(frame)
+		if frame:IsA("Frame") and not handled[frame] and not busy then
+			local titleLabel, yesBtn, noBtn
+
+			for _, d in ipairs(frame:GetDescendants()) do
+				if d:IsA("TextLabel") and type(d.Text) == "string" then
+					local t = d.Text:lower()
+					if t:find("particle", 1, true) or t:find("explosion", 1, true) then
+						titleLabel = d
+					end
+				end
+				if d:IsA("TextButton") then
+					if d.Text == "Yes" then yesBtn = d end
+					if d.Text == "No" then noBtn = d end
+				end
+			end
+
+			if titleLabel and yesBtn and noBtn then
+				handled[frame] = true
+				busy = true
+				print("[Explosion Step] Frame detected: " .. titleLabel.Text)
+
+				local originalTitle = titleLabel.Text
+
+				titleLabel.Text = "Choose your explosion style:"
+				yesBtn.Visible = false
+				noBtn.Visible = false
+
+				local opts = {
+					{text = "2006",   x = 14,  width = 60, style = "2006"},
+					{text = "2007",   x = 78,  width = 60, style = "2007"},
+					{text = "2010",   x = 142, width = 60, style = "2010"},
+					{text = "2013",   x = 206, width = 60, style = "2013"},
+					{text = "Normal", x = 270, width = 76, style = "Normal"},
+				}
+
+				local myButtons = {}
+
+				for _, opt in ipairs(opts) do
+					local btn = makeButton(opt.text, UDim2.new(0, opt.x, 0, 45), opt.width, frame)
+					table.insert(myButtons, btn)
+
+					btn.MouseButton1Click:Connect(function()
+						playClick()
+						print("[Explosion] Picked " .. opt.style)
+						saveStyle(opt.style)
+
+						-- Run the script
+						runExplosionScript(opt.style)
+
+						-- Slide the frame up and out
+						local upTween = TweenService:Create(
+							frame,
+							TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In),
+							{ Position = UDim2.new(0.5, -180, 0, -250) }
+						)
+						upTween:Play()
+						upTween.Completed:Wait()
+
+						for _, b in ipairs(myButtons) do
+							if b and b.Parent then b:Destroy() end
+						end
+						myButtons = {}
+
+						titleLabel.Text = originalTitle
+						yesBtn.Visible = true
+						noBtn.Visible = true
+
+						TweenService:Create(
+							frame,
+							TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+							{ Position = UDim2.new(0.5, -180, 0.5, -42) }
+						):Play()
+
+						task.wait(0.5)
+						busy = false
+					end)
+				end
+
+				return true
+			end
+		end
+		return false
+	end
+
+	sg.ChildAdded:Connect(function(frame)
+		task.defer(function() pcall(tryFrame, frame) end)
+	end)
+	-- (questions already there, and any missed: looked at twice a second)
 	local lookAcc = 0
 	RunService.RenderStepped:Connect(function(dt)
 		if not sg or not sg.Parent then return end
 		lookAcc = lookAcc + (dt or 0)
-		if lookAcc < 0.15 then return end
+		if lookAcc < 0.5 then return end
 		lookAcc = 0
-
 		for _, frame in ipairs(sg:GetChildren()) do
-			if frame:IsA("Frame") and not handled[frame] and not busy then
-				local titleLabel, yesBtn, noBtn
-
-				for _, d in ipairs(frame:GetDescendants()) do
-					if d:IsA("TextLabel") and type(d.Text) == "string" then
-						local t = d.Text:lower()
-						if t:find("particle", 1, true) or t:find("explosion", 1, true) then
-							titleLabel = d
-						end
-					end
-					if d:IsA("TextButton") then
-						if d.Text == "Yes" then yesBtn = d end
-						if d.Text == "No" then noBtn = d end
-					end
-				end
-
-				if titleLabel and yesBtn and noBtn then
-					handled[frame] = true
-					busy = true
-					print("[Explosion Step] Frame detected: " .. titleLabel.Text)
-
-					local originalTitle = titleLabel.Text
-
-					titleLabel.Text = "Choose your explosion style:"
-					yesBtn.Visible = false
-					noBtn.Visible = false
-
-					local opts = {
-						{text = "2006",   x = 14,  width = 60, style = "2006"},
-						{text = "2007",   x = 78,  width = 60, style = "2007"},
-						{text = "2010",   x = 142, width = 60, style = "2010"},
-						{text = "2013",   x = 206, width = 60, style = "2013"},
-						{text = "Normal", x = 270, width = 76, style = "Normal"},
-					}
-
-					local myButtons = {}
-
-					for _, opt in ipairs(opts) do
-						local btn = makeButton(opt.text, UDim2.new(0, opt.x, 0, 45), opt.width, frame)
-						table.insert(myButtons, btn)
-
-						btn.MouseButton1Click:Connect(function()
-							playClick()
-							print("[Explosion] Picked " .. opt.style)
-							saveStyle(opt.style)
-
-							-- Run the script
-							runExplosionScript(opt.style)
-
-							-- Slide the frame up and out
-							local upTween = TweenService:Create(
-								frame,
-								TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In),
-								{ Position = UDim2.new(0.5, -180, 0, -250) }
-							)
-							upTween:Play()
-							upTween.Completed:Wait()
-
-							for _, b in ipairs(myButtons) do
-								if b and b.Parent then b:Destroy() end
-							end
-							myButtons = {}
-
-							titleLabel.Text = originalTitle
-							yesBtn.Visible = true
-							noBtn.Visible = true
-
-							TweenService:Create(
-								frame,
-								TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-								{ Position = UDim2.new(0.5, -180, 0.5, -42) }
-							):Play()
-
-							task.wait(0.5)
-							busy = false
-						end)
-					end
-
-					return
-				end
-			end
+			if tryFrame(frame) then return end
 		end
 	end)
 

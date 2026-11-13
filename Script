@@ -2610,6 +2610,42 @@ end
     end
 
     local backpack2013Loaded = false
+    --========================================================
+    -- OLD HEALTH BAR (Old Health Bar.lua in this repo): the 2011-2013 health bar in place of the GUI's own,
+    -- for every GUI before 2014. The 2013 mobile GUI keeps its own unless Hammer stuff 2's "old healthbar"
+    -- is ticked. Off for 2014 and later.
+    --========================================================
+    local URL_OLD_HEALTH_BAR = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Old%20Health%20Bar.lua"
+    local healthBarLoading = false
+    local updateOldHealthBar
+    updateOldHealthBar = function()
+        local env = getgenv()
+        local era = env.BloxyEra
+        local pick = tostring(env.BloxyTopbarPick or env.BloxyTopbarRaw or "")
+        local year = tonumber(string.match(pick, "(20%d%d)"))
+        local mobile2013 = string.find(string.lower(pick), "mobile", 1, true) ~= nil
+        local wanted = era ~= nil and era ~= "none" and era ~= "early2015" and year ~= nil and year < 2014
+        if wanted and mobile2013 then wanted = env.BPOldHealthBar2013Mobile == true end
+        local api = env.OldHealthBar
+        if wanted then
+            if api then pcall(api.Start) return end
+            if healthBarLoading then return end
+            healthBarLoading = true
+            task.spawn(function()
+                local _, why = loadUrl(URL_OLD_HEALTH_BAR, "Old Health Bar")
+                healthBarLoading = false
+                if why == "download" then
+                    warn("[Loader] Old Health Bar.lua couldn't be downloaded")
+                    return
+                end
+                pcall(updateOldHealthBar) -- (the GUI may have changed while it downloaded)
+            end)
+        elseif api then
+            pcall(api.Stop)
+        end
+    end
+    getgenv().BPRefreshHealthBar = function() pcall(updateOldHealthBar) end
+
     local function evaluateAndLoad()
         local era, raw = getSelectedEra()
         if confirmedVariant then
@@ -2618,6 +2654,7 @@ end
         print("[Loader] topbar choice \"" .. tostring(raw) .. "\" -> era: " .. era)
         getgenv().BloxyEra = era
         getgenv().BloxyTopbarRaw = tostring(raw)
+        pcall(updateOldHealthBar)
         -- the bubble script each era runs (none for "none", 2015 early, 2010, 2006 and 2005)
         local bubbleEra = era
         if era == "none" or era == "early2015" or era == "y2010" or era == "y2006" or era == "y2005" then
