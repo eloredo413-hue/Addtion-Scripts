@@ -47,40 +47,22 @@ local OUR_GUI = "BPOldHealthBar"
 local DEFAULT_SIZE = UDim2.new(0, 170, 0, 18)
 local DEFAULT_POSITION = UDim2.new(0.5, -85, 1, -22)
 
--- Measured from the reference picture of the bar (a 501 x 58 tray):
--- the green bar fills most of the tray, with a thin dark edge round it
+-- Measured from the user's recordings of the bar (a 510 x 52 tray at the bottom of the screen): the green
+-- bar fills 85% of the tray's height with only a thin dark edge round it (it was 60%, which made it
+-- look short), in from the metal ends at each side; HEALTH on the right, about a third of the tray tall.
 local BAR_LEFT = 0.02
-local BAR_WIDTH = 0.96
-local BAR_TOP = 0.17
-local BAR_HEIGHT = 0.73
+local BAR_WIDTH = 0.958
+local BAR_TOP = 0.076
+local BAR_HEIGHT = 0.848
 
--- the bar's shading, top to bottom: a light shine, the green, darker towards the bottom, a little lighter
--- at the very bottom (as in the reference); red the same way at a quarter health or less
-local GREEN = ColorSequence.new({
-	ColorSequenceKeypoint.new(0.00, Color3.fromRGB(116, 178, 96)),
-	ColorSequenceKeypoint.new(0.12, Color3.fromRGB(66, 149, 41)),
-	ColorSequenceKeypoint.new(0.45, Color3.fromRGB(52, 121, 31)),
-	ColorSequenceKeypoint.new(0.85, Color3.fromRGB(29, 78, 16)),
-	ColorSequenceKeypoint.new(1.00, Color3.fromRGB(55, 104, 38)),
-})
-local RED = ColorSequence.new({
-	ColorSequenceKeypoint.new(0.00, Color3.fromRGB(214, 110, 96)),
-	ColorSequenceKeypoint.new(0.12, Color3.fromRGB(178, 46, 34)),
-	ColorSequenceKeypoint.new(0.45, Color3.fromRGB(146, 32, 22)),
-	ColorSequenceKeypoint.new(0.85, Color3.fromRGB(92, 16, 10)),
-	ColorSequenceKeypoint.new(1.00, Color3.fromRGB(120, 40, 32)),
-})
-
--- "HEALTH", white pixel letters on the right of the bar, about a third of the tray tall
-local LABEL_POSITION = UDim2.new(0.68, 0, 0.33, 0)
-local LABEL_SIZE = UDim2.new(0.255, 0, 0.32, 0)
+local LABEL_POSITION = UDim2.new(0.68, 0, 0.29, 0)
+local LABEL_SIZE = UDim2.new(0.25, 0, 0.36, 0)
 
 local FLASH_DURATION = 0.18
 local OVERLAY_PERCENT = 5 -- a hit of this much of the health or more shows the red hurt overlay
 
 local running = false
 local gui, tray, bar, whiteFlash, hurtOverlay = nil, nil, nil, nil, nil
-local barGradient = nil
 local conns = {}
 local charConns = {}
 local hidden = {}         -- the GUI's own health bars: object -> { prop, was, conn }
@@ -232,48 +214,25 @@ local function build()
 	tray.ZIndex = 2
 	tray.Parent = gui
 
-	-- the tray: dark grey, rounded ends, a thin light line along its top edge
-	local bkg = Instance.new("Frame")
+	local bkg = Instance.new("ImageLabel")
 	bkg.Name = "bkg"
-	bkg.BackgroundColor3 = Color3.fromRGB(42, 44, 42)
+	bkg.BackgroundTransparency = 1
 	bkg.BorderSizePixel = 0
+	bkg.Image = ASSET_BKG
 	bkg.Size = UDim2.new(1, 0, 1, 0)
 	bkg.ZIndex = 2
 	bkg.Parent = tray
-	local bkgCorner = Instance.new("UICorner")
-	bkgCorner.CornerRadius = UDim.new(0.18, 0)
-	bkgCorner.Parent = bkg
-	local bkgStroke = Instance.new("UIStroke")
-	bkgStroke.Color = Color3.fromRGB(28, 30, 28)
-	bkgStroke.Thickness = 1
-	bkgStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	bkgStroke.Parent = bkg
-	local shine = Instance.new("Frame")
-	shine.Name = "shine"
-	shine.BackgroundColor3 = Color3.fromRGB(186, 185, 188)
-	shine.BackgroundTransparency = 0.15
-	shine.BorderSizePixel = 0
-	shine.Position = UDim2.new(0.03, 0, 0, 0)
-	shine.Size = UDim2.new(0.94, 0, 0, 1)
-	shine.ZIndex = 2
-	shine.Parent = bkg
 
-	-- the bar: drawn with the reference's shading (the old bar picture stretched into hard bands)
-	bar = Instance.new("Frame")
+	bar = Instance.new("ImageLabel")
 	bar.Name = "bar"
-	bar.BackgroundColor3 = Color3.new(1, 1, 1)
+	bar.BackgroundTransparency = 1
 	bar.BorderSizePixel = 0
+	bar.Image = ASSET_BAR_GREEN
+	bar.ScaleType = Enum.ScaleType.Stretch
 	bar.Position = UDim2.new(BAR_LEFT, 0, BAR_TOP, 0)
 	bar.Size = UDim2.new(BAR_WIDTH, 0, BAR_HEIGHT, 0)
 	bar.ZIndex = 3
 	bar.Parent = tray
-	local barCorner = Instance.new("UICorner")
-	barCorner.CornerRadius = UDim.new(0.12, 0)
-	barCorner.Parent = bar
-	barGradient = Instance.new("UIGradient")
-	barGradient.Rotation = 90
-	barGradient.Color = GREEN
-	barGradient.Parent = bar
 
 	whiteFlash = Instance.new("Frame")
 	whiteFlash.Name = "WhiteFlash"
@@ -297,7 +256,7 @@ local function build()
 	label.Parent = tray
 
 	task.spawn(function()
-		pcall(function() ContentProvider:PreloadAsync({ hurtOverlay, label }) end)
+		pcall(function() ContentProvider:PreloadAsync({ hurtOverlay, bkg, bar, label }) end)
 	end)
 end
 
@@ -337,8 +296,7 @@ local function update(health)
 		bar.Visible = false
 	else
 		bar.Visible = true
-		local colors = (ratio > 0.25) and GREEN or RED
-		if barGradient and barGradient.Color ~= colors then barGradient.Color = colors end
+		bar.Image = (ratio > 0.25) and ASSET_BAR_GREEN or ASSET_BAR_RED
 		bar.Position = UDim2.new(BAR_LEFT + BAR_WIDTH * (1 - ratio), 0, BAR_TOP, 0)
 		bar.Size = UDim2.new(BAR_WIDTH * ratio, 0, BAR_HEIGHT, 0)
 	end
