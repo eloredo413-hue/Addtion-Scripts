@@ -305,13 +305,21 @@ do
     end
 
     local styled = setmetatable({}, { __mode = "k" })
+    local told = setmetatable({}, { __mode = "k" })
     local function threeButtons(parent)
         if styled[parent] then return end
         local year = topbarYear()
         if not year or year < 2017 or year >= 2023 then return end
         local found = menuButtons(parent)
         local reset, leave = found.reset, found.leave
-        if not (reset and leave) then return end
+        if not (reset and leave) then
+            if not told[parent] then
+                told[parent] = true
+                print("[Loader] escape menu: Reset / Leave not side by side in " .. parent:GetFullName()
+                    .. " (reset " .. tostring(reset ~= nil) .. ", leave " .. tostring(leave ~= nil) .. ")")
+            end
+            return
+        end
         styled[parent] = true
 
         local resume = found.resume
@@ -423,6 +431,11 @@ do
             padPageView(obj)
         end
         if obj.Name == "HubBar" and obj.Parent then
+            if not seenHubs[obj.Parent] then
+                print("[Loader] escape menu found in " .. obj.Parent:GetFullName() .. "; topbar year: "
+                    .. tostring(topbarYear()) .. " (pick " .. tostring(getgenv().BloxyTopbarPick)
+                    .. ", saved " .. tostring(getgenv().BloxyTopbarRaw) .. ")")
+            end
             seenHubs[obj.Parent] = true
         end
         if obj:IsA("TextLabel") or obj:IsA("TextButton") then
