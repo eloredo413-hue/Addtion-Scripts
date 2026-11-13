@@ -29,6 +29,7 @@
 --   of ours runs over them); 2011-2014 / mobile use the built-in 2011-style ones; 2015/2016 the 2017 ones
 -- + Saved settings: a floppy disk under Bloxy's hammer opens a panel to save / load / rename / delete named
 --   copies of the setup and hammer settings (Saved Settings.lua)
+-- + "Skip setup" brings back More guis' topbars too (2013 mobile, 2023 old...): the pick is saved at Confirm
 --========================================================
 
 if getgenv().ClassicDialogCleanup then
@@ -64,6 +65,62 @@ local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
 local TextService = game:GetService("TextService")
 local Workspace = game:GetService("Workspace")
+
+--========================================================
+-- THE TOPBAR PICKED IN MORE GUIS, KEPT FOR "SKIP SETUP"
+-- More guis' topbars (2013 mobile, 2023 old / new, 2021, 2015 early, 2008, 2006, 2005...) press one of
+-- Bloxy's own years and swap their GUI in when Bloxy runs that year's code. Which one was picked was only
+-- kept while the game ran, so with "skip setup" (and after loading saved settings and rejoining) Bloxy's
+-- own year came back instead. The pick is now saved at Confirm (BloxyTopbarPick.json), and when Bloxy is
+-- going to load its saved setup by itself, it is put back first, so the same GUI comes back.
+--========================================================
+local TOPBAR_PICK_FILE = "BloxyTopbarPick.json"
+local MORE_GUIS_PICKS = {
+    ["2024"] = { pending = "2024" },
+    ["2021"] = { pending = "2021" },
+    ["2019"] = { pending = "2019" },
+    ["2017"] = { pending = "2017" },
+    ["2015 early"] = { pending = "2015early" },
+    ["2013 mobile"] = { pending = "2013mobile", force2008Bubbles = true },
+    ["2008"] = { pending = "2008" },
+    ["2006"] = { pending = "2006" },
+    ["2005"] = { pending = "2005" },
+    ["2023 new"] = { variant = "new" },
+    ["2023 old"] = { variant = "old" },
+}
+-- (More guis' own names for them, from BP_PendingTopbar)
+MORE_GUIS_PICKS["2015early"] = MORE_GUIS_PICKS["2015 early"]
+MORE_GUIS_PICKS["2013mobile"] = MORE_GUIS_PICKS["2013 mobile"]
+
+local function readJsonFile(name)
+    local ok, data = pcall(function()
+        if readfile and isfile and isfile(name) then return HttpService:JSONDecode(readfile(name)) end
+        return nil
+    end)
+    return ok and type(data) == "table" and data or nil
+end
+
+local restoredTopbarPick = nil
+do
+    local config = readJsonFile("BloxyParadoxConfig.json")
+    local saved = readJsonFile(TOPBAR_PICK_FILE)
+    local pick = saved and type(saved.Pick) == "string" and string.lower(saved.Pick) or nil
+    local player = Players.LocalPlayer
+    local playerGui = player and player:FindFirstChildOfClass("PlayerGui")
+    -- (only before Bloxy has started: once it has, it has already loaded its topbar)
+    local bloxyStarted = playerGui and playerGui:FindFirstChild("BloxyParadoxProject") ~= nil
+    if config and config.isSkipped == true and pick and not bloxyStarted then
+        local entry = MORE_GUIS_PICKS[pick]
+        if entry then
+            getgenv().BP_PendingTopbar = entry.pending
+            getgenv().BP_2023Variant = entry.variant
+            getgenv().Force2008BubbleChat = entry.force2008Bubbles == true
+            print("[Loader] skip setup: the topbar picked last time (" .. pick .. ") is put back for Bloxy")
+        end
+        getgenv().BloxyTopbarPick = pick
+        restoredTopbarPick = pick
+    end
+end
 
 --========================================================
 -- KEEP ROBLOX'S NPC DIALOG BOX
@@ -2813,6 +2870,12 @@ end
         do
             local pick = (listText and cleanListText(listText)) or getgenv().BP_PendingTopbar
             getgenv().BloxyTopbarPick = pick and tostring(pick) or nil
+            -- kept for "skip setup" (see THE TOPBAR PICKED IN MORE GUIS at the top)
+            if pick and writefile then
+                pcall(function()
+                    writefile(TOPBAR_PICK_FILE, HttpService:JSONEncode({ Pick = tostring(pick) }))
+                end)
+            end
             if getgenv().BPMenuRecheck then
                 for _, delay in ipairs({ 0.3, 1.5, 4 }) do task.delay(delay, getgenv().BPMenuRecheck) end
             end
@@ -2871,6 +2934,12 @@ end
         task.wait(3)
         if confirmSeen or topbarQuestionShown(sg) then return end
         print("[Loader] Bloxy loaded its saved topbar without a Confirm: following it")
+        -- a More guis pick put back at the start: its era (2015 early, 2008, 2006, 2005 save another year)
+        if restoredTopbarPick and not confirmedVariant then
+            confirmedVariant = TOPBAR_VARIANTS[restoredTopbarPick]
+                or PENDING_VARIANTS[MORE_GUIS_PICKS[restoredTopbarPick] and MORE_GUIS_PICKS[restoredTopbarPick].pending or ""]
+            confirmedVariantName = confirmedVariant and restoredTopbarPick or nil
+        end
         for _, delay in ipairs({ 0, 2, 4 }) do
             task.delay(delay, function()
                 if not confirmSeen then evaluateAndLoad() end

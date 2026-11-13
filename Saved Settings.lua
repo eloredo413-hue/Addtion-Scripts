@@ -7,13 +7,15 @@
 --   * Bloxy's whole settings file (BloxyParadoxConfig.json): every setup (wizard) choice, skip setup, every
 --     option of the hammer's side panel (Bloxy's, Hammer stuff 1's and Hammer stuff 2's, the dropdowns too),
 --     and the old physics and explosion picks
---   * the setup steps that keep their pick in a file of their own: terrain (BloxyTerrainChoice.json) and the
---     2007 animation (BloxyAnimation2007Choice.json)
+--   * the setup steps that keep their pick in a file of their own: terrain (BloxyTerrainChoice.json), the
+--     2007 animation (BloxyAnimation2007Choice.json) and the topbar picked in More guis (BloxyTopbarPick.json:
+--     2013 mobile, 2023 old... Bloxy itself only saves the year they press)
 --
--- Loading puts those files back and ticks / unticks the hammer's boxes to match straight away (by pressing
--- them, so each option turns itself on or off as usual). Setup choices (topbar, physics, ...) only take effect
--- when the scripts start, so when those are different the load button then offers "rejoin?": a second tap
--- rejoins this server and runs the scripts again there (with "skip setup" on, so the loaded setup is used).
+-- Loading puts those files back, with "skip setup" on (so the next start uses the loaded setup instead of
+-- asking again), and ticks / unticks the hammer's boxes to match straight away (by pressing them, so each
+-- option turns itself on or off as usual). Setup choices (topbar, physics, ...) only take effect when the
+-- scripts start, so when those are different the load button then offers "rejoin?": a second tap rejoins
+-- this server and runs the scripts again there.
 --
 -- The loader loads it, and so do the 2021 / 2023 old / 2023 new GUIs after the rejoin they do (the loader
 -- doesn't run in the server they rejoin). Running it again replaces the earlier copy.
@@ -48,11 +50,13 @@ local STORE_FILE = "BloxyParadoxSavedSettings.json"
 local CONFIG_FILE = "BloxyParadoxConfig.json"
 local ANIM_FILE = "BloxyAnimation2007Choice.json"
 local TERRAIN_FILE = "BloxyTerrainChoice.json"
-local SETTINGS_FILES = { CONFIG_FILE, ANIM_FILE, TERRAIN_FILE }
+local TOPBAR_PICK_FILE = "BloxyTopbarPick.json"
+local SETTINGS_FILES = { CONFIG_FILE, ANIM_FILE, TERRAIN_FILE, TOPBAR_PICK_FILE }
 -- written when the saved settings had no such file (that step was never picked: the same as no file)
 local WHEN_MISSING = {
 	[ANIM_FILE] = '{"Animation2007":false}',
 	[TERRAIN_FILE] = '{}',
+	[TOPBAR_PICK_FILE] = '{}',
 }
 
 local ICON_IMAGE = "rbxthumb://type=Asset&id=90842402386374&w=420&h=420"
@@ -124,7 +128,7 @@ for _, key in pairs(HAMMER_BOXES) do LIVE_KEYS[key] = true end
 -- run again after the rejoin that applies loaded setup choices: this loader, then Bloxy (if it isn't there)
 local LOADER_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/refs/heads/main/Script"
 local BLOXY_URL = "https://raw.githubusercontent.com/MOCCAPAZZA/BLOXY-PARADOX-OFFICIAL/refs/heads/main/BLOXY%20PARADOX%20SOURCE%20CODE"
-local REJOIN_OFFER_TIME = 8
+local REJOIN_OFFER_TIME = 30
 
 ------------------------------------------------------------
 -- FILES
@@ -446,7 +450,16 @@ local function loadSettings(name)
 	if not runningFiles or not lastLoadedFiles or setupDiffers(before, lastLoadedFiles) then
 		runningFiles = before
 	end
-	local config = decode(profile.files[CONFIG_FILE]) or {}
+	-- the saved files, with "skip setup" on: the next start (a rejoin, or running the script again) uses
+	-- this setup instead of asking the setup questions again, which would write over it
+	local files = {}
+	for file, text in pairs(profile.files) do files[file] = text end
+	local config = decode(profile.files[CONFIG_FILE])
+	if type(config) ~= "table" then config = {} end
+	if config.isSkipped ~= true then
+		config.isSkipped = true
+		files[CONFIG_FILE] = encode(config) or files[CONFIG_FILE]
+	end
 	local wanted = function(key) return config[key] == true end
 	local changed, couldNot = 0, 0
 	local function pressBox(box)
@@ -461,7 +474,7 @@ local function loadSettings(name)
 			if box and boxIsOn(box) ~= wanted(key) then pressBox(box) end
 		end
 		-- 2. the files
-		putFilesBack(profile.files)
+		putFilesBack(files)
 		-- 3. the hammer's options: the ones to turn off first, then the ones to turn on (some untick each other)
 		local turnOn = {}
 		for boxName, key in pairs(HAMMER_BOXES) do
@@ -482,7 +495,7 @@ local function loadSettings(name)
 		if decal and oldDecalIsOn(decal) ~= wanted(OLD_DECAL_KEY) then pressBox(decal) end
 		-- 4. the files once more, exactly as saved (the presses wrote their own copies on the way)
 		task.wait(0.3)
-		putFilesBack(profile.files)
+		putFilesBack(files)
 	end)
 	applying = false
 
@@ -490,16 +503,19 @@ local function loadSettings(name)
 	writeStore()
 	if not ok then
 		warn("[Saved Settings] something went wrong while loading \"" .. name .. "\"; its files were put back")
-		putFilesBack(profile.files)
+		putFilesBack(files)
 	end
-	lastLoadedFiles = profile.files
-	local needsRestart = couldNot > 0 or setupDiffers(runningFiles, profile.files)
+	lastLoadedFiles = files
+	local needsRestart = couldNot > 0 or setupDiffers(runningFiles, files)
 	print(string.format("[Saved Settings] loaded \"%s\": %d hammer option%s changed now%s", name, changed,
 		changed == 1 and "" or "s",
 		couldNot > 0 and (" (" .. couldNot .. " couldn't be pressed here)") or ""))
 	if needsRestart then
 		print("[Saved Settings] its setup choices (topbar, physics, ...) take effect when the scripts start:"
-			.. " tap \"rejoin?\" on it to rejoin this server and run them again with these settings")
+			.. " tap \"rejoin?\" on it to rejoin this server and run them again with these settings"
+			.. " (or rejoin and run your script yourself: skip setup is on, so they are used)")
+	elseif changed == 0 then
+		print("[Saved Settings] \"" .. name .. "\" is already what is in use: nothing to change")
 	end
 	return true, changed, couldNot, needsRestart
 end
@@ -523,7 +539,11 @@ if not game:IsLoaded() then game.Loaded:Wait() end
 task.spawn(function()
 	pcall(function() loadstring(game:HttpGet(%q))() end)
 end)
-task.wait(2)
+-- Bloxy after More guis is in (it swaps its topbars in when Bloxy loads the saved one)
+local env = (getgenv and getgenv()) or _G
+local t0 = os.clock()
+repeat task.wait(0.5) until env.BP_TrueLS ~= nil or os.clock() - t0 > 40
+task.wait(1)
 local player = game:GetService("Players").LocalPlayer
 local playerGui = player and player:WaitForChild("PlayerGui", 30)
 if playerGui and not playerGui:FindFirstChild("BloxyParadoxProject") then
