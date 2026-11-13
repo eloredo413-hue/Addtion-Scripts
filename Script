@@ -2613,8 +2613,8 @@ end
     local backpack2013Loaded = false
     --========================================================
     -- OLD HEALTH BAR (Old Health Bar.lua in this repo): the 2011-2013 health bar in place of the GUI's own,
-    -- for every GUI before 2014. The 2013 mobile GUI keeps its own unless Hammer stuff 2's "old healthbar"
-    -- is ticked. Off for 2014 and later.
+    -- for every GUI before 2013. The 2013 GUIs (regular and mobile) keep their own unless Hammer stuff 2's
+    -- "old healthbar" is ticked. Off for 2014 and later.
     --========================================================
     local URL_OLD_HEALTH_BAR = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Old%20Health%20Bar.lua"
     local healthBarLoading = false
@@ -2624,9 +2624,11 @@ end
         local era = env.BloxyEra
         local pick = tostring(env.BloxyTopbarPick or env.BloxyTopbarRaw or "")
         local year = tonumber(string.match(pick, "(20%d%d)"))
-        local mobile2013 = string.find(string.lower(pick), "mobile", 1, true) ~= nil
         local wanted = era ~= nil and era ~= "none" and era ~= "early2015" and year ~= nil and year < 2014
-        if wanted and mobile2013 then wanted = env.BPOldHealthBar2013Mobile == true end
+        if wanted and year == 2013 then
+            -- 2013 and 2013 mobile: only with "old healthbar" ticked
+            wanted = env.BPOldHealthBar2013 == true or env.BPOldHealthBar2013Mobile == true
+        end
         local api = env.OldHealthBar
         if wanted then
             if api then pcall(api.Start) return end

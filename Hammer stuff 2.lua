@@ -3356,9 +3356,9 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
-	-- 16. OLD HEALTHBAR (2013 MOBILE)
-	-- The other GUIs before 2014 always get the 2011-2013 health bar (the loader puts it on). The 2013
-	-- mobile GUI keeps its own unless this is ticked; it does nothing for the other GUIs.
+	-- 16. OLD HEALTHBAR (2013 AND 2013 MOBILE)
+	-- The GUIs before 2013 always get the 2011-2013 health bar (the loader puts it on). The 2013 GUI and
+	-- the 2013 mobile GUI keep their own unless this is ticked; it does nothing for the other GUIs.
 	------------------------------------------------------------
 	do
 		local genv = (getgenv and getgenv()) or _G
@@ -3366,14 +3366,16 @@ task.spawn(function()
 			if type(genv.BPRefreshHealthBar) == "function" then pcall(genv.BPRefreshHealthBar) end
 		end
 		function actions.applyOldHealthBar()
+			genv.BPOldHealthBar2013 = true
 			genv.BPOldHealthBar2013Mobile = true
 			refresh()
-			print("[Old Healthbar] On for the 2013 mobile GUI.")
+			print("[Old Healthbar] On for the 2013 and 2013 mobile GUIs.")
 		end
 		function actions.restoreOldHealthBar()
+			genv.BPOldHealthBar2013 = false
 			genv.BPOldHealthBar2013Mobile = false
 			refresh()
-			print("[Old Healthbar] Off: the 2013 mobile GUI keeps its own health bar.")
+			print("[Old Healthbar] Off: the 2013 and 2013 mobile GUIs keep their own health bar.")
 		end
 	end
 
@@ -4087,7 +4089,7 @@ task.spawn(function()
 		stateKey      = "isOldHealthBarEnabled",
 		onEnable      = actions.applyOldHealthBar,
 		onDisable     = actions.restoreOldHealthBar,
-		helpText      = "For the 2013 mobile GUI only: its health bar becomes the 2011-2013 one (dark tray, green bar, HEALTH). The other GUIs before 2014 always have that one. Untick for the 2013 mobile GUI's own bar."
+		helpText      = "For the 2013 and 2013 mobile GUIs only: their health bar becomes the 2011-2013 one (dark tray, green bar, HEALTH). The GUIs before 2013 always have that one. Untick for the 2013 GUIs' own bar."
 	})
 
 	------------------------------------------------------------
