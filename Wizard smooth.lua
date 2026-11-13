@@ -430,8 +430,17 @@ task.spawn(function()
 		end)
 	end)
 
-	RunService.RenderStepped:Connect(function()
+	-- Every frame only while a setup question is on screen (the questions are also caught the moment
+	-- they're added, above); after the setup a look twice a second is plenty. It went through Bloxy's
+	-- whole GUI on every frame for the whole game.
+	local idleAcc = 0
+	RunService.RenderStepped:Connect(function(dt)
 		if not sg or not sg.Parent then return end
+		if questionCount <= 0 then
+			idleAcc = idleAcc + (dt or 0)
+			if idleAcc < 0.5 then return end
+			idleAcc = 0
+		end
 
 		for _, frame in ipairs(sg:GetChildren()) do
 			if frame.Name ~= OWN_PANEL then check(frame) end

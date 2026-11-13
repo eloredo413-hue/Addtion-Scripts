@@ -114,6 +114,7 @@ task.spawn(function()
 			active = false,
 			connections = {},
 			humanoids = {},
+			updates = {},  -- label -> its update function
 			baseGui = nil
 		}
 
@@ -166,11 +167,11 @@ task.spawn(function()
 		end
 
 		local function setupHumanoidESP(h)
-			local updateCon = nil
+			local updateCon = nil -- (the entry in hpState.updates for this humanoid's label)
 			local currentHealth = nil
 
 			local function onAncestryChanged()
-				if updateCon then updateCon:Disconnect() updateCon = nil end
+				if updateCon then hpState.updates[updateCon] = nil updateCon = nil end
 				if currentHealth then currentHealth:Destroy() currentHealth = nil end
 
 				local char = h.Parent
@@ -293,8 +294,10 @@ task.spawn(function()
 							update()
 							health.Parent = head
 
-							updateCon = RunService.RenderStepped:Connect(update)
-							table.insert(hpState.connections, updateCon)
+							-- one shared loop updates every label (below), not a loop per humanoid: maps can have
+							-- hundreds of humanoids (city names, NPCs)
+							updateCon = health
+							hpState.updates[health] = update
 							currentHealth = health
 							h.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
 						end
@@ -311,6 +314,26 @@ task.spawn(function()
 			if hpState.active then return end
 			hpState.active = true
 			hpState.baseGui = buildHealthBase()
+
+			-- All the labels are updated about 12 times a second in one loop (health, size by distance,
+			-- name). Labels farther away than they can be seen are only looked at every half second.
+			local acc, farAcc = 0, 0
+			table.insert(hpState.connections, RunService.Heartbeat:Connect(function(dt)
+				acc = acc + dt
+				farAcc = farAcc + dt
+				if acc < 0.08 then return end
+				acc = 0
+				local doFar = farAcc >= 0.5
+				if doFar then farAcc = 0 end
+				for label, update in pairs(hpState.updates) do
+					if not label.Parent then
+						hpState.updates[label] = nil
+					elseif doFar or label.Enabled then
+						local ok = pcall(update)
+						if not ok then hpState.updates[label] = nil end
+					end
+				end
+			end))
 
 			for _, desc in pairs(workspace:GetDescendants()) do
 				if desc:IsA("Humanoid") then hpState.humanoids[desc] = true end
@@ -339,6 +362,7 @@ task.spawn(function()
 				pcall(function() conn:Disconnect() end)
 			end
 			hpState.connections = {}
+			hpState.updates = {}
 
 			for _, desc in pairs(workspace:GetDescendants()) do
 				if desc:IsA("BillboardGui") and desc.Name == "CustomExecutorHealth" then
@@ -2915,7 +2939,23 @@ task.spawn(function()
 			overlay.Parent = workspace.CurrentCamera or workspace
 			odState.overlay = overlay
 
-			table.insert(Connections, RunService.RenderStepped:Connect(syncOverlays))
+			-- Every frame only the shells whose weld is gone follow their head; the rest (sizes, meshes, the
+			-- copied faces, the T-shirt guis) is looked at 10 times a second. It went through every head's
+			-- children and decals on every frame.
+			local syncAcc = 0
+			table.insert(Connections, RunService.RenderStepped:Connect(function(dt)
+				for head, shellData in pairs(HeadShells) do
+					local shellPart = shellData.ShellPart
+					if head and head.Parent and shellPart and shellPart.Parent
+						and (not shellData.Weld or not shellData.Weld.Parent or shellData.Weld.Part0 ~= head) then
+						shellPart.CFrame = head.CFrame
+					end
+				end
+				syncAcc = syncAcc + (dt or 0)
+				if syncAcc < 0.1 then return end
+				syncAcc = 0
+				syncOverlays()
+			end))
 
 			for _, plr in ipairs(Players:GetPlayers()) do
 				if plr.Character then onCharacterAdded(plr.Character) end
