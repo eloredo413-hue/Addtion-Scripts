@@ -1,4 +1,5 @@
--- (Addtion-Scripts copy of the Explosion Replace Addon gist: the gist's own explosions, the 2013 one fading darker and quicker,
+-- (Addtion-Scripts copy of the Explosion Replace Addon gist: the gist's own explosions, 2010 in the colours of the user's 2010
+-- recording, the 2013 one fading darker and a bit quicker,
 -- and the explosion step put on the "old particles" question before the Particles addon)
 -- [[ EXPLOSION PICKER WIZARD STEP ]]
 -- Run AFTER the main Bloxy Paradox script.
@@ -171,15 +172,18 @@ local CLASSIC_SMOKE_URL = "rbxthumb://type=Asset&id=2825829181&w=420&h=420"
 local ENGINE_SPARKLE_FALLBACK = "rbxasset://textures/particles/sparkles_main.dds"
 local function spawnRetroExplosion(pos, scale)
 	scale = (scale or 1) * 0.75
+	-- (the colours of the user's 2010 recording: cream white, pale yellow, orange at the edges, then a
+	-- salmon-pink haze as it goes)
 	local multiColorPalette = ColorSequence.new({
-		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(255, 200, 50)),
-		ColorSequenceKeypoint.new(0.35, Color3.fromRGB(255, 110, 10)),
-		ColorSequenceKeypoint.new(0.7, Color3.fromRGB(230, 40, 0)),
-		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(140, 10, 5))
+		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(255, 252, 225)),
+		ColorSequenceKeypoint.new(0.2, Color3.fromRGB(250, 238, 172)),
+		ColorSequenceKeypoint.new(0.45, Color3.fromRGB(242, 170, 80)),
+		ColorSequenceKeypoint.new(0.75, Color3.fromRGB(232, 120, 100)),
+		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(225, 100, 95))
 	})
 	local sparkPalette = ColorSequence.new({
-		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(255, 230, 150)),
-		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(255, 120, 30))
+		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(255, 250, 220)),
+		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(245, 180, 95))
 	})
 	local attachment = Instance.new("Attachment")
 	attachment.Position = pos
@@ -275,18 +279,18 @@ local CLASSIC_SMOKE_URL = "rbxthumb://type=Asset&id=2825829181&w=420&h=420"
 local ENGINE_SPARKLE_FALLBACK = "rbxasset://textures/particles/sparkles_main.dds"
 local function spawnRetroExplosion(pos, scale)
 	scale = (scale or 1) * 0.75
-	-- (darker sooner than the gist's: dark red by a third of the way, near black at the end)
+	-- (orange for about as long as the gist's, then darker than it at the end: dark red, not black)
 	local multiColorPalette = ColorSequence.new({
 		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(200, 100, 20)),
-		ColorSequenceKeypoint.new(0.15, Color3.fromRGB(150, 55, 12)),
-		ColorSequenceKeypoint.new(0.35, Color3.fromRGB(90, 25, 8)),
-		ColorSequenceKeypoint.new(0.65, Color3.fromRGB(45, 10, 4)),
-		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(20, 5, 2))
+		ColorSequenceKeypoint.new(0.25, Color3.fromRGB(175, 75, 16)),
+		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(130, 40, 12)),
+		ColorSequenceKeypoint.new(0.75, Color3.fromRGB(85, 20, 8)),
+		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(45, 10, 4))
 	})
 	local sparkPalette = ColorSequence.new({
 		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(220, 160, 80)),
-		ColorSequenceKeypoint.new(0.4, Color3.fromRGB(130, 50, 15)),
-		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(50, 15, 5))
+		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(170, 90, 35)),
+		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(90, 30, 10))
 	})
 	local attachment = Instance.new("Attachment")
 	attachment.Position = pos
@@ -318,7 +322,7 @@ local function spawnRetroExplosion(pos, scale)
 		emit.SpreadAngle = Vector2.new(360, 360)
 		emit.Transparency = NumberSequence.new({
 			NumberSequenceKeypoint.new(0, 0),
-			NumberSequenceKeypoint.new(0.35, 0.05),
+			NumberSequenceKeypoint.new(0.5, 0.05),
 			NumberSequenceKeypoint.new(1, 1)
 		})
 		emit.ZOffset = 1
@@ -326,10 +330,10 @@ local function spawnRetroExplosion(pos, scale)
 		emit.Parent = attachment
 		return emit, count
 	end
-	-- (gone quicker than the gist's: about two thirds of its lifetimes)
-	local core, c1 = makeEmit("CoreMixed", 3.2, NumberRange.new(3, 8), NumberRange.new(0.45, 0.7), 22)
-	local outer, c2 = makeEmit("OuterMixed", 4.0, NumberRange.new(8, 16), NumberRange.new(0.4, 0.8), 26)
-	local burst, c3 = makeEmit("BurstMixed", 2.6, NumberRange.new(14, 24), NumberRange.new(0.35, 0.6), 18)
+	-- (gone a bit quicker than the gist's: about four fifths of its lifetimes)
+	local core, c1 = makeEmit("CoreMixed", 3.2, NumberRange.new(3, 8), NumberRange.new(0.55, 0.85), 22)
+	local outer, c2 = makeEmit("OuterMixed", 4.0, NumberRange.new(8, 16), NumberRange.new(0.5, 0.95), 26)
+	local burst, c3 = makeEmit("BurstMixed", 2.6, NumberRange.new(14, 24), NumberRange.new(0.4, 0.7), 18)
 	local sparks = Instance.new("ParticleEmitter")
 	sparks.Name = "Sparks"
 	sparks.Texture = ENGINE_SPARKLE_FALLBACK
@@ -338,7 +342,7 @@ local function spawnRetroExplosion(pos, scale)
 	sparks.LightEmission = 0
 	sparks.LightInfluence = 1
 	sparks.Speed = NumberRange.new(10 * scale, 32 * scale)
-	sparks.Lifetime = NumberRange.new(0.3, 0.55)
+	sparks.Lifetime = NumberRange.new(0.35, 0.65)
 	sparks.SpreadAngle = Vector2.new(360, 360)
 	sparks.Drag = 2.5
 	sparks.Size = NumberSequence.new({
