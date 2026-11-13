@@ -14,6 +14,9 @@
 -- them, so each option turns itself on or off as usual). Setup choices (topbar, physics, ...) are used the
 -- next time the script runs; with "skip setup" ticked that is without going through the setup.
 --
+-- The loader loads it, and so do the 2021 / 2023 old / 2023 new GUIs after the rejoin they do (the loader
+-- doesn't run in the server they rejoin). Running it again replaces the earlier copy.
+--
 -- getgenv().BPSavedSettings = { Open, Close, Save, Load, Rename, Delete, List, Destroy }
 
 local Env = (getgenv and getgenv()) or _G
@@ -26,7 +29,12 @@ local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local SoundService = game:GetService("SoundService")
 
+-- (loaded right after a rejoin by the 2021 / 2023 GUIs, the player may not be there yet)
 local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then
+	pcall(function() Players:GetPropertyChangedSignal("LocalPlayer"):Wait() end)
+	LocalPlayer = Players.LocalPlayer
+end
 if not LocalPlayer then
 	warn("[Saved Settings] no LocalPlayer")
 	return
@@ -47,7 +55,9 @@ local WHEN_MISSING = {
 }
 
 local ICON_IMAGE = "rbxthumb://type=Asset&id=90842402386374&w=420&h=420"
-local GUI_NAME = "BloxySavedSettings" -- ("Bloxy" in the name: the game GUI hider leaves it alone)
+-- "Paradox" in the name: the game GUI hider leaves it alone. Not "Bloxy": More guis takes the first GUI with
+-- "Bloxy" in its name to be Bloxy's own.
+local GUI_NAME = "ParadoxSavedSettings"
 local BLOXY_GUI = "BloxyParadoxProject"
 local MAX_NAME = 24
 local CONFIRM_TIME = 3

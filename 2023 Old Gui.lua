@@ -152,6 +152,15 @@ local scriptToRun = diagnosticsHeader .. [=[
     -- Running the 2023 GUI script again in this server must not rejoin.
     Env.Old2023GuiStarted = true
 
+    -- (Addtion-Scripts) The saved settings panel (the floppy disk under Bloxy's hammer). The loader doesn't run
+    -- in the server this GUI rejoins, so it is loaded from here too.
+    task.spawn(function()
+        local ok, err = pcall(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Saved%20Settings.lua"))()
+        end)
+        if not ok then warn("[2023 GUI] saved settings panel not loaded: " .. tostring(err)) end
+    end)
+
     local SHOW_STATUS = Env.EscLoaderShowStatus ~= false
     local SHOW_LOADED = Env.EscLoaderShowLoaded == true
     local SHOW_HUD = Env.EscLoaderShowHud == true
