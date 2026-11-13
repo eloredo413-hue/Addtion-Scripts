@@ -174,7 +174,11 @@ end
 -- The buttons are found by their text, whatever the menu calls them.
 --========================================================
 do
-    local GAP = 18
+    local GAP = 18      -- 2016 and older
+    local GAP_2017 = 24 -- 2017 up to 2021 (a little more room above their three buttons)
+    local function gapFor(year)
+        return (year and year >= 2017) and GAP_2017 or GAP
+    end
 
     local function topbarYear()
         -- the pick at Confirm first (More guis' 2017 / 2019 / 2021 are saved as Bloxy's 2023)
@@ -191,10 +195,14 @@ do
         if not clipper or clipper.Name ~= "PageViewClipper" then return end
         local year = topbarYear()
         if not year or year >= 2023 then return end
-        if obj:FindFirstChild("BPMenuGap") then return end
-        local pad = Instance.new("UIPadding")
+        local pad = obj:FindFirstChild("BPMenuGap")
+        if pad then
+            pad.PaddingTop = UDim.new(0, gapFor(year))
+            return
+        end
+        pad = Instance.new("UIPadding")
         pad.Name = "BPMenuGap"
-        pad.PaddingTop = UDim.new(0, GAP)
+        pad.PaddingTop = UDim.new(0, gapFor(year))
         pad.Parent = obj
     end
 
@@ -204,13 +212,18 @@ do
         local year = topbarYear()
         if not year or year >= 2023 then return end
         local view = obj:FindFirstAncestorWhichIsA("ScrollingFrame")
-        if not view or view:FindFirstChild("BPMenuGap") then return end
+        if not view then return end
+        local existing = view:FindFirstChild("BPMenuGap")
+        if existing then
+            existing.PaddingTop = UDim.new(0, gapFor(year))
+            return
+        end
         -- only the escape menu's (SettingsHub: its tab bar is called HubBar)
         local hub = view.Parent and view.Parent.Parent
         if not (hub and hub:FindFirstChild("HubBar", true)) then return end
         local pad = Instance.new("UIPadding")
         pad.Name = "BPMenuGap"
-        pad.PaddingTop = UDim.new(0, GAP)
+        pad.PaddingTop = UDim.new(0, gapFor(year))
         pad.Parent = view
     end
 
@@ -282,21 +295,40 @@ do
             end
             resume.Parent = parent
             if resume:IsA("GuiButton") then resume.Activated:Connect(closeMenu) end
+            -- A copy keeps none of the menu's button scripts: turning blue while touched (or under the
+            -- mouse) is put back the way the menu's own buttons do it.
+            if resume:IsA("ImageButton") then
+                local NORMAL = "rbxasset://textures/ui/Settings/MenuBarAssets/MenuButton.png"
+                local SELECTED = "rbxasset://textures/ui/Settings/MenuBarAssets/MenuButtonSelected.png"
+                local function pointer(input)
+                    return input.UserInputType == Enum.UserInputType.MouseMovement
+                        or input.UserInputType == Enum.UserInputType.Touch
+                end
+                resume.Image = NORMAL
+                resume.InputBegan:Connect(function(input)
+                    if pointer(input) then resume.Image = SELECTED end
+                end)
+                resume.InputEnded:Connect(function(input)
+                    if pointer(input) then resume.Image = NORMAL end
+                end)
+            end
         end
         resume.Visible = true
 
-        -- the 2023 old words
-        local function setWords(button, from, to)
-            if button:IsA("TextButton") and string.lower(button.Text) == from then button.Text = to end
+        -- the words a little smaller than the menu's own (24), as on the three-button menu
+        local TEXT_SIZE = 20
+        for _, button in ipairs({ leave, reset, resume }) do
+            if button:IsA("TextButton") then pcall(function() button.TextSize = TEXT_SIZE end) end
             for _, d in ipairs(button:GetDescendants()) do
-                if (d:IsA("TextLabel") or d:IsA("TextButton")) and string.lower(d.Text) == from then d.Text = to end
+                if d:IsA("TextLabel") or d:IsA("TextButton") then
+                    pcall(function() d.TextSize = TEXT_SIZE end)
+                end
             end
         end
-        setWords(leave, "leave game", "Leave")
-        setWords(resume, "resume game", "Resume")
 
-        -- the 2023 old spacing: in from both sides of the page, a gap between the buttons
-        local EDGE, BETWEEN = 16, 12
+        -- the three-button spacing: nearly the full width of the page (lined up with the tab bar),
+        -- a clear gap between the buttons
+        local EDGE, BETWEEN = 2, 18
         local widthCut = (2 * EDGE + 2 * BETWEEN) / 3
         local order = { leave, reset, resume }
         local grid = parent:FindFirstChildWhichIsA("UIGridLayout")
