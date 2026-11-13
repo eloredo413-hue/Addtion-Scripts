@@ -3124,10 +3124,9 @@ end)
 	-- of the backpack.
 
 	-- 2019's top bar went right to the left edge of the screen. The GUI holding it is kept in from the
-	-- screen's edges by the phone's safe area, so that is switched off for it (the bar reaches the
-	-- edge), and the escape menu, which is in the same GUI, gets the same room back as padding so it
-	-- stays exactly where it was. The icons keep some room on the left so the menu button isn't on
-	-- the edge of the screen.
+	-- screen's edges by the phone's safe area, so that is switched off for it: the bar, and the escape
+	-- menu in the same GUI, go out to the screen edges. The icons keep some room on the left so the
+	-- menu button isn't on the edge of the screen.
 	if not TopBarContainer then
 		warn("[2019 GUI] the top bar (TopBarContainer) wasn't found: its icons can't be moved")
 	end
@@ -3158,39 +3157,11 @@ end)
 				pcall(function() TopGui:GetPropertyChangedSignal("ScreenInsets"):Connect(NoInset) end)
 				pcall(function() TopGui:GetPropertyChangedSignal("SafeAreaCompatibility"):Connect(NoInset) end)
 
-				-- how much room the safe area kept on each side: the width it grew by, halved
-				local After = Before
-				for _ = 1, 30 do
-					task.wait()
-					After = Width()
-					if After ~= Before then break end
-				end
-				local Side = math.max(0, math.floor((After - Before) / 2 + 0.5))
-				print("[2019 GUI] top bar to the screen edge (safe area room on each side: " .. Side .. ")")
-				if Side <= 0 then return end
-
-				-- the escape menu: whatever in this GUI holds the menu's tab bar ("HubBar")
-				local function GiveRoomBack(Root)
-					if not Root or Root.Parent ~= TopGui or not Root:IsA("GuiObject") then return end
-					if Root == TopBarContainer or TopBarContainer:IsDescendantOf(Root) then return end
-					if Root:FindFirstChild("BPSafeRoom") then return end
-					local Pad = Instance.new("UIPadding")
-					Pad.Name = "BPSafeRoom"
-					Pad.PaddingLeft = UDim.new(0, Side)
-					Pad.PaddingRight = UDim.new(0, Side)
-					Pad.Parent = Root
-				end
-				local function RootOf(Obj)
-					local Cur = Obj
-					while Cur and Cur.Parent and Cur.Parent ~= TopGui do Cur = Cur.Parent end
-					return (Cur and Cur.Parent == TopGui) and Cur or nil
-				end
-				for _, D in ipairs(TopGui:GetDescendants()) do
-					if D.Name == "HubBar" then GiveRoomBack(RootOf(D)) end
-				end
-				TopGui.DescendantAdded:Connect(function(D)
-					if D.Name == "HubBar" then task.defer(function() GiveRoomBack(RootOf(D)) end) end
-				end)
+				-- The escape menu is in the same GUI, so it now goes out to the screen edges too, like the
+				-- bar (it isn't kept in by the safe area any more either).
+				task.wait()
+				local After = Width()
+				print("[2019 GUI] top bar and escape menu out to the screen edges (" .. tostring(Before) .. " -> " .. tostring(After) .. " wide)")
 			end)
 		end
 
