@@ -3147,6 +3147,17 @@ end)
 		end
 	end
 
+	-- The bar itself goes to the edge, but its icons keep a little room on the left, so the menu
+	-- button isn't right on the edge of the screen (or under a rounded corner).
+	if TopBarContainer and not TopBarContainer:FindFirstChild("BPEdgeRoom") then
+		pcall(function()
+			local Room = Instance.new("UIPadding")
+			Room.Name = "BPEdgeRoom"
+			Room.PaddingLeft = UDim.new(0, 20)
+			Room.Parent = TopBarContainer
+		end)
+	end
+
 	local EmoteButton
 	local BackpackButton
 	local ButtonParent = TopBarContainer
