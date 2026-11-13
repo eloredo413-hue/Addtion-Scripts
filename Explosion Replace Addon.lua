@@ -1,4 +1,5 @@
--- (Addtion-Scripts copy of the Explosion Replace Addon gist: 2010 and 2013 made to look like the user's recordings of them)
+-- (Addtion-Scripts copy of the Explosion Replace Addon gist: the gist's own explosions, the 2013 one fading darker and quicker,
+-- and the explosion step put on the "old particles" question before the Particles addon)
 -- [[ EXPLOSION PICKER WIZARD STEP ]]
 -- Run AFTER the main Bloxy Paradox script.
 
@@ -162,15 +163,24 @@ end
 print("[Explosion] 2007 style LOADED and HOOKED.")
 ]==]
 
-	-- 2010 (from the user's 2010 recording): a thick, bright orange-red cloud of puffs (235,92,50 at its
-	-- brightest) with a few lighter spots, that billows up for a third of a second, then thins into a darker
-	-- red haze and is gone after about a second. Not lit by the scene (as bright in the shade), not glowing.
 	local SCRIPT_2010 = [==[
 if _G.BP_ExplosionHook then pcall(function() _G.BP_ExplosionHook:Disconnect() end) end
 local Workspace = game:GetService("Workspace")
 local Debris = game:GetService("Debris")
-local CLOUD_TEXTURE = "rbxthumb://type=Asset&id=2825829181&w=420&h=420"
+local CLASSIC_SMOKE_URL = "rbxthumb://type=Asset&id=2825829181&w=420&h=420"
+local ENGINE_SPARKLE_FALLBACK = "rbxasset://textures/particles/sparkles_main.dds"
 local function spawnRetroExplosion(pos, scale)
+	scale = (scale or 1) * 0.75
+	local multiColorPalette = ColorSequence.new({
+		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(255, 200, 50)),
+		ColorSequenceKeypoint.new(0.35, Color3.fromRGB(255, 110, 10)),
+		ColorSequenceKeypoint.new(0.7, Color3.fromRGB(230, 40, 0)),
+		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(140, 10, 5))
+	})
+	local sparkPalette = ColorSequence.new({
+		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(255, 230, 150)),
+		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(255, 120, 30))
+	})
 	local attachment = Instance.new("Attachment")
 	attachment.Position = pos
 	attachment.Parent = Workspace.Terrain
@@ -179,79 +189,105 @@ local function spawnRetroExplosion(pos, scale)
 	boomSound.Volume = 1
 	boomSound.Parent = attachment
 	boomSound:Play()
-	local cloudColors = ColorSequence.new({
-		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(235, 90, 50)),
-		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(220, 75, 42)),
-		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(165, 50, 35))
-	})
-	local function makeEmit(name, size, speedMin, speedMax, lifeMin, lifeMax, colors, emission)
+	local function makeEmit(name, sizeMult, speedRange, lifetimeRange, count)
 		local emit = Instance.new("ParticleEmitter")
 		emit.Name = name
-		emit.Texture = CLOUD_TEXTURE
-		emit.Color = colors
+		emit.Texture = CLASSIC_SMOKE_URL
+		emit.Color = multiColorPalette
 		emit.Enabled = false
-		emit.LightEmission = emission or 0
+		emit.LightEmission = 1
 		emit.LightInfluence = 0
+		local s = sizeMult * scale
 		emit.Size = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, size * 0.5),
-			NumberSequenceKeypoint.new(0.3, size),
-			NumberSequenceKeypoint.new(1, size * 1.45)
+			NumberSequenceKeypoint.new(0, s * 0.35),
+			NumberSequenceKeypoint.new(0.2, s),
+			NumberSequenceKeypoint.new(1, s * 1.25)
 		})
 		emit.Rotation = NumberRange.new(-360, 360)
-		emit.RotSpeed = NumberRange.new(-40, 40)
-		emit.Speed = NumberRange.new(speedMin, speedMax)
-		emit.Lifetime = NumberRange.new(lifeMin, lifeMax)
+		emit.RotSpeed = NumberRange.new(-120, 120)
+		emit.Speed = NumberRange.new(speedRange.Min * scale, speedRange.Max * scale)
+		emit.Lifetime = lifetimeRange
+		emit.EmissionDirection = Enum.NormalId.Top
 		emit.SpreadAngle = Vector2.new(360, 360)
-		emit.Acceleration = Vector3.new(0, 4 * scale, 0) -- the cloud billows upward
-		emit.Drag = 3
 		emit.Transparency = NumberSequence.new({
 			NumberSequenceKeypoint.new(0, 0),
-			NumberSequenceKeypoint.new(0.55, 0.05),
-			NumberSequenceKeypoint.new(0.8, 0.55),
+			NumberSequenceKeypoint.new(0.6, 0.05),
 			NumberSequenceKeypoint.new(1, 1)
 		})
 		emit.ZOffset = 1
+		emit.Drag = 4
 		emit.Parent = attachment
-		return emit
+		return emit, count
 	end
-	local inner = makeEmit("CloudInner", 5 * scale, 1 * scale, 5 * scale, 0.8, 1.1, cloudColors)
-	local outer = makeEmit("CloudOuter", 6 * scale, 5 * scale, 11 * scale, 0.7, 1.0, cloudColors)
-	-- a few lighter puffs inside the cloud
-	local spots = makeEmit("CloudSpots", 1.6 * scale, 2 * scale, 7 * scale, 0.5, 0.9, ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 160, 120)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(240, 110, 80))
-	}), 0.4)
-	spots.ZOffset = 2
-	local n = math.clamp(scale, 1, 2)
-	inner:Emit(math.floor(16 * n))
-	outer:Emit(math.floor(22 * n))
-	spots:Emit(math.floor(5 * n))
-	Debris:AddItem(attachment, 3)
+	local core, c1 = makeEmit("CoreMixed", 3.2, NumberRange.new(3, 8), NumberRange.new(0.7, 1.1), 22)
+	local outer, c2 = makeEmit("OuterMixed", 4.0, NumberRange.new(8, 16), NumberRange.new(0.6, 1.2), 26)
+	local burst, c3 = makeEmit("BurstMixed", 2.6, NumberRange.new(14, 24), NumberRange.new(0.5, 0.9), 18)
+	local sparks = Instance.new("ParticleEmitter")
+	sparks.Name = "Sparks"
+	sparks.Texture = ENGINE_SPARKLE_FALLBACK
+	sparks.Color = sparkPalette
+	sparks.Enabled = false
+	sparks.LightEmission = 0.8
+	sparks.LightInfluence = 0
+	sparks.Speed = NumberRange.new(10 * scale, 32 * scale)
+	sparks.Lifetime = NumberRange.new(0.4, 0.8)
+	sparks.SpreadAngle = Vector2.new(360, 360)
+	sparks.Drag = 2.5
+	sparks.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.85 * scale),
+		NumberSequenceKeypoint.new(1, 0)
+	})
+	sparks.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0),
+		NumberSequenceKeypoint.new(0.75, 0.15),
+		NumberSequenceKeypoint.new(1, 1)
+	})
+	sparks.ZOffset = 2
+	sparks.Parent = attachment
+	local density = math.clamp(scale, 0.8, 2.5)
+	core:Emit(math.floor(c1 * density))
+	outer:Emit(math.floor(c2 * density))
+	burst:Emit(math.floor(c3 * density))
+	sparks:Emit(math.floor(40 * density))
+	Debris:AddItem(attachment, 4)
 end
 local function processItem(item)
 	if item:IsA("Explosion") then
 		pcall(function()
 			item.Visible = false
-			spawnRetroExplosion(item.Position, math.max(item.BlastRadius / 6, 1))
+			local exactScale = math.max(item.BlastRadius / 8, 1.15)
+			spawnRetroExplosion(item.Position, exactScale)
 		end)
 	end
 end
 for _, item in ipairs(Workspace:GetDescendants()) do processItem(item) end
 _G.BP_ExplosionHook = Workspace.DescendantAdded:Connect(function(item)
-	if item:IsA("Explosion") then task.defer(processItem, item) end
+	task.defer(function() processItem(item) end)
 end)
 print("[Explosion] 2010 style LOADED and HOOKED.")
 ]==]
 
-	-- 2013 (from the user's 2013 recording): a glowing white flash with pale yellow round it (240,238,130),
-	-- fading to a pale yellow haze in under a second, lighting what is around it red-orange. No sparks.
 	local SCRIPT_2013 = [==[
 if _G.BP_ExplosionHook then pcall(function() _G.BP_ExplosionHook:Disconnect() end) end
 local Workspace = game:GetService("Workspace")
 local Debris = game:GetService("Debris")
-local TweenService = game:GetService("TweenService")
-local GLOW_TEXTURE = "rbxthumb://type=Asset&id=2825829181&w=420&h=420"
+local CLASSIC_SMOKE_URL = "rbxthumb://type=Asset&id=2825829181&w=420&h=420"
+local ENGINE_SPARKLE_FALLBACK = "rbxasset://textures/particles/sparkles_main.dds"
 local function spawnRetroExplosion(pos, scale)
+	scale = (scale or 1) * 0.75
+	-- (darker sooner than the gist's: dark red by a third of the way, near black at the end)
+	local multiColorPalette = ColorSequence.new({
+		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(200, 100, 20)),
+		ColorSequenceKeypoint.new(0.15, Color3.fromRGB(150, 55, 12)),
+		ColorSequenceKeypoint.new(0.35, Color3.fromRGB(90, 25, 8)),
+		ColorSequenceKeypoint.new(0.65, Color3.fromRGB(45, 10, 4)),
+		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(20, 5, 2))
+	})
+	local sparkPalette = ColorSequence.new({
+		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(220, 160, 80)),
+		ColorSequenceKeypoint.new(0.4, Color3.fromRGB(130, 50, 15)),
+		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(50, 15, 5))
+	})
 	local attachment = Instance.new("Attachment")
 	attachment.Position = pos
 	attachment.Parent = Workspace.Terrain
@@ -260,67 +296,81 @@ local function spawnRetroExplosion(pos, scale)
 	boomSound.Volume = 1
 	boomSound.Parent = attachment
 	boomSound:Play()
-	-- white in the middle, pale yellow round it and as it fades (additive, so it glows)
-	local flashColors = ColorSequence.new({
-		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(255, 255, 245)),
-		ColorSequenceKeypoint.new(0.3, Color3.fromRGB(255, 248, 180)),
-		ColorSequenceKeypoint.new(0.65, Color3.fromRGB(242, 236, 130)),
-		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(228, 214, 105))
-	})
-	local function makeEmit(name, size, speedMin, speedMax, lifeMin, lifeMax)
+	local function makeEmit(name, sizeMult, speedRange, lifetimeRange, count)
 		local emit = Instance.new("ParticleEmitter")
 		emit.Name = name
-		emit.Texture = GLOW_TEXTURE
-		emit.Color = flashColors
+		emit.Texture = CLASSIC_SMOKE_URL
+		emit.Color = multiColorPalette
 		emit.Enabled = false
-		emit.LightEmission = 1
-		emit.LightInfluence = 0
-		pcall(function() emit.Brightness = 2 end)
+		emit.LightEmission = 0
+		emit.LightInfluence = 1
+		local s = sizeMult * scale
 		emit.Size = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, size * 0.6),
-			NumberSequenceKeypoint.new(0.25, size),
-			NumberSequenceKeypoint.new(1, size * 1.3)
+			NumberSequenceKeypoint.new(0, s * 0.35),
+			NumberSequenceKeypoint.new(0.2, s),
+			NumberSequenceKeypoint.new(1, s * 1.25)
 		})
 		emit.Rotation = NumberRange.new(-360, 360)
-		emit.RotSpeed = NumberRange.new(-60, 60)
-		emit.Speed = NumberRange.new(speedMin, speedMax)
-		emit.Lifetime = NumberRange.new(lifeMin, lifeMax)
+		emit.RotSpeed = NumberRange.new(-120, 120)
+		emit.Speed = NumberRange.new(speedRange.Min * scale, speedRange.Max * scale)
+		emit.Lifetime = lifetimeRange
+		emit.EmissionDirection = Enum.NormalId.Top
 		emit.SpreadAngle = Vector2.new(360, 360)
-		emit.Drag = 5
 		emit.Transparency = NumberSequence.new({
 			NumberSequenceKeypoint.new(0, 0),
-			NumberSequenceKeypoint.new(0.45, 0.1),
+			NumberSequenceKeypoint.new(0.35, 0.05),
 			NumberSequenceKeypoint.new(1, 1)
 		})
-		emit.ZOffset = 2
+		emit.ZOffset = 1
+		emit.Drag = 4
 		emit.Parent = attachment
-		return emit
+		return emit, count
 	end
-	local core = makeEmit("FlashCore", 7 * scale, 1 * scale, 5 * scale, 0.45, 0.7)
-	local wide = makeEmit("FlashWide", 6 * scale, 8 * scale, 16 * scale, 0.4, 0.75)
-	core:Emit(math.floor(14 * math.clamp(scale, 1, 2)))
-	wide:Emit(math.floor(22 * math.clamp(scale, 1, 2)))
-	-- the light it throws on what is around it, fading with it
-	local light = Instance.new("PointLight")
-	light.Color = Color3.fromRGB(255, 120, 70)
-	light.Brightness = 8
-	light.Range = math.clamp(10 * scale, 12, 60)
-	light.Shadows = false
-	light.Parent = attachment
-	TweenService:Create(light, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Brightness = 0 }):Play()
+	-- (gone quicker than the gist's: about two thirds of its lifetimes)
+	local core, c1 = makeEmit("CoreMixed", 3.2, NumberRange.new(3, 8), NumberRange.new(0.45, 0.7), 22)
+	local outer, c2 = makeEmit("OuterMixed", 4.0, NumberRange.new(8, 16), NumberRange.new(0.4, 0.8), 26)
+	local burst, c3 = makeEmit("BurstMixed", 2.6, NumberRange.new(14, 24), NumberRange.new(0.35, 0.6), 18)
+	local sparks = Instance.new("ParticleEmitter")
+	sparks.Name = "Sparks"
+	sparks.Texture = ENGINE_SPARKLE_FALLBACK
+	sparks.Color = sparkPalette
+	sparks.Enabled = false
+	sparks.LightEmission = 0
+	sparks.LightInfluence = 1
+	sparks.Speed = NumberRange.new(10 * scale, 32 * scale)
+	sparks.Lifetime = NumberRange.new(0.3, 0.55)
+	sparks.SpreadAngle = Vector2.new(360, 360)
+	sparks.Drag = 2.5
+	sparks.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.85 * scale),
+		NumberSequenceKeypoint.new(1, 0)
+	})
+	sparks.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0),
+		NumberSequenceKeypoint.new(0.75, 0.15),
+		NumberSequenceKeypoint.new(1, 1)
+	})
+	sparks.ZOffset = 2
+	sparks.Parent = attachment
+	local density = math.clamp(scale, 0.8, 2.5)
+	core:Emit(math.floor(c1 * density))
+	outer:Emit(math.floor(c2 * density))
+	burst:Emit(math.floor(c3 * density))
+	sparks:Emit(math.floor(40 * density))
 	Debris:AddItem(attachment, 3)
 end
 local function processItem(item)
 	if item:IsA("Explosion") then
 		pcall(function()
 			item.Visible = false
-			spawnRetroExplosion(item.Position, math.max(item.BlastRadius / 6, 1))
+			local exactScale = math.max(item.BlastRadius / 8, 1.15)
+			spawnRetroExplosion(item.Position, exactScale)
 		end)
 	end
 end
 for _, item in ipairs(Workspace:GetDescendants()) do processItem(item) end
 _G.BP_ExplosionHook = Workspace.DescendantAdded:Connect(function(item)
-	if item:IsA("Explosion") then task.defer(processItem, item) end
+	task.defer(function() processItem(item) end)
 end)
 print("[Explosion] 2013 style LOADED and HOOKED.")
 ]==]
