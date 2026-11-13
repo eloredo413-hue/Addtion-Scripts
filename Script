@@ -175,7 +175,7 @@ end
 --========================================================
 do
     local GAP = 18      -- 2016 and older
-    local GAP_2017 = 24 -- 2017 up to 2021 (a little more room above their three buttons)
+    local GAP_2017 = 14 -- 2017 up to 2021 (a little less: their buttons have room of their own)
     local function gapFor(year)
         return (year and year >= 2017) and GAP_2017 or GAP
     end
@@ -227,7 +227,32 @@ do
         pad.Parent = view
     end
 
+    -- Resume: the menu is closed by its own code (SettingsHub:SetVisibility(false), found among the
+    -- legacy modules the GUI loaded). A pretend Escape key press made Roblox think a keyboard and
+    -- mouse were in use, so a mouse pointer showed up on phones; it is only used on a PC now, and
+    -- only when the menu's own code can't be found.
     local function closeMenu()
+        local closed = false
+        pcall(function()
+            local records = getgenv().__rbxm_suite_modules
+            if type(records) ~= "table" then return end
+            for module, record in pairs(records) do
+                if not closed and typeof(module) == "Instance" and module.Name == "SettingsHub"
+                   and type(record) == "table" then
+                    local hub = rawget(record, "data")
+                    if type(hub) == "table" then
+                        if type(hub.SetVisibility) == "function" then
+                            closed = pcall(hub.SetVisibility, hub, false)
+                        elseif type(hub.Instance) == "table" and type(hub.Instance.SetVisibility) == "function" then
+                            closed = pcall(hub.Instance.SetVisibility, hub.Instance, false)
+                        end
+                    end
+                end
+            end
+        end)
+        if closed then return end
+        local UIS = game:GetService("UserInputService")
+        if UIS.TouchEnabled and not UIS.KeyboardEnabled then return end
         pcall(function()
             local vim = game:GetService("VirtualInputManager")
             vim:SendKeyEvent(true, Enum.KeyCode.Escape, false, game)
@@ -316,7 +341,7 @@ do
         resume.Visible = true
 
         -- the words a little smaller than the menu's own (24), as on the three-button menu
-        local TEXT_SIZE = 20
+        local TEXT_SIZE = 18
         for _, button in ipairs({ leave, reset, resume }) do
             if button:IsA("TextButton") then pcall(function() button.TextSize = TEXT_SIZE end) end
             for _, d in ipairs(button:GetDescendants()) do
@@ -328,7 +353,7 @@ do
 
         -- the three-button spacing: nearly the full width of the page (lined up with the tab bar),
         -- a clear gap between the buttons
-        local EDGE, BETWEEN = 2, 18
+        local EDGE, BETWEEN = 0, 8
         local widthCut = (2 * EDGE + 2 * BETWEEN) / 3
         local order = { leave, reset, resume }
         local grid = parent:FindFirstChildWhichIsA("UIGridLayout")
