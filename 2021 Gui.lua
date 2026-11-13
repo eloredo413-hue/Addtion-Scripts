@@ -1649,9 +1649,14 @@ local scriptToRun = "local SHOW_STATUS = " .. tostring(SHOW_STATUS) .. "\n"
             warn("[LegacyLogo] Roblox logo button not found after 15s.")
         end
 
+        local lastLogoSearch = 0
         RunService.RenderStepped:Connect(function()
-            -- The top bar rebuilt the button: find it again.
+            -- The top bar rebuilt the button: find it again (once a second: the search goes through
+            -- the whole top bar, which every frame was a lot)
             if not logoBtn or not logoBtn:IsDescendantOf(CoreGui) then
+                local now = os.clock()
+                if now - lastLogoSearch < 1 then return end
+                lastLogoSearch = now
                 local btn = findNativeMenuButton()
                 if btn then hookLogo(btn) end
                 return

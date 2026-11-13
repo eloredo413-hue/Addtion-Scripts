@@ -4820,7 +4820,20 @@ task.spawn(function()
 
 	end
 
+	-- Every frame only while a Leave / Reset page is on screen (touch) and a moment after; otherwise
+	-- 10 times a second is enough. It went through the pages on every frame for the whole game.
+	local BusyUntil, LastStep = 0, 0
+	local function MarkBusy()
+		BusyUntil = os.clock() + 0.5
+	end
+
 	RunService.RenderStepped:Connect(function()
+
+		local Now = os.clock()
+		if Now >= BusyUntil and Now - LastStep < 0.1 then
+			return
+		end
+		LastStep = Now
 
 		-- PC
 		if not (MOBILE_LAYOUT_LIKE_2021 and IsTouchDevice) then
@@ -4863,6 +4876,7 @@ task.spawn(function()
 
 			if OnScreen then
 				Shown = Parts
+				MarkBusy()
 			else
 				Restore(Parts)
 			end
@@ -4903,6 +4917,7 @@ task.spawn(function()
 
 		SetIfDifferent(Copy.Holder, "Visible", true)
 		SetIfDifferent(Overlay, "Enabled", true)
+		MarkBusy()
 
 		if os.clock() >= ShowRealUntil then
 			HideOriginals(Shown)

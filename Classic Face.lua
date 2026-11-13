@@ -747,7 +747,7 @@ end
 local function detectFace(player, character, head)
 	-- 1. the 2D face the player has on now
 	local worn = wornDecalTexture(head)
-	if worn then return worn end
+	if worn then return worn, "the 2D face on their head" end
 
 	-- 2. the avatar the game gave them
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -757,7 +757,7 @@ local function detectFace(player, character, head)
 		if ok and desc then
 			gotApplied = true
 			local tex = textureFromDescription(desc)
-			if tex then return tex end
+			if tex then return tex, "their avatar (face item / head name)" end
 		end
 	end
 
@@ -765,7 +765,7 @@ local function detectFace(player, character, head)
 	if head:IsA("MeshPart") then
 		local entry = FACE_BY_ID[extractNumericId(head.MeshId) or ""] or entryByName(assetName(head.MeshId))
 		local tex = entryTexture(entry)
-		if tex then return tex end
+		if tex then return tex, "their head's name" end
 	end
 
 	-- 4. their website avatar, only when the game's avatar couldn't be read
@@ -773,19 +773,54 @@ local function detectFace(player, character, head)
 		local ok, desc = pcall(function() return Players:GetHumanoidDescriptionFromUserId(player.UserId) end)
 		if ok and desc then
 			local tex = textureFromDescription(desc)
-			if tex then return tex end
+			if tex then return tex, "their website avatar" end
 		end
 	end
 
-	return DEFAULT_SMILE_TEXTURE
+	return DEFAULT_SMILE_TEXTURE, "nothing found: the classic smile"
 end
 
 ----------------------------------------------------------------------------------------------------
 -- HEADS
 ----------------------------------------------------------------------------------------------------
--- dynamic: a head with a moving face (FaceControls) or a 3D-textured head (SurfaceAppearance)
-local function isDynamicHead(head)
-	return head:FindFirstChildOfClass("FaceControls") ~= nil or head:FindFirstChildOfClass("SurfaceAppearance") ~= nil
+-- The classic heads (catalog "Classic Heads" and the like): these keep their shape.
+local CLASSIC_HEAD_WORDS = {
+	"roundy", "blockhead", "block head", "peabrain", "trim", "barrel", "bighead", "big head", "cheeks",
+	"diamond", "eraser", "fat head", "flat top", "flattop", "hex", "narrow", "octoblox", "perfection",
+	"roll", "square", "tiny head", "biggerhead", "classic head", "default head",
+}
+
+local function isClassicHeadName(name)
+	if not name then return false end
+	local lower = string.lower(name)
+	if string.find(lower, "dynamic", 1, true) then return false end
+	for _, word in ipairs(CLASSIC_HEAD_WORDS) do
+		if string.find(lower, "%f[%w]" .. escapePattern(word) .. "%f[%W]") then return true end
+	end
+	return false
+end
+
+-- A head that gets a classic head on top:
+--   * anything with a moving face (FaceControls) or a 3D texture (SurfaceAppearance)
+--   * an R15 / MeshPart head that is not the plain head or a classic head (by the avatar's head item)
+-- R6 heads with a mesh (Roundy, Blockhead...) and the plain head keep their shape.
+local function isDynamicHead(character, head)
+	if head:FindFirstChildOfClass("FaceControls") or head:FindFirstChildOfClass("SurfaceAppearance") then
+		return true
+	end
+	if not head:IsA("MeshPart") then return false end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local ok, desc = false, nil
+	if humanoid then
+		ok, desc = pcall(function() return humanoid:GetAppliedDescription() end)
+	end
+	if ok and desc then
+		local headId = tonumber(extractNumericId(desc.Head)) or 0
+		if headId == 0 then return false end              -- the plain head
+		return not isClassicHeadName(assetName(headId))   -- a classic head keeps its shape
+	end
+	-- the avatar can't be read: a MeshPart head with its own texture is a modern head
+	return head.TextureID ~= nil and head.TextureID ~= ""
 end
 
 local function headSkinColor(character, head)
@@ -834,6 +869,7 @@ local function makeFaceDecal(texture)
 end
 
 local generation = setmetatable({}, { __mode = "k" }) -- character -> number of the latest refresh
+local lastReport = setmetatable({}, { __mode = "k" })
 
 local function apply(player, character)
 	if not running or not character or not character.Parent then return end
@@ -844,7 +880,7 @@ local function apply(player, character)
 	local gen = (generation[character] or 0) + 1
 	generation[character] = gen
 	undo(character)
-	local texture = detectFace(player, character, head)
+	local texture, source = detectFace(player, character, head)
 	if generation[character] ~= gen then return end
 	if not running or not character.Parent or character:FindFirstChild("Head") ~= head then return end
 	undo(character)
@@ -853,7 +889,9 @@ local function apply(player, character)
 	states[character] = st
 	hideOwnDecals(head, st)
 
-	if isDynamicHead(head) then
+	local dynamic = isDynamicHead(character, head)
+	if generation[character] ~= gen then return end
+	if dynamic then
 		-- a dynamic head: hidden, with a classic head on top
 		st.headTransparency = head.Transparency
 		head.Transparency = 1
@@ -885,6 +923,7 @@ local function apply(player, character)
 		st.fake = fake
 		st.weld = weld
 		fakeHeads[character] = st
+		st.report = "modern head -> classic head, face from " .. tostring(source)
 	else
 		-- a classic head (R6 mesh, R15 classic head, or the plain head): kept, with the face on it
 		if not head:IsA("MeshPart") and not head:FindFirstChildWhichIsA("DataModelMesh") then
@@ -898,6 +937,12 @@ local function apply(player, character)
 		local decal = makeFaceDecal(texture)
 		decal.Parent = head
 		st.decal = decal
+		st.report = "classic head kept, face from " .. tostring(source)
+	end
+	local line = st.report .. " (" .. tostring(texture) .. ")"
+	if lastReport[character] ~= line then
+		lastReport[character] = line
+		print("[Classic Face] " .. tostring(player.Name) .. ": " .. line)
 	end
 end
 
