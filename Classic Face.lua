@@ -747,21 +747,47 @@ local function wornDecalTexture(head)
 	return nil
 end
 
+-- The player's own (website) avatar, read once per player. Used when the avatar the game gave them doesn't
+-- say which head / face they wear (games that load characters their own way give Head = 0 and Face = 0).
+local websiteDescCache = {}
+local function websiteDescription(player)
+	if not player or not player.UserId or player.UserId <= 0 then return nil end
+	local cached = websiteDescCache[player.UserId]
+	if cached ~= nil then return cached or nil end
+	local ok, desc = pcall(function() return Players:GetHumanoidDescriptionFromUserId(player.UserId) end)
+	cached = (ok and desc) or false
+	websiteDescCache[player.UserId] = cached
+	return cached or nil
+end
+
+local function appliedDescription(character)
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return nil end
+	local ok, desc = pcall(function() return humanoid:GetAppliedDescription() end)
+	return ok and desc or nil
+end
+
+-- a description that says which head the player wears: the game's, else the website one
+local function headDescription(player, character)
+	local applied = appliedDescription(character)
+	local appliedHead = applied and tonumber(extractNumericId(applied.Head)) or 0
+	if applied and appliedHead ~= 0 then return applied, "game" end
+	local website = websiteDescription(player)
+	local websiteHead = website and tonumber(extractNumericId(website.Head)) or 0
+	if website and websiteHead ~= 0 then return website, "website" end
+	return applied or website, applied and "game" or (website and "website" or nil)
+end
+
 local function detectFace(player, character, head)
 	-- 1. the 2D face the player has on now
 	local worn = wornDecalTexture(head)
 	if worn then return worn, "the 2D face on their head" end
 
 	-- 2. the avatar the game gave them
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	local gotApplied = false
-	if humanoid then
-		local ok, desc = pcall(function() return humanoid:GetAppliedDescription() end)
-		if ok and desc then
-			gotApplied = true
-			local tex = textureFromDescription(desc)
-			if tex then return tex, "their avatar (face item / head name)" end
-		end
+	local applied = appliedDescription(character)
+	if applied then
+		local tex = textureFromDescription(applied)
+		if tex then return tex, "their avatar (face item / head name)" end
 	end
 
 	-- 3. a dynamic head's name, read from the head itself
@@ -771,16 +797,23 @@ local function detectFace(player, character, head)
 		if tex then return tex, "their head's name" end
 	end
 
-	-- 4. their website avatar, only when the game's avatar couldn't be read
-	if not gotApplied and player and player.UserId > 0 then
-		local ok, desc = pcall(function() return Players:GetHumanoidDescriptionFromUserId(player.UserId) end)
-		if ok and desc then
-			local tex = textureFromDescription(desc)
-			if tex then return tex, "their website avatar" end
-		end
+	-- 4. their website avatar, when the game's avatar doesn't say (games that load characters their own way)
+	local website = websiteDescription(player)
+	if website then
+		local tex = textureFromDescription(website)
+		if tex then return tex, "their website avatar" end
 	end
 
-	return DEFAULT_SMILE_TEXTURE, "nothing found: the classic smile"
+	-- (what was seen, for the console)
+	local function said(desc)
+		if not desc then return "none" end
+		local face = tonumber(extractNumericId(desc.Face)) or 0
+		local headItem = tonumber(extractNumericId(desc.Head)) or 0
+		return string.format("face %s, head %s%s", tostring(face), tostring(headItem),
+			headItem ~= 0 and (" " .. tostring(assetName(headItem) or "?")) or "")
+	end
+	return DEFAULT_SMILE_TEXTURE, "nothing found: the classic smile [game avatar: " .. said(applied)
+		.. "; website avatar: " .. said(website) .. "]"
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -934,13 +967,8 @@ end
 --   classic shape when it has one (shape), else the plain one
 -- "classic": no face of its own (a classic head, the plain head, any untextured head): kept, with the face on
 -- "headless": left as it is
-local function headKind(character, head)
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	local ok, desc = false, nil
-	if humanoid then
-		ok, desc = pcall(function() return humanoid:GetAppliedDescription() end)
-	end
-	desc = ok and desc or nil
+local function headKind(character, head, player)
+	local desc, descFrom = headDescription(player, character)
 	local headId = desc and (tonumber(extractNumericId(desc.Head)) or 0) or nil
 	local headName = (headId and headId ~= 0) and assetName(headId) or nil
 
@@ -957,9 +985,9 @@ local function headKind(character, head)
 		or (headId and SHAPE_BY_ASSET[headId])
 		or shapeFromName(headName)
 	-- what was seen, for the console when the shape isn't known
-	local seen = string.format("head item %s (%s), Roblox head shape %s, mesh %s",
-		tostring(headName or "?"), tostring(headId or "?"), headShapeValue and ('"' .. headShapeValue .. '"') or "none",
-		tostring(meshId or "?"))
+	local seen = string.format("head item %s (%s, from the %s avatar), Roblox head shape %s, mesh %s",
+		tostring(headName or "?"), tostring(headId or "?"), tostring(descFrom or "no"),
+		headShapeValue and ('"' .. headShapeValue .. '"') or "none", tostring(meshId or "?"))
 	return "dynamic", shape, seen
 end
 
@@ -1029,7 +1057,7 @@ local function apply(player, character)
 	states[character] = st
 	hideOwnDecals(head, st)
 
-	local kind, shape, seen = headKind(character, head)
+	local kind, shape, seen = headKind(character, head, player)
 	if generation[character] ~= gen then return end
 	if kind == "headless" then
 		-- nothing put on a headless head

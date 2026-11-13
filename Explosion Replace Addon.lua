@@ -553,16 +553,19 @@ print("[Explosion] 2013 style LOADED and HOOKED.")
 		end
 	end)
 
-	local savedStyle
+	-- The saved style is only used by itself with Bloxy's "skip setup" on (no setup to pick it in), like the
+	-- terrain and 2007 animation steps; otherwise the explosion is the one picked in the setup.
+	local savedStyle, skipSetup = nil, false
 	if readfile and isfile and isfile(CONFIG_FILE) then
 		pcall(function()
 			local cfg = HttpService:JSONDecode(readfile(CONFIG_FILE))
-			if type(cfg) == "table" and cfg.explosionStyle then
+			if type(cfg) == "table" then
 				savedStyle = cfg.explosionStyle
+				skipSetup = cfg.isSkipped == true
 			end
 		end)
 	end
-	if savedStyle and savedStyle ~= "" then
+	if skipSetup and savedStyle and savedStyle ~= "" then
 		task.spawn(function()
 			runExplosionScript(savedStyle)
 		end)
