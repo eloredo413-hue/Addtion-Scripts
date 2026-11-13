@@ -450,7 +450,9 @@ local function questionFrameOf(obj)
 	return frame
 end
 
--- a question's title: its longest label, if it reads like a question ("...?" or "...:")
+-- a question's title: its longest label. A setup question is one with Bloxy's "SETUP" picture on it (all of
+-- Bloxy's, and the addons' steps drawn on them: some titles have no "?" or ":", like "Choose your mouse
+-- cursor" and "choose your forcefield"), or one whose title reads like a question
 local function questionTitle(frame)
 	local best = nil
 	for _, d in ipairs(frame:GetDescendants()) do
@@ -458,7 +460,10 @@ local function questionTitle(frame)
 			best = d.Text
 		end
 	end
-	if best and (string.find(best, "?", 1, true) or string.find(best, ":", 1, true)) then return best end
+	if not best or best == "" then return nil end
+	if frame:FindFirstChild("HeaderImage", true) or string.find(best, "?", 1, true) or string.find(best, ":", 1, true) then
+		return best
+	end
 	return nil
 end
 
