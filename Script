@@ -180,8 +180,8 @@ local URL_OLD_PHYSICS_GIST = "https://gist.githubusercontent.com/eloredo413-hue/
 -- Hammer stuff 1 (Hammer stuff 1.lua in this repo): the gist plus a "sky & world" category title. The gist is the fallback.
 local URL_HAMMER_1          = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Hammer%20stuff%201.lua"
 local URL_HAMMER_1_GIST     = "https://gist.githubusercontent.com/eloredo413-hue/df4c1c582f4d9c634682b91b13395c4b/raw/5d71a838cd858c860cfcf646c27e02cd26447294/Hammer%2520stuff%25201"
--- Explosion Replace Addon (Explosion Replace Addon.lua in this repo): 2010 and 2013 like the user's recordings, and its
--- step put on the "old particles" question before the Particles addon. The gist is the fallback.
+-- Explosion Replace Addon (Explosion Replace Addon.lua in this repo): the gist's explosions, the 2013 one fading darker
+-- and quicker, and its step put on the "old particles" question before the Particles addon. The gist is the fallback.
 local URL_EXPLOSION         = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Explosion%20Replace%20Addon.lua"
 local URL_EXPLOSION_GIST    = "https://gist.githubusercontent.com/eloredo413-hue/85e4840f74edb2acaf0845da534c3d18/raw/e1de3a906c34929de562bc36aea179fa0e4eb7fe/Explosion%2520Replace%2520Addon"
 
