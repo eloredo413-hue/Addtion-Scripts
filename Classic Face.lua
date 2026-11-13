@@ -6,9 +6,12 @@
 --     avatar the game gave them (any classic face, not only the ones in the list below), else the
 --     classic face named like their dynamic head, else (only when the game's avatar can't be read)
 --     the same from their website avatar, else the classic smile
---   * classic heads stay as they are (Roundy, Blockhead, Peabrain, the plain classic head...: R6 head
---     meshes and R15 classic head MeshParts); only dynamic heads (the ones with moving faces) are
---     covered by a classic head
+--   * heads without a face of their own stay as they are (Roundy, Blockhead, Peabrain, the plain classic
+--     head...: R6 head meshes and R15 classic head MeshParts), with the face put on
+--   * heads with the face part of the head (dynamic heads: a moving face, a 3D texture, or the face drawn
+--     into the head's texture, as R6 avatars show them) are covered by a classic head: the classic model
+--     of their shape when they have one (the 2026 classic-shape dynamic heads: Roundy, Blockhead, Trim,
+--     Barrel, Hex, ...; read from Roblox's head shape, the head item's name or its mesh), else the plain one
 --
 -- Nothing of the player's own is deleted: their face decals and dynamic head are only hidden, so
 -- getgenv().ClassicFace.Stop() puts every head back as it was. It waits for each avatar to load, and
@@ -783,65 +786,150 @@ end
 ----------------------------------------------------------------------------------------------------
 -- HEADS
 ----------------------------------------------------------------------------------------------------
--- The classic heads (catalog "Classic Heads" and the like): these keep their shape.
--- The head shapes that keep their shape (the face goes on them): the classic catalog heads and the
--- other plain head shapes. Matched as words in the head item's name ("Roundy", "Classic Roundy Head").
-local CLASSIC_HEAD_WORDS = {
-	-- the classic catalog heads
-	"roundy", "blockhead", "block head", "peabrain", "pea brain", "trim", "barrel", "cheeks", "diamond",
-	"eraser", "fat head", "flat top", "flattop", "hex", "narrow", "octoblox", "perfection", "roll", "square",
-	-- size variants
-	"bighead", "big head", "biggerhead", "bigger head", "biggest head", "tiny head", "mini head",
-	"small head", "pinhead", "pin head",
-	-- other plain shapes
-	"squarehead", "square head", "boxhead", "box head", "blocky head", "egghead", "egg head",
-	"cylinder", "cylinder head", "conehead", "cone head", "flathead", "flat head", "round head",
-	"oval head", "wide head", "tall head", "long head", "skinny head", "bucket head",
-	-- the plain heads of the classic bundles
-	"classic head", "default head", "man head", "woman head", "boy head", "girl head", "robloxian head",
+-- The classic head shapes and their models: Roblox's classic head items (catalog id) and the head mesh in
+-- each (read from the items themselves). Dynamic heads in these shapes (the ones Roblox swapped classic
+-- heads to in 2026, "Classic Smile Roundy - Dynamic Head" and the like) get the classic model of their
+-- shape, with the classic face on it.
+--   words: how the shape is named in a head item's name. "loose" words ("roll", "trim", ...) only count at
+--   the end of the name or in [brackets], since other heads use them too ("Rock and Roll Head").
+local CLASSIC_SHAPES = {
+	{ key = "Blockhead",        assetId = 6340101,   mesh = 5560742512,  words = { "blockhead", "block head" } },
+	{ key = "Roundy",           assetId = 6340213,   mesh = 5560742556,  words = { "roundy" } },
+	{ key = "Trim",             assetId = 6340227,   mesh = 5560742658,  loose = { "trim" } },
+	{ key = "Barrel",           assetId = 6340170,   mesh = 5591362929,  loose = { "barrel" } },
+	{ key = "Cool Thing",       assetId = 6340258,   mesh = 5591363019,  words = { "cool thing" } },
+	{ key = "Cylinder Madness", assetId = 6340192,   mesh = 5591363143,  words = { "cylinder madness" }, loose = { "cylinder" } },
+	{ key = "Eraser Head",      assetId = 6340161,   mesh = 5591363284,  words = { "eraser head", "eraserhead" }, loose = { "eraser" } },
+	{ key = "Flat Top",         assetId = 6340208,   mesh = 5591363456,  words = { "flat top", "flattop" } },
+	{ key = "Hex",              assetId = 6340141,   mesh = 5591363498,  loose = { "hex", "hex head" } },
+	{ key = "Octoblox",         assetId = 6340133,   mesh = 5591363533,  words = { "octoblox" } },
+	{ key = "Perfection",       assetId = 6340269,   mesh = 5591363762,  loose = { "perfection" } },
+	{ key = "Roll",             assetId = 6340198,   mesh = 5591363641,  loose = { "roll" } },
+	{ key = "ROX BOX",          assetId = 6340154,   mesh = 5591363588,  words = { "rox box", "roxbox" } },
+	{ key = "Cheeks",           assetId = 746767604, mesh = 13916684351, loose = { "cheeks" } },
+	{ key = "Narrow",           assetId = 746774687, mesh = 8635369445,  loose = { "narrow" } },
+	{ key = "Chiseled",         assetId = 616387160, mesh = 8635368660,  loose = { "chiseled" } },
+	{ key = "Paragon",          assetId = 616398268, mesh = 8635368843,  loose = { "paragon" } },
+	{ key = "Strong Jaw",       assetId = 616399508, mesh = 8635369015,  words = { "strong jaw", "strongjaw" } },
 }
+local SHAPE_BY_ASSET, SHAPE_BY_MESH, SHAPE_BY_KEY = {}, {}, {}
+for _, shape in ipairs(CLASSIC_SHAPES) do
+	SHAPE_BY_ASSET[shape.assetId] = shape
+	SHAPE_BY_MESH[shape.mesh] = shape
+	SHAPE_BY_KEY[string.lower(shape.key)] = shape
+end
+
+-- A head item name's shape: "Classic Smile Roundy - Dynamic Head", "Happy Pixel Face [Blockhead]", "Roundy"
+local function shapeFromName(name)
+	if not name or name == "" then return nil end
+	local lower = string.lower(name)
+	if SHAPE_BY_KEY[lower] then return SHAPE_BY_KEY[lower] end
+	local core = string.gsub(lower, "%s*%-%s*dynamic head%s*$", "")
+	core = string.gsub(core, "%s+head%s*$", "")
+	core = string.gsub(core, "%s+$", "")
+	local bracket = string.match(core, "%[([^%]]+)%]")
+	for _, shape in ipairs(CLASSIC_SHAPES) do
+		for _, word in ipairs(shape.words or {}) do
+			if string.find(lower, "%f[%w]" .. escapePattern(word) .. "%f[%W]") then return shape end
+		end
+		for _, word in ipairs(shape.loose or {}) do
+			local pat = escapePattern(word)
+			if (bracket and string.find(bracket, "^%s*" .. pat .. "%s*$"))
+			   or string.find(core, "%f[%w]" .. pat .. "$") then
+				return shape
+			end
+		end
+	end
+	return nil
+end
+
+-- A classic head item that isn't in the list: its mesh, read from the item itself (once)
+local shapeFromAssetCache = {}
+local function shapeFromAsset(assetId)
+	assetId = tonumber(assetId)
+	if not assetId or assetId == 0 then return nil end
+	if SHAPE_BY_ASSET[assetId] then return SHAPE_BY_ASSET[assetId] end
+	local cached = shapeFromAssetCache[assetId]
+	if cached ~= nil then return cached or nil end
+	local found = false
+	pcall(function()
+		local objects = game:GetObjects("rbxassetid://" .. assetId)
+		for _, obj in ipairs(objects or {}) do
+			local mesh = obj:IsA("SpecialMesh") and obj or obj:FindFirstChildWhichIsA("SpecialMesh", true)
+			if mesh and mesh.MeshType == Enum.MeshType.FileMesh and mesh.MeshId ~= "" and mesh.TextureId == "" then
+				local meshId = tonumber(extractNumericId(mesh.MeshId))
+				found = (meshId and SHAPE_BY_MESH[meshId])
+					or { key = "the shape of classic head item " .. assetId, assetId = assetId, mesh = meshId, scale = mesh.Scale }
+				break
+			end
+		end
+	end)
+	shapeFromAssetCache[assetId] = found
+	return found or nil
+end
+
+-- The head shape Roblox gives a dynamic head (BodyPartDescription.HeadShape), if there is one
+local function headShapeOf(desc)
+	if not desc then return nil end
+	local value = nil
+	pcall(function()
+		for _, part in ipairs(desc:GetChildren()) do
+			if part:IsA("BodyPartDescription") and part.BodyPart == Enum.BodyPart.Head then
+				value = part.HeadShape
+			end
+		end
+	end)
+	if type(value) ~= "string" or value == "" then return nil end
+	-- (a classic head item's id, or a shape's name)
+	local numeric = string.match(value, "^%s*(%d+)%s*$")
+	return (numeric and shapeFromAsset(numeric)) or SHAPE_BY_KEY[string.lower(value)] or shapeFromName(value)
+end
 
 -- A headless head: left as it is (no face is put on nothing).
 local function isHeadlessName(name)
 	return name ~= nil and string.find(string.lower(name), "headless", 1, true) ~= nil
 end
 
-local function isClassicHeadName(name)
-	if not name then return false end
-	local lower = string.lower(name)
-	if string.find(lower, "dynamic", 1, true) then return false end
-	for _, word in ipairs(CLASSIC_HEAD_WORDS) do
-		if string.find(lower, "%f[%w]" .. escapePattern(word) .. "%f[%W]") then return true end
+-- The mesh the head shows (its SpecialMesh, else its MeshPart mesh) and whether a face is drawn into it
+local function headMeshInfo(head)
+	local special = head:FindFirstChildWhichIsA("SpecialMesh")
+	if special then
+		local textured = special.MeshType == Enum.MeshType.FileMesh and special.TextureId ~= nil and special.TextureId ~= ""
+		return tonumber(extractNumericId(special.MeshId)), textured
 	end
-	return false
+	if head:IsA("MeshPart") then
+		return tonumber(extractNumericId(head.MeshId)), head.TextureID ~= nil and head.TextureID ~= ""
+	end
+	return nil, false
 end
 
--- A head that gets a classic head on top:
---   * anything with a moving face (FaceControls) or a 3D texture (SurfaceAppearance)
---   * an R15 / MeshPart head that is not the plain head or a classic head (by the avatar's head item)
--- R6 heads with a mesh (Roundy, Blockhead...) and the plain head keep their shape.
--- "dynamic" (covered by a classic head), "classic" (keeps its shape, gets the face) or "headless"
+-- "dynamic": its face is part of the head (a moving face, a 3D texture, or a face drawn into the head's
+--   texture, which is how an R6 avatar shows a dynamic head): it is covered by a classic head, of its
+--   classic shape when it has one (shape), else the plain one
+-- "classic": no face of its own (a classic head, the plain head, any untextured head): kept, with the face on
+-- "headless": left as it is
 local function headKind(character, head)
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	local ok, desc = false, nil
 	if humanoid then
 		ok, desc = pcall(function() return humanoid:GetAppliedDescription() end)
 	end
-	local headId = (ok and desc) and (tonumber(extractNumericId(desc.Head)) or 0) or nil
+	desc = ok and desc or nil
+	local headId = desc and (tonumber(extractNumericId(desc.Head)) or 0) or nil
 	local headName = (headId and headId ~= 0) and assetName(headId) or nil
 
 	if isHeadlessName(headName) then return "headless" end
-	if head:FindFirstChildOfClass("FaceControls") or head:FindFirstChildOfClass("SurfaceAppearance") then
-		return "dynamic"
-	end
-	if not head:IsA("MeshPart") then return "classic" end   -- R6: its head mesh is the shape
-	if headId ~= nil then
-		if headId == 0 then return "classic" end           -- the plain head
-		return isClassicHeadName(headName) and "classic" or "dynamic"
-	end
-	-- the avatar can't be read: a MeshPart head with its own texture is a modern head
-	if head.TextureID ~= nil and head.TextureID ~= "" then return "dynamic" end
-	return "classic"
+	local meshId, textured = headMeshInfo(head)
+	local baked = head:FindFirstChildOfClass("FaceControls") ~= nil
+		or head:FindFirstChildOfClass("SurfaceAppearance") ~= nil
+		or textured
+		or (headName ~= nil and string.find(string.lower(headName), "dynamic head", 1, true) ~= nil)
+	if not baked then return "classic" end
+	local shape = headShapeOf(desc)
+		or (meshId and SHAPE_BY_MESH[meshId])
+		or (headId and SHAPE_BY_ASSET[headId])
+		or shapeFromName(headName)
+	return "dynamic", shape
 end
 
 local function headSkinColor(character, head)
@@ -910,7 +998,7 @@ local function apply(player, character)
 	states[character] = st
 	hideOwnDecals(head, st)
 
-	local kind = headKind(character, head)
+	local kind, shape = headKind(character, head)
 	if generation[character] ~= gen then return end
 	if kind == "headless" then
 		-- nothing put on a headless head
@@ -941,8 +1029,16 @@ local function apply(player, character)
 		fake.CFrame = head.CFrame
 
 		local mesh = Instance.new("SpecialMesh")
-		mesh.MeshType = Enum.MeshType.Head
-		mesh.Scale = HEAD_SCALE
+		if shape and shape.mesh then
+			-- the classic model of its shape (Roundy, Blockhead, ...)
+			mesh.MeshType = Enum.MeshType.FileMesh
+			mesh.MeshId = "rbxassetid://" .. tostring(shape.mesh)
+			mesh.TextureId = ""
+			mesh.Scale = shape.scale or Vector3.new(1, 1, 1)
+		else
+			mesh.MeshType = Enum.MeshType.Head
+			mesh.Scale = HEAD_SCALE
+		end
 		mesh.Parent = fake
 
 		makeFaceDecal(texture).Parent = fake
@@ -956,7 +1052,8 @@ local function apply(player, character)
 		st.fake = fake
 		st.weld = weld
 		fakeHeads[character] = st
-		st.report = "modern head -> classic head, face from " .. tostring(source)
+		st.report = "dynamic head -> classic head" .. (shape and (" (" .. shape.key .. ")") or "")
+			.. ", face from " .. tostring(source)
 	else
 		-- a classic head (R6 mesh, R15 classic head, or the plain head): kept, with the face on it
 		if not head:IsA("MeshPart") and not head:FindFirstChildWhichIsA("DataModelMesh") then

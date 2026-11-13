@@ -56,8 +56,9 @@ local WHEN_MISSING = {
 
 local ICON_IMAGE = "rbxthumb://type=Asset&id=90842402386374&w=420&h=420"
 -- "Paradox" in the name: the game GUI hider leaves it alone. Not "Bloxy": More guis takes the first GUI with
--- "Bloxy" in its name to be Bloxy's own.
-local GUI_NAME = "ParadoxSavedSettings"
+-- "Bloxy" in its name to be Bloxy's own. And no name here has "settings", "menu" or "chat" in it: the 2013 /
+-- 2013 mobile GUIs (Bloxy's and ours) hide every button named like that, to get rid of the game's menu buttons.
+local GUI_NAME = "ParadoxSaveDisk"
 local BLOXY_GUI = "BloxyParadoxProject"
 local MAX_NAME = 24
 local CONFIRM_TIME = 3
@@ -770,14 +771,14 @@ local function buildGui()
 	pcall(function() gui.ClipToDeviceSafeArea = false end)
 
 	clickSound = Instance.new("Sound")
-	clickSound.Name = "BPSavedSettingsClick"
+	clickSound.Name = "BPSaveDiskClick"
 	clickSound.SoundId = "rbxassetid://12221967"
 	clickSound.Volume = 0.6
 	clickSound.Parent = SoundService
 
 	-- the icon: a floppy disk under the hammer, half out of the screen like it
 	icon = Instance.new("ImageButton")
-	icon.Name = "SavedSettingsIcon"
+	icon.Name = "SaveDiskIcon"
 	icon.BackgroundTransparency = 1
 	icon.Image = ICON_IMAGE
 	icon.Size = UDim2.new(0, ICON_SIZE, 0, ICON_SIZE)
@@ -787,7 +788,7 @@ local function buildGui()
 	icon.Parent = gui
 
 	panel = Instance.new("Frame")
-	panel.Name = "SavedSettingsPanel"
+	panel.Name = "SaveDiskPanel"
 	panel.Size = UDim2.new(0.35, 0, 0.88, 60)
 	panel.Position = PANEL_CLOSED
 	panel.BackgroundColor3 = GREY
@@ -875,6 +876,11 @@ local function buildGui()
 			tween(icon, { Position = ICON_OUT, Rotation = 0 })
 			tween(panel, { Position = PANEL_OPEN })
 		end
+	end)
+
+	-- (nothing here ever hides the icon: if another script does, it is shown again)
+	connect(icon:GetPropertyChangedSignal("Visible"), function()
+		if not icon.Visible then icon.Visible = true end
 	end)
 
 	gui.Parent = playerGui
