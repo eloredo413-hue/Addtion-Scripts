@@ -3139,8 +3139,10 @@ end)
 				-- moved or resized by the GUI itself since: that is the new starting point
 				if TopBarContainer.Position ~= LastPos then BasePos = TopBarContainer.Position end
 				if TopBarContainer.Size ~= LastSize then BaseSize = TopBarContainer.Size end
-				local Holder = TopBarContainer.Parent
-				local Left = (Holder and Holder:IsA("GuiBase2d")) and Holder.AbsolutePosition.X or 0
+				-- how far from the screen's left edge the bar would start where the GUI put it: where it
+				-- is now on screen, plus how far it has been moved left already
+				local Moved = BasePos.X.Offset - TopBarContainer.Position.X.Offset
+				local Left = TopBarContainer.AbsolutePosition.X + Moved
 				if Left < 0 then Left = 0 end
 				LastPos = UDim2.new(BasePos.X.Scale, BasePos.X.Offset - Left, BasePos.Y.Scale, BasePos.Y.Offset)
 				LastSize = UDim2.new(BaseSize.X.Scale, BaseSize.X.Offset + Left, BaseSize.Y.Scale, BaseSize.Y.Offset)
@@ -3153,9 +3155,8 @@ end)
 		Stretch()
 		TopBarContainer:GetPropertyChangedSignal("Position"):Connect(Stretch)
 		TopBarContainer:GetPropertyChangedSignal("Size"):Connect(Stretch)
-		if TopBarContainer.Parent and TopBarContainer.Parent:IsA("GuiBase2d") then
-			TopBarContainer.Parent:GetPropertyChangedSignal("AbsolutePosition"):Connect(Stretch)
-		end
+		TopBarContainer:GetPropertyChangedSignal("AbsolutePosition"):Connect(Stretch)
+		task.defer(Stretch) -- once the bar has its place on screen
 
 		if not TopBarContainer:FindFirstChild("BPEdgeRoom") then
 			pcall(function()
