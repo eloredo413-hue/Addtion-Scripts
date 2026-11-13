@@ -3124,39 +3124,71 @@ end)
 	-- of the backpack.
 
 	-- 2019's top bar went right to the left edge of the screen. The GUI holding it is kept in from the
-	-- edge by the phone's safe area, and the escape menu is in that same GUI, so the GUI is left as it
-	-- is (changing it moved the menu too) and only the bar is stretched out to the screen's left edge.
-	-- Its icons keep some room on the left so the menu button isn't on the edge of the screen.
+	-- screen's edges by the phone's safe area, so that is switched off for it (the bar reaches the
+	-- edge), and the escape menu, which is in the same GUI, gets the same room back as padding so it
+	-- stays exactly where it was. The icons keep some room on the left so the menu button isn't on
+	-- the edge of the screen.
 	if TopBarContainer then
-		local LastPos, LastSize = nil, nil
-		local BasePos, BaseSize = TopBarContainer.Position, TopBarContainer.Size
-		local Applying = false
+		local TopGui = TopBarContainer:FindFirstAncestorWhichIsA("ScreenGui")
+		if TopGui then
+			task.spawn(function()
+				local function Width()
+					local w = 0
+					pcall(function() w = math.max(TopGui.AbsoluteSize.X, TopBarContainer.AbsoluteSize.X) end)
+					return w
+				end
+				local Before = Width()
+				local function NoInset()
+					pcall(function()
+						if TopGui.ScreenInsets ~= Enum.ScreenInsets.None then
+							TopGui.ScreenInsets = Enum.ScreenInsets.None
+						end
+					end)
+					pcall(function()
+						if TopGui.SafeAreaCompatibility ~= Enum.SafeAreaCompatibility.None then
+							TopGui.SafeAreaCompatibility = Enum.SafeAreaCompatibility.None
+						end
+					end)
+				end
+				NoInset()
+				pcall(function() TopGui:GetPropertyChangedSignal("ScreenInsets"):Connect(NoInset) end)
+				pcall(function() TopGui:GetPropertyChangedSignal("SafeAreaCompatibility"):Connect(NoInset) end)
 
-		local function Stretch()
-			if Applying then return end
-			Applying = true
-			pcall(function()
-				-- moved or resized by the GUI itself since: that is the new starting point
-				if TopBarContainer.Position ~= LastPos then BasePos = TopBarContainer.Position end
-				if TopBarContainer.Size ~= LastSize then BaseSize = TopBarContainer.Size end
-				-- how far from the screen's left edge the bar would start where the GUI put it: where it
-				-- is now on screen, plus how far it has been moved left already
-				local Moved = BasePos.X.Offset - TopBarContainer.Position.X.Offset
-				local Left = TopBarContainer.AbsolutePosition.X + Moved
-				if Left < 0 then Left = 0 end
-				LastPos = UDim2.new(BasePos.X.Scale, BasePos.X.Offset - Left, BasePos.Y.Scale, BasePos.Y.Offset)
-				LastSize = UDim2.new(BaseSize.X.Scale, BaseSize.X.Offset + Left, BaseSize.Y.Scale, BaseSize.Y.Offset)
-				TopBarContainer.Position = LastPos
-				TopBarContainer.Size = LastSize
+				-- how much room the safe area kept on each side: the width it grew by, halved
+				local After = Before
+				for _ = 1, 30 do
+					task.wait()
+					After = Width()
+					if After ~= Before then break end
+				end
+				local Side = math.max(0, math.floor((After - Before) / 2 + 0.5))
+				print("[2019 GUI] top bar to the screen edge (safe area room on each side: " .. Side .. ")")
+				if Side <= 0 then return end
+
+				-- the escape menu: whatever in this GUI holds the menu's tab bar ("HubBar")
+				local function GiveRoomBack(Root)
+					if not Root or Root.Parent ~= TopGui or not Root:IsA("GuiObject") then return end
+					if Root == TopBarContainer or TopBarContainer:IsDescendantOf(Root) then return end
+					if Root:FindFirstChild("BPSafeRoom") then return end
+					local Pad = Instance.new("UIPadding")
+					Pad.Name = "BPSafeRoom"
+					Pad.PaddingLeft = UDim.new(0, Side)
+					Pad.PaddingRight = UDim.new(0, Side)
+					Pad.Parent = Root
+				end
+				local function RootOf(Obj)
+					local Cur = Obj
+					while Cur and Cur.Parent and Cur.Parent ~= TopGui do Cur = Cur.Parent end
+					return (Cur and Cur.Parent == TopGui) and Cur or nil
+				end
+				for _, D in ipairs(TopGui:GetDescendants()) do
+					if D.Name == "HubBar" then GiveRoomBack(RootOf(D)) end
+				end
+				TopGui.DescendantAdded:Connect(function(D)
+					if D.Name == "HubBar" then task.defer(function() GiveRoomBack(RootOf(D)) end) end
+				end)
 			end)
-			Applying = false
 		end
-
-		Stretch()
-		TopBarContainer:GetPropertyChangedSignal("Position"):Connect(Stretch)
-		TopBarContainer:GetPropertyChangedSignal("Size"):Connect(Stretch)
-		TopBarContainer:GetPropertyChangedSignal("AbsolutePosition"):Connect(Stretch)
-		task.defer(Stretch) -- once the bar has its place on screen
 
 		if not TopBarContainer:FindFirstChild("BPEdgeRoom") then
 			pcall(function()
