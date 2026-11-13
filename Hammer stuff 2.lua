@@ -1465,18 +1465,41 @@ task.spawn(function()
 	-- 6. CLASSIC FACE LOGIC (LOADSTRING)
 	------------------------------------------------------------
 	do
+		-- Classic Face.lua in this repo: the face the player really wears, classic heads kept, and it can be
+		-- switched off (getgenv().ClassicFace.Stop puts every head back). The gist is the fallback.
+		local CLASSIC_FACE_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Classic%20Face.lua"
 		local CLASSIC_FACES_URL = "https://gist.githubusercontent.com/eloredo413-hue/7c035b526111523ac45eab852fc756e7/raw/2d31d61b91835bd59b90b44c24c772571bd6b63e/Classic%2520faces"
+		local genv = (getgenv and getgenv()) or _G
 		local cfActive = false
+		local loading = false
 
 		function actions.applyClassicFace()
 			if cfActive then return end
 			cfActive = true
-
+			local api = genv.ClassicFace
+			if type(api) == "table" and type(api.Start) == "function" then
+				pcall(api.Start)
+				return
+			end
+			if loading then return end
+			loading = true
 			local ok, err = pcall(function()
-				loadstring(game:HttpGet(CLASSIC_FACES_URL))()
+				loadstring(game:HttpGet(CLASSIC_FACE_URL))()
 			end)
+			if not ok then
+				warn("[Classic Face] repo copy failed (" .. tostring(err) .. "), using the gist")
+				ok, err = pcall(function()
+					loadstring(game:HttpGet(CLASSIC_FACES_URL))()
+				end)
+			end
+			loading = false
 			if ok then
 				print("[Classic Face] Loaded via loadstring.")
+				-- unticked while it was downloading
+				if not state.isClassicFaceEnabled then
+					cfActive = true
+					actions.restoreClassicFace()
+				end
 			else
 				warn("[Classic Face] Loadstring failed: " .. tostring(err))
 			end
@@ -1486,6 +1509,12 @@ task.spawn(function()
 			if not cfActive then return end
 			cfActive = false
 
+			local api = genv.ClassicFace
+			if type(api) == "table" and type(api.Stop) == "function" then
+				pcall(api.Stop)
+				return
+			end
+			-- the gist copy (no off switch): take its classic heads off
 			for _, plr in ipairs(Players:GetPlayers()) do
 				local char = plr.Character
 				if char then
@@ -3893,7 +3922,7 @@ task.spawn(function()
 		stateKey      = "isClassicFaceEnabled",
 		onEnable      = actions.applyClassicFace,
 		onDisable     = actions.restoreClassicFace,
-		helpText      = "Loads the external Classic Faces script via loadstring to convert modern R15 dynamic heads into classic R6 block heads with 2D face decals."
+		helpText      = "Classic heads with 2D faces. Each player gets the face they really wear (their 2D face, their face item, or the classic face named like their dynamic head). Classic heads (Roundy, Blockhead...) keep their shape; only dynamic heads get a classic head on top. Untick to put every head back."
 	})
 
 	createCategory("BPCategorySounds", "sounds")
