@@ -617,7 +617,11 @@ local function fromSettings(title, files)
 		local a = topbarAnswers(files)
 		return a and { a[1].a, "confirm" } or nil
 	end
-	if has("explosion") then return config.ExplosionStyle and { tostring(config.ExplosionStyle) } or nil end
+	if has("explosion") then
+		-- (the Explosion addon saves it as "explosionStyle")
+		local style = config.explosionStyle or config.ExplosionStyle
+		return style and { tostring(style) } or nil
+	end
 	if has("terrain") then
 		local terrain = decode(files[TERRAIN_FILE])
 		local v = type(terrain) == "table" and terrain.Terrain or nil
