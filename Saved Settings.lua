@@ -659,6 +659,22 @@ local function fromSettings(title, files)
 	return nil
 end
 
+-- A question with no saved answer anywhere (the Particles addon's 2010 / 2013, which it doesn't save; a step
+-- added later): its neutral answer ("Normal", "No", "None"...), else its first one, so the setup goes on.
+local NEUTRAL_ANSWERS = { "normal", "no", "none", "default", "off" }
+local function neutralAnswer(frame)
+	local buttons = {}
+	for _, d in ipairs(frame:GetDescendants()) do
+		if d:IsA("TextButton") and d.Visible and isAnswerText(d.Text) then table.insert(buttons, d) end
+	end
+	for _, word in ipairs(NEUTRAL_ANSWERS) do
+		for _, b in ipairs(buttons) do
+			if string.lower(b.Text) == word then return b.Text end
+		end
+	end
+	return buttons[1] and buttons[1].Text or nil
+end
+
 -- the question on screen now (and its title)
 local function currentQuestion()
 	if not bloxyGui then return nil end
@@ -686,10 +702,12 @@ local function answerSetup(answers, files, name, firstWait)
 	local fromFile = {}
 	task.spawn(function()
 		print(string.format("[Saved Settings] answering the setup with \"%s\"", name))
-		local given, fromSettingsCount = 0, 0
+		local given, fromSettingsCount, guessed = 0, 0, {}
 		local idleSince = os.clock()
 		local lastFrame, lastTitle, lastAt = nil, nil, -math.huge
 		local stopReason = nil
+		local pressesOn = setmetatable({}, { __mode = "k" }) -- frame -> { [title] = presses }
+		local lookedAgain = 0
 		while not destroyed do
 			if tookOver then stopReason = "you answered the setup yourself: the rest of it is up to you" break end
 			local frame, title = currentQuestion()
@@ -738,22 +756,57 @@ local function answerSetup(answers, files, name, firstWait)
 					end
 				end
 				if stopReason then break end
-				if not btn then
-					if not tookOver then
-						stopReason = "no saved answer for \"" .. title .. "\": the rest of the setup is up to you"
+				if not btn and not tookOver then
+					if isTopbar then
+						-- (a GUI isn't guessed)
+						stopReason = "no saved topbar: the rest of the setup is up to you"
+						break
 					end
-					break
+					text = neutralAnswer(frame)
+					btn = text and answerButton(frame, text) or nil
+					if btn then
+						table.insert(guessed, title .. " -> " .. text)
+					else
+						stopReason = "no answer found for \"" .. title .. "\": the rest of the setup is up to you"
+						break
+					end
 				end
+				if tookOver then stopReason = "you answered the setup yourself: the rest of it is up to you" break end
 				task.wait(0.35) -- (it has just slid in)
 				if tookOver then stopReason = "you answered the setup yourself: the rest of it is up to you" break end
-				if btn.Parent and btn.Visible and press(btn) then given = given + 1 end
-				lastFrame, lastTitle, lastAt = frame, title, os.clock()
+				-- still the same question and button (an addon may have just turned it into its own step, like the
+				-- Particles addon does with "old particles"): else looked at again
+				local same = (text == DROPDOWN) and (answerButton(frame, DROPDOWN) == btn)
+					or string.lower(btn.Text or "") == string.lower(text)
+				if questionTitle(frame) == title and btn.Parent and btn.Visible and same then
+					pressesOn[frame] = pressesOn[frame] or {}
+					pressesOn[frame][title] = (pressesOn[frame][title] or 0) + 1
+					if pressesOn[frame][title] > 3 then
+						stopReason = "\"" .. title .. "\" doesn't go on when answered: the rest of the setup is up to you"
+						break
+					end
+					if press(btn) then given = given + 1 end
+					lastFrame, lastTitle, lastAt = frame, title, os.clock()
+				else
+					-- (its answer is put back for when it comes again)
+					queues[title] = queues[title] or {}
+					table.insert(queues[title], 1, text)
+					lookedAgain = lookedAgain + 1
+					if lookedAgain > 40 then
+						stopReason = "the setup keeps changing under it: the rest of the setup is up to you"
+						break
+					end
+				end
 				idleSince = os.clock()
 			end
 		end
 		replaying = false
 		task.delay(1, keepOtherSettings)
 		if stopReason then print("[Saved Settings] " .. stopReason) end
+		if #guessed > 0 then
+			print("[Saved Settings] no saved answer, so the neutral one: " .. table.concat(guessed, "; ")
+				.. " (save the file again after a setup to keep these)")
+		end
 		print(string.format("[Saved Settings] setup answered with \"%s\": %d answer%s given%s", name, given,
 			given == 1 and "" or "s", fromSettingsCount > 0 and (" (some from its saved settings)") or ""))
 	end)
