@@ -791,7 +791,9 @@ end
 -- heads to in 2026, "Classic Smile Roundy - Dynamic Head" and the like) get the classic model of their
 -- shape, with the classic face on it.
 --   words: how the shape is named in a head item's name. "loose" words ("roll", "trim", ...) only count at
---   the end of the name or in [brackets], since other heads use them too ("Rock and Roll Head").
+--   the end of the name or in [brackets], since other heads use them too ("Rock and Roll Head"); "exact"
+--   ones only as the whole name ("Man Face - Head" is the Man head, "Spider Man Face" isn't).
+--   items: other head items of that shape (the dynamic heads Roblox's bundles give now)
 local CLASSIC_SHAPES = {
 	{ key = "Blockhead",        assetId = 6340101,   mesh = 5560742512,  words = { "blockhead", "block head" } },
 	{ key = "Roundy",           assetId = 6340213,   mesh = 5560742556,  words = { "roundy" } },
@@ -811,10 +813,15 @@ local CLASSIC_SHAPES = {
 	{ key = "Chiseled",         assetId = 616387160, mesh = 8635368660,  loose = { "chiseled" } },
 	{ key = "Paragon",          assetId = 616398268, mesh = 8635368843,  loose = { "paragon" } },
 	{ key = "Strong Jaw",       assetId = 616399508, mesh = 8635369015,  words = { "strong jaw", "strongjaw" } },
+	-- the Man and Woman packages' heads (the default avatars); their bundles now give "Man Face - Head" and
+	-- "Woman Face - Head", dynamic heads of these shapes
+	{ key = "Man",              assetId = 86498048,  mesh = 8635368147,  exact = { "man" },   items = { 10725826963 } },
+	{ key = "Woman",            assetId = 86498113,  mesh = 8635368421,  exact = { "woman" }, items = { 10725626210 } },
 }
 local SHAPE_BY_ASSET, SHAPE_BY_MESH, SHAPE_BY_KEY = {}, {}, {}
 for _, shape in ipairs(CLASSIC_SHAPES) do
 	SHAPE_BY_ASSET[shape.assetId] = shape
+	for _, itemId in ipairs(shape.items or {}) do SHAPE_BY_ASSET[itemId] = shape end
 	SHAPE_BY_MESH[shape.mesh] = shape
 	SHAPE_BY_KEY[string.lower(shape.key)] = shape
 end
@@ -824,11 +831,18 @@ local function shapeFromName(name)
 	if not name or name == "" then return nil end
 	local lower = string.lower(name)
 	if SHAPE_BY_KEY[lower] then return SHAPE_BY_KEY[lower] end
+	-- the name without "- Dynamic Head", "- Head", "Head" and "Face" at the end: "Man Face - Head" -> "man"
 	local core = string.gsub(lower, "%s*%-%s*dynamic head%s*$", "")
+	core = string.gsub(core, "%s*%-%s*head%s*$", "")
 	core = string.gsub(core, "%s+head%s*$", "")
+	core = string.gsub(core, "%s+face%s*$", "")
+	core = string.gsub(core, "^%s+", "")
 	core = string.gsub(core, "%s+$", "")
 	local bracket = string.match(core, "%[([^%]]+)%]")
 	for _, shape in ipairs(CLASSIC_SHAPES) do
+		for _, word in ipairs(shape.exact or {}) do
+			if core == word then return shape end
+		end
 		for _, word in ipairs(shape.words or {}) do
 			if string.find(lower, "%f[%w]" .. escapePattern(word) .. "%f[%W]") then return shape end
 		end

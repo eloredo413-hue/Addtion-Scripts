@@ -11,8 +11,9 @@
 --     2007 animation (BloxyAnimation2007Choice.json)
 --
 -- Loading puts those files back and ticks / unticks the hammer's boxes to match straight away (by pressing
--- them, so each option turns itself on or off as usual). Setup choices (topbar, physics, ...) are used the
--- next time the script runs; with "skip setup" ticked that is without going through the setup.
+-- them, so each option turns itself on or off as usual). Setup choices (topbar, physics, ...) only take effect
+-- when the scripts start, so when those are different the load button then offers "rejoin?": a second tap
+-- rejoins this server and runs the scripts again there (with "skip setup" on, so the loaded setup is used).
 --
 -- The loader loads it, and so do the 2021 / 2023 old / 2023 new GUIs after the rejoin they do (the loader
 -- doesn't run in the server they rejoin). Running it again replaces the earlier copy.
@@ -113,6 +114,17 @@ local HAMMER_BOXES = {
 	OldHealthBarCheckbox = "isOldHealthBarEnabled",
 }
 local OLD_DECAL_BUTTON, OLD_DECAL_KEY = "BPOldDecalButton", "isOldDecalEnabled"
+
+-- the settings that loading changes straight away (by pressing the boxes); any other difference needs the
+-- scripts to start again
+local LIVE_KEYS = { dontShowHidePopup = true, [OLD_DECAL_KEY] = true }
+for _, key in pairs(BLOXY_BOXES) do LIVE_KEYS[key] = true end
+for _, key in pairs(HAMMER_BOXES) do LIVE_KEYS[key] = true end
+
+-- run again after the rejoin that applies loaded setup choices: this loader, then Bloxy (if it isn't there)
+local LOADER_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/refs/heads/main/Script"
+local BLOXY_URL = "https://raw.githubusercontent.com/MOCCAPAZZA/BLOXY-PARADOX-OFFICIAL/refs/heads/main/BLOXY%20PARADOX%20SOURCE%20CODE"
+local REJOIN_OFFER_TIME = 8
 
 ------------------------------------------------------------
 -- FILES
@@ -276,6 +288,7 @@ local hammerOpen = false -- Bloxy's hammer panel (counted from its taps)
 local applying = false   -- a load is going on
 local destroyed = false
 local refreshList
+local rejoinOffer = nil   -- { name, at }: the load button of that one says "rejoin?" for a while
 
 local function connect(signal, fn)
 	local c = signal:Connect(fn)
@@ -383,6 +396,44 @@ local function findIn(parent, name)
 	return nil
 end
 
+local function deepEqual(a, b)
+	if type(a) ~= type(b) then return false end
+	if type(a) ~= "table" then return a == b end
+	for k, v in pairs(a) do
+		if not deepEqual(v, b[k]) then return false end
+	end
+	for k in pairs(b) do
+		if a[k] == nil then return false end
+	end
+	return true
+end
+
+-- Are the setup choices (anything loading can't change straight away) different between these files?
+local function setupDiffers(nowFiles, savedFiles)
+	for _, file in ipairs(SETTINGS_FILES) do
+		local nowText = nowFiles[file] or WHEN_MISSING[file]
+		local savedText = savedFiles[file] or WHEN_MISSING[file]
+		local nowData, savedData = decode(nowText), decode(savedText)
+		if file == CONFIG_FILE then
+			nowData, savedData = type(nowData) == "table" and nowData or {}, type(savedData) == "table" and savedData or {}
+			for _, data in ipairs({ nowData, savedData }) do
+				for key in pairs(LIVE_KEYS) do data[key] = nil end
+			end
+			if not deepEqual(nowData, savedData) then return true end
+		elseif nowData ~= nil or savedData ~= nil then
+			if not deepEqual(nowData, savedData) then return true end
+		elseif nowText ~= savedText then
+			return true
+		end
+	end
+	return false
+end
+
+-- The setup the game is running: what the files said before the first load (or when the setup was changed
+-- since, by the setup itself), not what a load put in them (that only takes effect after a rejoin).
+local runningFiles = nil
+local lastLoadedFiles = nil
+
 local function loadSettings(name)
 	local profile = store.profiles[name]
 	if not profile then return false, "missing" end
@@ -391,6 +442,10 @@ local function loadSettings(name)
 		return false, "no files"
 	end
 	applying = true
+	local before = captureFiles()
+	if not runningFiles or not lastLoadedFiles or setupDiffers(before, lastLoadedFiles) then
+		runningFiles = before
+	end
 	local config = decode(profile.files[CONFIG_FILE]) or {}
 	local wanted = function(key) return config[key] == true end
 	local changed, couldNot = 0, 0
@@ -437,10 +492,59 @@ local function loadSettings(name)
 		warn("[Saved Settings] something went wrong while loading \"" .. name .. "\"; its files were put back")
 		putFilesBack(profile.files)
 	end
-	print(string.format("[Saved Settings] loaded \"%s\": %d hammer option%s changed now%s; setup choices are used the next time the script runs",
-		name, changed, changed == 1 and "" or "s",
-		couldNot > 0 and (" (" .. couldNot .. " couldn't be pressed here: they change when the script runs again)") or ""))
-	return true, changed, couldNot
+	lastLoadedFiles = profile.files
+	local needsRestart = couldNot > 0 or setupDiffers(runningFiles, profile.files)
+	print(string.format("[Saved Settings] loaded \"%s\": %d hammer option%s changed now%s", name, changed,
+		changed == 1 and "" or "s",
+		couldNot > 0 and (" (" .. couldNot .. " couldn't be pressed here)") or ""))
+	if needsRestart then
+		print("[Saved Settings] its setup choices (topbar, physics, ...) take effect when the scripts start:"
+			.. " tap \"rejoin?\" on it to rejoin this server and run them again with these settings")
+	end
+	return true, changed, couldNot, needsRestart
+end
+
+-- Rejoin this server and run the scripts again there, with "skip setup" on so the loaded setup is used
+local function rejoinWithSettings()
+	local queue = queue_on_teleport or (syn and syn.queue_on_teleport)
+	if type(queue) ~= "function" then
+		warn("[Saved Settings] this executor can't run scripts after a rejoin: rejoin and run the script yourself")
+		return false
+	end
+	local config = decode(readText(CONFIG_FILE))
+	if type(config) == "table" and config.isSkipped ~= true then
+		config.isSkipped = true
+		local text = encode(config)
+		if text then writeText(CONFIG_FILE, text) end
+		print("[Saved Settings] \"skip setup\" turned on, so the loaded setup is used after the rejoin")
+	end
+	local rerun = string.format([[
+if not game:IsLoaded() then game.Loaded:Wait() end
+task.spawn(function()
+	pcall(function() loadstring(game:HttpGet(%q))() end)
+end)
+task.wait(2)
+local player = game:GetService("Players").LocalPlayer
+local playerGui = player and player:WaitForChild("PlayerGui", 30)
+if playerGui and not playerGui:FindFirstChild("BloxyParadoxProject") then
+	pcall(function() loadstring(game:HttpGet(%q))() end)
+end
+]], LOADER_URL, BLOXY_URL)
+	if not pcall(queue, rerun) then
+		warn("[Saved Settings] couldn't set the scripts to run after the rejoin: rejoin and run the script yourself")
+		return false
+	end
+	print("[Saved Settings] rejoining this server...")
+	local TeleportService = game:GetService("TeleportService")
+	local ok, err = pcall(function()
+		if #Players:GetPlayers() <= 1 then
+			TeleportService:Teleport(game.PlaceId, LocalPlayer)
+		else
+			TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+		end
+	end)
+	if not ok then warn("[Saved Settings] couldn't rejoin: " .. tostring(err)) end
+	return ok
 end
 
 ------------------------------------------------------------
@@ -554,6 +658,7 @@ local BUTTON_COLORS = {
 	green = { Color3.fromRGB(30, 140, 30), Color3.fromRGB(80, 220, 80) },
 	grey = { Color3.fromRGB(70, 70, 70), Color3.fromRGB(160, 160, 160) },
 	red = { Color3.fromRGB(200, 40, 40), Color3.fromRGB(255, 80, 80) },
+	orange = { Color3.fromRGB(215, 120, 20), Color3.fromRGB(255, 180, 80) },
 }
 
 local function button(parent, name, text, kind, size, pos)
@@ -678,8 +783,22 @@ local function makeRow(name, order)
 	layout.Parent = buttons
 
 	local third = UDim2.new(1 / 3, -4, 1, 0)
-	local loadBtn = button(buttons, "LoadButton", "load", "green", third)
+	local loadBtn, paintLoad = button(buttons, "LoadButton", "load", "green", third)
 	loadBtn.LayoutOrder = 1
+	-- just loaded, with setup choices that need the scripts to start again: "rejoin?" for a while
+	local offerAt = rejoinOffer and rejoinOffer.name == name and rejoinOffer.at or nil
+	if offerAt and os.clock() - offerAt <= REJOIN_OFFER_TIME then
+		loadBtn.Text = "rejoin?"
+		paintLoad("orange")
+		task.delay(REJOIN_OFFER_TIME - (os.clock() - offerAt), function()
+			if loadBtn.Parent and loadBtn.Text == "rejoin?" then
+				loadBtn.Text = "load"
+				paintLoad("green")
+			end
+		end)
+	else
+		offerAt = nil
+	end
 	local renameBtn = button(buttons, "RenameButton", "rename", "grey", third)
 	renameBtn.LayoutOrder = 2
 	local deleteBtn, paintDelete = button(buttons, "DeleteButton", "delete", "red", third)
@@ -719,10 +838,23 @@ local function makeRow(name, order)
 			return
 		end
 		if applying then return end
+		if offerAt and os.clock() - offerAt <= REJOIN_OFFER_TIME and loadBtn.Text == "rejoin?" then
+			rejoinOffer = nil
+			loadBtn.Text = "rejoining…"
+			task.spawn(function()
+				if not rejoinWithSettings() and loadBtn.Parent then
+					loadBtn.Text = "load"
+					paintLoad("green")
+					flash(loadBtn, "can't")
+				end
+			end)
+			return
+		end
 		loadBtn.Text = "loading…"
 		task.spawn(function()
-			local ok = loadSettings(name)
+			local ok, _, _, needsRestart = loadSettings(name)
 			if ok then
+				rejoinOffer = needsRestart and { name = name, at = os.clock() } or nil
 				refreshList()
 			elseif loadBtn.Parent then
 				loadBtn.Text = "load"
@@ -767,7 +899,8 @@ local function buildGui()
 	gui = Instance.new("ScreenGui")
 	gui.Name = GUI_NAME
 	gui.ResetOnSpawn = false
-	gui.DisplayOrder = 999 -- (Bloxy's)
+	-- above the era GUIs (999999999): the 2013 GUIs' leaderboard was over the panel and took its taps
+	gui.DisplayOrder = 2000000000
 	pcall(function() gui.ClipToDeviceSafeArea = false end)
 
 	clickSound = Instance.new("Sound")
