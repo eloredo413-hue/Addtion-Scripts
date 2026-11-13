@@ -177,7 +177,8 @@ do
     local GAP = 18      -- 2016 and older
     local GAP_2017 = 14 -- 2017 up to 2021 (a little less: their buttons have room of their own)
     local function gapFor(year)
-        return (year and year >= 2017) and GAP_2017 or GAP
+        -- 2016 and older: their gap; 2017 and later (or a year not known): a little less
+        return (year ~= nil and year <= 2016) and GAP or GAP_2017
     end
 
     local function topbarYear()
@@ -189,12 +190,28 @@ do
         return nil
     end
 
+    -- Inside one of the old escape menus (SettingsHub, whose tab bar is called "HubBar"). The 2023 GUIs
+    -- and Roblox's own menu have none, so what is done here never touches them.
+    local function inOldMenu(obj)
+        local cur = obj
+        for _ = 1, 12 do
+            if not cur then return false end
+            if cur:FindFirstChild("HubBar") then return true end
+            cur = cur.Parent
+        end
+        return false
+    end
+    -- 2016 and older keep their own two buttons (and their gap); the year can only be told when it is
+    -- known, so an old menu whose year isn't known is treated as 2017 or later.
+    local function upTo2016(year)
+        return year ~= nil and year <= 2016
+    end
+
     local function padPageView(obj)
         if obj.Name ~= "PageView" or not obj:IsA("ScrollingFrame") then return end
         local clipper = obj.Parent
         if not clipper or clipper.Name ~= "PageViewClipper" then return end
         local year = topbarYear()
-        if not year or year >= 2023 then return end
         -- the scroll bar (when the player list is long) no longer narrows the page on the right, which
         -- made the page look pushed to the left of the tab bar
         pcall(function() obj.VerticalScrollBarInset = Enum.ScrollBarInset.None end)
@@ -213,7 +230,6 @@ do
     -- view isn't called "PageView").
     local function padAround(obj)
         local year = topbarYear()
-        if not year or year >= 2023 then return end
         local view = obj:FindFirstAncestorWhichIsA("ScrollingFrame")
         if not view then return end
         local existing = view:FindFirstChild("BPMenuGap")
@@ -313,7 +329,7 @@ do
     local function threeButtons(parent)
         if styled[parent] then return end
         local year = topbarYear()
-        if not year or year < 2017 or year >= 2023 then return end
+        if upTo2016(year) or not inOldMenu(parent) then return end
         local found = menuButtons(parent)
         local reset, leave = found.reset, found.leave
         if not (reset and leave) then
