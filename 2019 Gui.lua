@@ -3123,6 +3123,30 @@ end)
 	-- right of the first chat icon, and the emote button directly right
 	-- of the backpack.
 
+	-- 2019 put its top bar icons right at the left edge of the screen. The GUI holding the top bar
+	-- was pushed in by the phone's safe area (about the width of an icon), which left a gap before
+	-- the menu icon and a dark strip where the bar starts. No inset for it (kept off if it is reset).
+	if TopBarContainer then
+		local TopGui = TopBarContainer:FindFirstAncestorWhichIsA("ScreenGui")
+		if TopGui then
+			local function NoInset()
+				pcall(function()
+					if TopGui.ScreenInsets ~= Enum.ScreenInsets.None then
+						TopGui.ScreenInsets = Enum.ScreenInsets.None
+					end
+				end)
+				pcall(function()
+					if TopGui.SafeAreaCompatibility ~= Enum.SafeAreaCompatibility.None then
+						TopGui.SafeAreaCompatibility = Enum.SafeAreaCompatibility.None
+					end
+				end)
+			end
+			NoInset()
+			pcall(function() TopGui:GetPropertyChangedSignal("ScreenInsets"):Connect(NoInset) end)
+			pcall(function() TopGui:GetPropertyChangedSignal("SafeAreaCompatibility"):Connect(NoInset) end)
+		end
+	end
+
 	local EmoteButton
 	local BackpackButton
 	local ButtonParent = TopBarContainer
@@ -3202,7 +3226,7 @@ end)
 				end
 
 				local SLOT = 50 -- minimum exclusive width per button
-				local GAP = 4
+				local GAP = 0 -- one slot after another, evenly spaced like 2019 (menu | chat | backpack)
 
 				local function resolveWidth(btn)
 					if not btn then return SLOT end
