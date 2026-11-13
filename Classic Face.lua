@@ -784,11 +784,27 @@ end
 -- HEADS
 ----------------------------------------------------------------------------------------------------
 -- The classic heads (catalog "Classic Heads" and the like): these keep their shape.
+-- The head shapes that keep their shape (the face goes on them): the classic catalog heads and the
+-- other plain head shapes. Matched as words in the head item's name ("Roundy", "Classic Roundy Head").
 local CLASSIC_HEAD_WORDS = {
-	"roundy", "blockhead", "block head", "peabrain", "trim", "barrel", "bighead", "big head", "cheeks",
-	"diamond", "eraser", "fat head", "flat top", "flattop", "hex", "narrow", "octoblox", "perfection",
-	"roll", "square", "tiny head", "biggerhead", "classic head", "default head",
+	-- the classic catalog heads
+	"roundy", "blockhead", "block head", "peabrain", "pea brain", "trim", "barrel", "cheeks", "diamond",
+	"eraser", "fat head", "flat top", "flattop", "hex", "narrow", "octoblox", "perfection", "roll", "square",
+	-- size variants
+	"bighead", "big head", "biggerhead", "bigger head", "biggest head", "tiny head", "mini head",
+	"small head", "pinhead", "pin head",
+	-- other plain shapes
+	"squarehead", "square head", "boxhead", "box head", "blocky head", "egghead", "egg head",
+	"cylinder", "cylinder head", "conehead", "cone head", "flathead", "flat head", "round head",
+	"oval head", "wide head", "tall head", "long head", "skinny head", "bucket head",
+	-- the plain heads of the classic bundles
+	"classic head", "default head", "man head", "woman head", "boy head", "girl head", "robloxian head",
 }
+
+-- A headless head: left as it is (no face is put on nothing).
+local function isHeadlessName(name)
+	return name ~= nil and string.find(string.lower(name), "headless", 1, true) ~= nil
+end
 
 local function isClassicHeadName(name)
 	if not name then return false end
@@ -804,23 +820,28 @@ end
 --   * anything with a moving face (FaceControls) or a 3D texture (SurfaceAppearance)
 --   * an R15 / MeshPart head that is not the plain head or a classic head (by the avatar's head item)
 -- R6 heads with a mesh (Roundy, Blockhead...) and the plain head keep their shape.
-local function isDynamicHead(character, head)
-	if head:FindFirstChildOfClass("FaceControls") or head:FindFirstChildOfClass("SurfaceAppearance") then
-		return true
-	end
-	if not head:IsA("MeshPart") then return false end
+-- "dynamic" (covered by a classic head), "classic" (keeps its shape, gets the face) or "headless"
+local function headKind(character, head)
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	local ok, desc = false, nil
 	if humanoid then
 		ok, desc = pcall(function() return humanoid:GetAppliedDescription() end)
 	end
-	if ok and desc then
-		local headId = tonumber(extractNumericId(desc.Head)) or 0
-		if headId == 0 then return false end              -- the plain head
-		return not isClassicHeadName(assetName(headId))   -- a classic head keeps its shape
+	local headId = (ok and desc) and (tonumber(extractNumericId(desc.Head)) or 0) or nil
+	local headName = (headId and headId ~= 0) and assetName(headId) or nil
+
+	if isHeadlessName(headName) then return "headless" end
+	if head:FindFirstChildOfClass("FaceControls") or head:FindFirstChildOfClass("SurfaceAppearance") then
+		return "dynamic"
+	end
+	if not head:IsA("MeshPart") then return "classic" end   -- R6: its head mesh is the shape
+	if headId ~= nil then
+		if headId == 0 then return "classic" end           -- the plain head
+		return isClassicHeadName(headName) and "classic" or "dynamic"
 	end
 	-- the avatar can't be read: a MeshPart head with its own texture is a modern head
-	return head.TextureID ~= nil and head.TextureID ~= ""
+	if head.TextureID ~= nil and head.TextureID ~= "" then return "dynamic" end
+	return "classic"
 end
 
 local function headSkinColor(character, head)
@@ -889,9 +910,21 @@ local function apply(player, character)
 	states[character] = st
 	hideOwnDecals(head, st)
 
-	local dynamic = isDynamicHead(character, head)
+	local kind = headKind(character, head)
 	if generation[character] ~= gen then return end
-	if dynamic then
+	if kind == "headless" then
+		-- nothing put on a headless head
+		st.report = "headless head, left as it is"
+		if lastReport[character] ~= st.report then
+			lastReport[character] = st.report
+			print("[Classic Face] " .. tostring(player.Name) .. ": " .. st.report)
+		end
+		-- (its own decals were hidden above: give them back, it shows nothing anyway)
+		for decal, was in pairs(st.hiddenDecals) do pcall(function() decal.Transparency = was end) end
+		st.hiddenDecals = {}
+		return
+	end
+	if kind == "dynamic" then
 		-- a dynamic head: hidden, with a classic head on top
 		st.headTransparency = head.Transparency
 		head.Transparency = 1
