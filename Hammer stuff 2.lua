@@ -70,6 +70,7 @@ task.spawn(function()
 		is2016AudioEnabled      = config.is2016AudioEnabled or false,
 		isOldHealthBarEnabled   = config.isOldHealthBarEnabled or false,
 		is2008NightSkyEnabled   = config.is2008NightSkyEnabled or false,
+		isAllPlayersEnabled     = config.isAllPlayersEnabled or false,
 	}
 
 	-- Hammer stuff 1 (and the base GUI) save to the same file, so re-read it first and
@@ -3417,6 +3418,41 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
+	-- 18. ALL PLAYERS (All Players.lua in this repo)
+	-- Your setup choices for how a character looks (Bloxy's forcefield, animations and 2006 body) on
+	-- everyone else too, on your screen only. Not the physics, camera or GUIs. Unticking puts them back.
+	------------------------------------------------------------
+	do
+		local ALL_PLAYERS_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/All%20Players.lua"
+		local genv = (getgenv and getgenv()) or _G
+		local loading = false
+		local function cleanup()
+			local fn = genv.BPAllPlayersCleanup
+			if type(fn) == "function" then pcall(fn) end
+			genv.BPAllPlayersCleanup = nil
+		end
+		function actions.applyAllPlayers()
+			if loading then return end
+			loading = true
+			task.spawn(function()
+				local ok, err = pcall(function()
+					loadstring(game:HttpGet(ALL_PLAYERS_URL))()
+				end)
+				loading = false
+				if not ok then
+					warn("[All Players] couldn't load: " .. tostring(err))
+					return
+				end
+				-- unticked while it was downloading
+				if not state.isAllPlayersEnabled then cleanup() end
+			end)
+		end
+		function actions.restoreAllPlayers()
+			cleanup()
+		end
+	end
+
+	------------------------------------------------------------
 	-- 10. HIDE GAME GUI (LOADSTRING HOOK)
 	-- The GUI Hider (Hide game GUI.lua in this repo: the gist without its __namecall hook) hides the game's
 	-- own ScreenGuis (TopbarPlus, HUDs, shop buttons) and leaves Bloxy Paradox and the era GUIs alone.
@@ -4039,6 +4075,18 @@ task.spawn(function()
 		helpText      = "Classic heads with 2D faces. Each player gets the face they really wear (their 2D face, their face item, or the classic face named like their dynamic head). Classic heads (Roundy, Blockhead...) keep their shape; only dynamic heads get a classic head on top. Untick to put every head back."
 	})
 
+	createAddonRow({
+		containerName = "AllPlayersContainer",
+		checkboxName  = "AllPlayersCheckbox",
+		helpName      = "AllPlayersHelpButton",
+		label         = "all players",
+		yPos          = startY + 5 * ROW_HEIGHT,
+		stateKey      = "isAllPlayersEnabled",
+		onEnable      = actions.applyAllPlayers,
+		onDisable     = actions.restoreAllPlayers,
+		helpText      = "Your setup choices for how a character looks go on everyone else too, on your screen only: the forcefield (2008 / 2012), the animations (each set on bodies of its own kind, R6 or R15) and the 2006 body. Not the physics, the camera or any GUI. (Classic face, the avatars and the 2007 animation already go on everyone.) Untick to put everyone back."
+	})
+
 	createCategory("BPCategorySounds", "sounds")
 
 	createAddonRow({
@@ -4283,6 +4331,7 @@ task.spawn(function()
 	if state.isRemoveLeaderboardEnabled then task.spawn(actions.applyRemoveLeaderboard) end
 	if state.isOldHealthBarEnabled then task.spawn(actions.applyOldHealthBar) end
 	if state.is2008NightSkyEnabled then task.spawn(actions.apply2008NightSky) end
+	if state.isAllPlayersEnabled then task.spawn(actions.applyAllPlayers) end
 	if state.is2013DynamicEnabled then task.spawn(actions.apply2013Dynamic) end
 	if state.is2015AudioEnabled then task.spawn(actions.apply2015Audio)
 	elseif state.is2016AudioEnabled then task.spawn(actions.apply2016Audio) end
