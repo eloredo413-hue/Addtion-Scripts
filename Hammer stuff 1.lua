@@ -17,6 +17,7 @@ task.spawn(function()
 	local Players = game:GetService("Players")
 	local SoundService = game:GetService("SoundService")
 	local MaterialService = game:GetService("MaterialService")
+	local ContentProvider = game:GetService("ContentProvider")
 
 	local LocalPlayer = Players.LocalPlayer
 
@@ -34,6 +35,18 @@ task.spawn(function()
 	local SUN_ID = 79910545334172
 	local MOON_ID = 5189246322
 	local SKYBOX_2013_ID = 13530763931
+
+	-- (Addtion-Scripts) the 2009 skybox: null_plainsky, Roblox's sky from 2009 to 2013. Roblox's own game
+	-- files first; if they don't load, null_plainsky skies from the library.
+	local NULL_PLAINSKY_FILES = {
+		SkyboxBk = "rbxasset://sky/null_plainsky512_bk.jpg",
+		SkyboxDn = "rbxasset://sky/null_plainsky512_dn.jpg",
+		SkyboxFt = "rbxasset://sky/null_plainsky512_ft.jpg",
+		SkyboxLf = "rbxasset://sky/null_plainsky512_lf.jpg",
+		SkyboxRt = "rbxasset://sky/null_plainsky512_rt.jpg",
+		SkyboxUp = "rbxasset://sky/null_plainsky512_up.jpg",
+	}
+	local NULL_PLAINSKY_MODELS = { 16040365306, 84637939397481, 13837212312 }
 
 	-- Original pack supplied in your script.
 	local PACK_ID = "rbxassetid://14719371673"
@@ -114,6 +127,9 @@ task.spawn(function()
 	------------------------------------------------------------
 	local isSkybox2013Enabled =
 		config.isSkybox2013Enabled == true
+
+	local isSkybox2009Enabled =
+		config.isSkybox2009Enabled == true
 
 	local isRemoveLightingEnabled =
 		config.isRemoveLightingEnabled == true
@@ -579,6 +595,56 @@ task.spawn(function()
 		else
 			warn("[Bloxy Paradox] 2013 Skybox failed.")
 		end
+	end
+
+	------------------------------------------------------------
+	-- 2009 SKYBOX (Addtion-Scripts): null_plainsky (2009 - 2013)
+	------------------------------------------------------------
+	local function apply2009()
+
+		clearSkies()
+
+		-- Roblox's own null_plainsky files
+		local sky = Instance.new("Sky")
+		sky.Name = "NullPlainsky2009"
+		for face, file in pairs(NULL_PLAINSKY_FILES) do
+			sky[face] = file
+		end
+
+		local failed = false
+		pcall(function()
+			ContentProvider:PreloadAsync({ sky }, function(_, status)
+				if status ~= Enum.AssetFetchStatus.Success then
+					failed = true
+				end
+			end)
+		end)
+
+		if not failed then
+			sky.Parent = Lighting
+			print("[Bloxy Paradox] 2009 Skybox (null_plainsky) applied.")
+			return
+		end
+
+		-- not in this client's files: a null_plainsky sky from the library
+		pcall(function() sky:Destroy() end)
+		for _, id in ipairs(NULL_PLAINSKY_MODELS) do
+			local found = nil
+			pcall(function()
+				for _, object in ipairs(game:GetObjects("rbxassetid://" .. tostring(id))) do
+					found = object:IsA("Sky") and object or object:FindFirstChildWhichIsA("Sky", true)
+					if found then break end
+				end
+			end)
+			if found then
+				clearSkies()
+				found.Parent = Lighting
+				print("[Bloxy Paradox] 2009 Skybox (null_plainsky, library copy " .. id .. ") applied.")
+				return
+			end
+		end
+
+		warn("[Bloxy Paradox] 2009 Skybox failed: null_plainsky couldn't be loaded.")
 	end
 
 	------------------------------------------------------------
@@ -2030,11 +2096,20 @@ task.spawn(function()
 	------------------------------------------------------------
 	-- CREATE ADDON BUTTONS
 	------------------------------------------------------------
+	-- (Addtion-Scripts) the 2009 skybox under Bloxy's 2008 one; the rows after it one place down
+	local sky2009CB, sky2009Help =
+		makeToggle(
+			"Skybox2009",
+			"2009 skybox",
+			120,
+			isSkybox2009Enabled
+		)
+
 	local sky2013CB, sky2013Help =
 		makeToggle(
 			"Skybox2013",
 			"2013 skybox",
-			120,
+			160,
 			isSkybox2013Enabled
 		)
 
@@ -2042,7 +2117,7 @@ task.spawn(function()
 		makeToggle(
 			"RemoveLighting",
 			"remove lighting",
-			160,
+			200,
 			isRemoveLightingEnabled
 		)
 
@@ -2050,7 +2125,7 @@ task.spawn(function()
 		makeDropdown(
 			"MaterialsDropdown",
 			"materials",
-			200,
+			240,
 			4
 		)
 
@@ -2094,7 +2169,7 @@ task.spawn(function()
 		makeToggle(
 			"NoShadows",
 			"no shadows",
-			240,
+			280,
 			isNoShadowsEnabled
 		)
 
@@ -2111,7 +2186,7 @@ task.spawn(function()
 		UDim2.new(1, -30, 0, 36)
 
 	destroyBtn.Position =
-		UDim2.new(0, 15, 0, 280)
+		UDim2.new(0, 15, 0, 320)
 
 	destroyBtn.BackgroundColor3 =
 		Color3.fromRGB(
@@ -2185,7 +2260,7 @@ task.spawn(function()
 		UDim2.new(0, 1, 0, 30)
 
 	bottomSpacer.Position =
-		UDim2.new(0, 0, 0, 320)
+		UDim2.new(0, 0, 0, 360)
 
 	bottomSpacer.BackgroundTransparency = 1
 	bottomSpacer.BorderSizePixel = 0
@@ -2282,6 +2357,7 @@ task.spawn(function()
 
 			local objects = {
 				"New2010Container",
+				"Skybox2009Container",
 				"Skybox2013Container",
 				"RemoveLightingContainer",
 				"MaterialsDropdownContainer",
@@ -2330,6 +2406,50 @@ task.spawn(function()
 	)
 
 	------------------------------------------------------------
+	-- 2009 SKYBOX BUTTON (Addtion-Scripts): only one skybox at a time
+	------------------------------------------------------------
+	sky2009CB.MouseButton1Click:Connect(
+		function()
+
+			playClick()
+
+			if not isSkybox2009Enabled then
+
+				isSkybox2009Enabled = true
+				sky2009CB.Text = "✓"
+
+				if skyboxCheckbox2008 then
+					skyboxCheckbox2008.Text = ""
+				end
+				config.isSkyboxEnabled = false
+
+				if isSkybox2013Enabled then
+					isSkybox2013Enabled = false
+					sky2013CB.Text = ""
+					config.isSkybox2013Enabled = false
+				end
+
+				task.spawn(function()
+					pcall(apply2009)
+				end)
+
+			else
+
+				isSkybox2009Enabled = false
+				sky2009CB.Text = ""
+
+				task.spawn(function()
+					pcall(restoreOriginalSky)
+				end)
+			end
+
+			config.isSkybox2009Enabled = isSkybox2009Enabled
+
+			saveConfig()
+		end
+	)
+
+	------------------------------------------------------------
 	-- 2013 SKYBOX BUTTON
 	------------------------------------------------------------
 	sky2013CB.MouseButton1Click:Connect(
@@ -2344,6 +2464,12 @@ task.spawn(function()
 
 				if skyboxCheckbox2008 then
 					skyboxCheckbox2008.Text = ""
+				end
+
+				if isSkybox2009Enabled then
+					isSkybox2009Enabled = false
+					sky2009CB.Text = ""
+					config.isSkybox2009Enabled = false
 				end
 
 				config.isSkyboxEnabled = false
@@ -2627,6 +2753,13 @@ task.spawn(function()
 							saveConfig()
 						end
 
+						if isSkybox2009Enabled then
+							isSkybox2009Enabled = false
+							sky2009CB.Text = ""
+							config.isSkybox2009Enabled = false
+							saveConfig()
+						end
+
 						task.spawn(function()
 							pcall(apply2008)
 						end)
@@ -2665,6 +2798,13 @@ task.spawn(function()
 			isSkybox2013Enabled = false
 			sky2013CB.Text = ""
 			config.isSkybox2013Enabled = false
+			table.insert(restores, restoreOriginalSky)
+		end
+
+		if isSkybox2009Enabled then
+			isSkybox2009Enabled = false
+			sky2009CB.Text = ""
+			config.isSkybox2009Enabled = false
 			table.insert(restores, restoreOriginalSky)
 		end
 
@@ -2791,6 +2931,15 @@ task.spawn(function()
 	------------------------------------------------------------
 	-- HELP BUTTONS
 	------------------------------------------------------------
+	sky2009Help.MouseButton1Click:Connect(
+		function()
+			playClick()
+			showHelp(
+				"Applies the 2009 Roblox skybox: null_plainsky, Roblox's sky from 2009 to 2013."
+			)
+		end
+	)
+
 	sky2013Help.MouseButton1Click:Connect(
 		function()
 			playClick()
@@ -2872,6 +3021,8 @@ task.spawn(function()
 
 		if isSkybox2013Enabled then
 			pcall(apply2013)
+		elseif isSkybox2009Enabled then
+			pcall(apply2009)
 		end
 
 		if isRemoveLightingEnabled then
@@ -2902,6 +3053,7 @@ task.spawn(function()
 	------------------------------------------------------------
 	print("==================================================")
 	print("[Bloxy Paradox] Addon loaded successfully.")
+	print("[Bloxy Paradox] 2009 Skybox:", isSkybox2009Enabled)
 	print("[Bloxy Paradox] 2013 Skybox:", isSkybox2013Enabled)
 	print("[Bloxy Paradox] Remove Lighting:", isRemoveLightingEnabled)
 	print("[Bloxy Paradox] Smooth Plastic:", isSmoothPlasticEnabled)
