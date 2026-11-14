@@ -2,7 +2,8 @@
 -- The old escape menus (the 2016-2021 GUIs: SettingsHub, the menu with the Players / Settings / Report /
 -- Help tab bar):
 --   * a gap under the tab bar (18px for 2016 and older, 14px for 2017 and later); the page scrolls
---     that much further, so its last row (Graphics Quality) isn't cut off
+--     that much further, and on phones its page area ends above the bottom of the screen (it ran past
+--     it), so its last row (Graphics Quality) isn't cut off
 --   * 2017 and later: Leave / Reset Character / Resume side by side across the page, like 2023 old
 -- Loaded by the loader (Script) and by the 2021 GUI after its rejoin (the loader doesn't run in the
 -- server the 2021 GUI rejoins). Only one copy runs at a time.
@@ -91,6 +92,71 @@ do
         grow()
     end
 
+    -- On phones the menu's page area (PageViewClipper) runs past the bottom of the screen, so the last
+    -- row of the Settings page (Graphics Quality) was cut off by the screen's edge and couldn't be scrolled
+    -- to (the page thought it was all on show). The page area is made shorter so it ends just above the
+    -- bottom of the screen, and the page scrolls instead. It is measured from where the menu puts it (not
+    -- while it slides in from the top), and again whenever the menu moves or resizes it or the screen
+    -- changes. Where it already fits (most PCs) nothing changes.
+    local SCREEN_MARGIN = 6   -- pixels kept free above the bottom of the screen
+    local MIN_HEIGHT = 100    -- never shorter than this
+    local windowFix = setmetatable({}, { __mode = "k" })
+    local function fitToScreen(window)
+        local state = windowFix[window]
+        if not state then
+            state = { base = window.Size, cut = 0, said = false }
+            windowFix[window] = state
+            local function later() task.defer(function() pcall(state.fit) end) end
+            state.fit = function()
+                local parent = window.Parent
+                local layer = window:FindFirstAncestorWhichIsA("LayerCollector")
+                if not (parent and layer and parent:IsA("GuiObject")) then return end
+                -- the menu (SettingsShield) slides down from above the screen when it opens: measured
+                -- from where it comes to rest (the top of what holds it)
+                local slide = 0
+                local shield = parent
+                while shield and shield ~= layer and shield.Name ~= "SettingsShield" do shield = shield.Parent end
+                if shield and shield ~= layer and shield:IsA("GuiObject") and shield.Position.Y.Scale < 0 then
+                    local holder = shield.Parent
+                    if holder and holder:IsA("GuiObject") then
+                        slide = holder.AbsolutePosition.Y - shield.AbsolutePosition.Y
+                    end
+                end
+                local parentHeight = parent.AbsoluteSize.Y
+                local base = state.base
+                local height = base.Y.Scale * parentHeight + base.Y.Offset
+                local top = parent.AbsolutePosition.Y + slide
+                    + window.Position.Y.Scale * parentHeight + window.Position.Y.Offset
+                    - window.AnchorPoint.Y * height
+                local bottom = layer.AbsolutePosition.Y + layer.AbsoluteSize.Y - SCREEN_MARGIN
+                local cut = math.ceil(top + height - bottom)
+                cut = math.max(0, math.min(cut, math.floor(height - MIN_HEIGHT)))
+                if cut == state.cut then return end
+                state.cut = cut
+                state.ours = UDim2.new(base.X.Scale, base.X.Offset, base.Y.Scale, base.Y.Offset - cut)
+                window.Size = state.ours
+                if cut > 0 and not state.said then
+                    state.said = true
+                    print("[Loader] escape menu: its page area went " .. cut
+                        .. "px past the bottom of the screen; it is shorter now and scrolls")
+                end
+            end
+            window:GetPropertyChangedSignal("Size"):Connect(function()
+                if window.Size == state.ours then return end -- the size set here
+                state.base = window.Size                     -- the menu set its own
+                state.cut = 0
+                state.ours = nil
+                later()
+            end)
+            window:GetPropertyChangedSignal("Position"):Connect(later)
+            window:GetPropertyChangedSignal("AbsolutePosition"):Connect(later)
+            pcall(function()
+                window:FindFirstAncestorWhichIsA("LayerCollector"):GetPropertyChangedSignal("AbsoluteSize"):Connect(later)
+            end)
+        end
+        state.fit()
+    end
+
     local function padPageView(obj)
         if obj.Name ~= "PageView" or not obj:IsA("ScrollingFrame") then return end
         local clipper = obj.Parent
@@ -107,6 +173,7 @@ do
         end
         pad.PaddingTop = UDim.new(0, gapFor(year))
         pcall(fitCanvas, obj, gapFor(year))
+        pcall(fitToScreen, clipper)
     end
 
     -- The same gap found from the buttons: the scrolling page view they are in (for menus whose page
@@ -130,6 +197,10 @@ do
         pad.PaddingTop = UDim.new(0, gapFor(year))
         pad.Parent = view
         pcall(fitCanvas, view, gapFor(year))
+        -- (SettingsHub's own PageView is fitted through its PageViewClipper, above)
+        if not (view.Name == "PageView" and view.Parent and view.Parent.Name == "PageViewClipper") then
+            pcall(fitToScreen, view)
+        end
     end
 
     -- Resume: the menu is closed by its own code (SettingsHub:SetVisibility(false), found among the
