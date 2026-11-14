@@ -36,8 +36,17 @@ task.spawn(function()
 	local MOON_ID = 5189246322
 	local SKYBOX_2013_ID = 13530763931
 
-	-- (Addtion-Scripts) the 2009 skybox: null_plainsky, Roblox's sky from 2009 to 2013. Roblox's own game
-	-- files first; if they don't load, null_plainsky skies from the library.
+	-- (Addtion-Scripts) the 2009 skybox: null_plainsky, Roblox's sky from 2009 to 2013. Its six faces as
+	-- uploaded in 2013 (checked: the same pictures) first; then Roblox's own game files; then null_plainsky
+	-- skies from the library.
+	local NULL_PLAINSKY_IMAGES = {
+		SkyboxBk = "rbxassetid://133506631",
+		SkyboxDn = "rbxassetid://133506641",
+		SkyboxFt = "rbxassetid://133506661",
+		SkyboxLf = "rbxassetid://133506696",
+		SkyboxRt = "rbxassetid://133506708",
+		SkyboxUp = "rbxassetid://133506718",
+	}
 	local NULL_PLAINSKY_FILES = {
 		SkyboxBk = "rbxasset://sky/null_plainsky512_bk.jpg",
 		SkyboxDn = "rbxasset://sky/null_plainsky512_dn.jpg",
@@ -388,6 +397,14 @@ task.spawn(function()
 		scroller.ScrollBarImageColor3 =
 			Color3.fromRGB(150, 150, 150)
 		scroller.ZIndex = 90
+		-- (Addtion-Scripts) smoother scrolling: up and down only (a finger moving a little sideways
+		-- made it wobble), a soft bounce at the ends like a phone's own lists, and the bar over the
+		-- rows instead of narrowing them
+		pcall(function()
+			scroller.ScrollingDirection = Enum.ScrollingDirection.Y
+			scroller.ElasticBehavior = Enum.ElasticBehavior.Always
+			scroller.VerticalScrollBarInset = Enum.ScrollBarInset.None
+		end)
 		scroller.Parent = hammerPanel
 
 		for _, child in ipairs(hammerPanel:GetChildren()) do
@@ -600,34 +617,38 @@ task.spawn(function()
 	------------------------------------------------------------
 	-- 2009 SKYBOX (Addtion-Scripts): null_plainsky (2009 - 2013)
 	------------------------------------------------------------
-	local function apply2009()
+	local function applySkybox2009()
 
 		clearSkies()
 
-		-- Roblox's own null_plainsky files
-		local sky = Instance.new("Sky")
-		sky.Name = "NullPlainsky2009"
-		for face, file in pairs(NULL_PLAINSKY_FILES) do
-			sky[face] = file
-		end
-
-		local failed = false
-		pcall(function()
-			ContentProvider:PreloadAsync({ sky }, function(_, status)
-				if status ~= Enum.AssetFetchStatus.Success then
-					failed = true
-				end
+		-- the six faces: the 2013 uploads, then Roblox's own game files
+		for _, set in ipairs({ { NULL_PLAINSKY_IMAGES, "uploaded faces" }, { NULL_PLAINSKY_FILES, "game files" } }) do
+			local sky = Instance.new("Sky")
+			sky.Name = "NullPlainsky2009"
+			for face, file in pairs(set[1]) do
+				sky[face] = file
+			end
+			-- a face that doesn't load: this set is skipped (the sun and moon don't count)
+			local faceIds = {}
+			for _, file in pairs(set[1]) do faceIds[file] = true end
+			local failed = false
+			pcall(function()
+				ContentProvider:PreloadAsync({ sky }, function(contentId, status)
+					if status ~= Enum.AssetFetchStatus.Success and faceIds[tostring(contentId)] then
+						failed = true
+					end
+				end)
 			end)
-		end)
-
-		if not failed then
-			sky.Parent = Lighting
-			print("[Bloxy Paradox] 2009 Skybox (null_plainsky) applied.")
-			return
+			if not failed then
+				clearSkies()
+				sky.Parent = Lighting
+				print("[Bloxy Paradox] 2009 Skybox (null_plainsky, " .. set[2] .. ") applied.")
+				return
+			end
+			pcall(function() sky:Destroy() end)
 		end
 
-		-- not in this client's files: a null_plainsky sky from the library
-		pcall(function() sky:Destroy() end)
+		-- neither loaded: a null_plainsky sky from the library
 		for _, id in ipairs(NULL_PLAINSKY_MODELS) do
 			local found = nil
 			pcall(function()
@@ -2430,7 +2451,7 @@ task.spawn(function()
 				end
 
 				task.spawn(function()
-					pcall(apply2009)
+					pcall(applySkybox2009)
 				end)
 
 			else
@@ -3022,7 +3043,7 @@ task.spawn(function()
 		if isSkybox2013Enabled then
 			pcall(apply2013)
 		elseif isSkybox2009Enabled then
-			pcall(apply2009)
+			pcall(applySkybox2009)
 		end
 
 		if isRemoveLightingEnabled then

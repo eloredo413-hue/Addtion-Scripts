@@ -1,8 +1,8 @@
 -- [[ 2006 PHYSICS (Addtion-Scripts copy) ]]
 -- The 2006 physics gist, made to work with R15 avatars too (it only ran on R6). On R15:
 --   * the upper torso stands in for the Torso, the hands for the arms (the tool's weight)
---   * the hip height stays the avatar's own (an R15 body stands on it; 0 sank it into the floor), and
---     the landing squash goes on top of it
+--   * the hip height stays the avatar's own (an R15 body stands on it; 0 sank it into the floor), with
+--     no landing squash (Roblox's R15 Animate speeds the animations up when the hip height drops)
 --   * the climbing check (a small box in front of the feet) is measured from the feet, as on R6
 -- R6 works exactly as before.
 local Players = game:GetService("Players")
@@ -418,7 +418,9 @@ local function setupCharacterPhysics(character)
         end
 
         currentSquash = ExtraUtil.Lerp(currentSquash, squashOffsetTarget, 0.5)
-        setHipHeight(currentSquash + targetHipHeight)
+        -- (Addtion-Scripts) R15: no landing squash on the hip height. Roblox's R15 Animate plays the
+        -- animations faster the lower the hip height is, so the squash made them run twice as fast.
+        setHipHeight(isR15 and targetHipHeight or (currentSquash + targetHipHeight))
 
         for _, child in pairs(character:GetChildren()) do
             if child:GetAttribute("FWMClimb") then

@@ -957,6 +957,8 @@ local hideEverything
 local function hookBloxy(sg)
 	if bloxyGui == sg then return end
 	bloxyGui = sg
+	-- the icon shows with Bloxy (after the 2023 old / FFlags GUIs' rejoin it waits for Bloxy to come up)
+	if gui then gui.Enabled = true end
 	hammerOpen = false
 	hammer = sg:FindFirstChild("DecorativeHammer", true)
 	hammerPanel = sg:FindFirstChild("HammerBigPanel", true)
@@ -1434,11 +1436,25 @@ local function hookWhenReady(sg)
 	if sg.Parent and not destroyed then hookBloxy(sg) end
 end
 
+-- Hidden until Bloxy's GUI is there, and hidden again while it isn't (the 2023 old and FFlags GUIs rejoin
+-- the game and load this again in the new server, before Bloxy is run there).
+if gui then
+	local playerGui = gui.Parent
+	gui.Enabled = playerGui ~= nil and playerGui:FindFirstChild(BLOXY_GUI) ~= nil
+end
+
 task.spawn(function()
 	local playerGui = gui and gui.Parent
 	if not playerGui then return end
 	connect(playerGui.ChildAdded, function(child)
 		if child.Name == BLOXY_GUI then task.spawn(hookWhenReady, child) end
+	end)
+	connect(playerGui.ChildRemoved, function(child)
+		if child == bloxyGui then
+			bloxyGui = nil
+			if isOpen and closePanel then pcall(closePanel) end
+			if gui and not playerGui:FindFirstChild(BLOXY_GUI) then gui.Enabled = false end
+		end
 	end)
 	local sg = playerGui:FindFirstChild(BLOXY_GUI) or playerGui:WaitForChild(BLOXY_GUI, 120)
 	if sg then hookWhenReady(sg) end
