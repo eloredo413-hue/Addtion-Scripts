@@ -56,6 +56,8 @@ task.spawn(function()
 		SkyboxUp = "rbxasset://sky/null_plainsky512_up.jpg",
 	}
 	local NULL_PLAINSKY_MODELS = { 16040365306, 84637939397481, 13837212312 }
+	-- the HD null_plainsky (a Sky made of it, from the store) is used first
+	local NULL_PLAINSKY_HD = 83904767600086
 
 	-- Original pack supplied in your script.
 	local PACK_ID = "rbxassetid://14719371673"
@@ -407,6 +409,90 @@ task.spawn(function()
 		end)
 		scroller.Parent = hammerPanel
 
+		-- (Addtion-Scripts) momentum: let go while sliding and the panel keeps gliding for a moment,
+		-- slowing down to a stop, like a phone's own lists. Where Roblox's own scrolling already glides
+		-- (the panel keeps moving by itself after the finger is up) this stays out of the way. A new
+		-- touch stops the glide.
+		do
+			local UserInputService = game:GetService("UserInputService")
+			local RunService = game:GetService("RunService")
+			local MIN_SPEED = 120   -- pixels a second: slower than this, no glide
+			local STOP_SPEED = 15
+			local SLOW_DOWN = 0.95  -- speed kept each frame (at 60 frames a second)
+			local held = nil        -- the touch (or mouse button) holding the panel
+			local samples = {}      -- where the panel was scrolled to while held: { time, y }
+			local sampler, glide = nil, nil
+
+			local function stopGlide()
+				if glide then glide:Disconnect() glide = nil end
+			end
+			local function over(position)
+				if not scroller.Parent or not scroller.Visible then return false end
+				local p, a = scroller.AbsolutePosition, scroller.AbsoluteSize
+				return position.X >= p.X and position.X <= p.X + a.X and position.Y >= p.Y and position.Y <= p.Y + a.Y
+			end
+			local function isPointer(input)
+				return input.UserInputType == Enum.UserInputType.Touch
+					or input.UserInputType == Enum.UserInputType.MouseButton1
+			end
+
+			UserInputService.InputBegan:Connect(function(input)
+				if not isPointer(input) or not over(input.Position) then return end
+				stopGlide()
+				held = input
+				table.clear(samples)
+				if sampler then sampler:Disconnect() end
+				sampler = RunService.RenderStepped:Connect(function()
+					table.insert(samples, { os.clock(), scroller.CanvasPosition.Y })
+					if #samples > 12 then table.remove(samples, 1) end
+				end)
+			end)
+
+			UserInputService.InputEnded:Connect(function(input)
+				if not held then return end
+				local same = input == held
+					or (input.UserInputType == Enum.UserInputType.MouseButton1
+						and held.UserInputType == Enum.UserInputType.MouseButton1)
+				if not same then return end
+				held = nil
+				if sampler then sampler:Disconnect() sampler = nil end
+
+				-- how fast it was sliding over the last tenth of a second
+				local last = samples[#samples]
+				if not last then return end
+				local first = last
+				for i = #samples, 1, -1 do
+					if last[1] - samples[i][1] <= 0.1 then first = samples[i] else break end
+				end
+				local span = last[1] - first[1]
+				if span <= 0 then return end
+				local speed = (last[2] - first[2]) / span
+				if math.abs(speed) < MIN_SPEED then return end
+
+				task.spawn(function()
+					-- Roblox's own glide already going: leave it to that
+					local y0 = scroller.CanvasPosition.Y
+					RunService.RenderStepped:Wait()
+					RunService.RenderStepped:Wait()
+					if held or math.abs(scroller.CanvasPosition.Y - y0) > 0.5 then return end
+					stopGlide()
+					glide = RunService.RenderStepped:Connect(function(dt)
+						dt = math.min(dt, 0.05)
+						speed = speed * (SLOW_DOWN ^ (dt * 60))
+						local most = math.max(0, scroller.AbsoluteCanvasSize.Y - scroller.AbsoluteWindowSize.Y)
+						local y = scroller.CanvasPosition.Y + speed * dt
+						if y <= 0 then
+							y, speed = 0, 0
+						elseif y >= most then
+							y, speed = most, 0
+						end
+						scroller.CanvasPosition = Vector2.new(scroller.CanvasPosition.X, y)
+						if math.abs(speed) < STOP_SPEED then stopGlide() end
+					end)
+				end)
+			end)
+		end
+
 		for _, child in ipairs(hammerPanel:GetChildren()) do
 
 			if child ~= scroller
@@ -620,6 +706,22 @@ task.spawn(function()
 	local function applySkybox2009()
 
 		clearSkies()
+
+		-- the HD null_plainsky sky first
+		local hd = nil
+		pcall(function()
+			for _, object in ipairs(game:GetObjects("rbxassetid://" .. tostring(NULL_PLAINSKY_HD))) do
+				hd = object:IsA("Sky") and object or object:FindFirstChildWhichIsA("Sky", true)
+				if hd then break end
+			end
+		end)
+		if hd then
+			clearSkies()
+			hd.Name = "NullPlainsky2009"
+			hd.Parent = Lighting
+			print("[Bloxy Paradox] 2009 Skybox (null_plainsky HD) applied.")
+			return
+		end
 
 		-- the six faces: the 2013 uploads, then Roblox's own game files
 		for _, set in ipairs({ { NULL_PLAINSKY_IMAGES, "uploaded faces" }, { NULL_PLAINSKY_FILES, "game files" } }) do
