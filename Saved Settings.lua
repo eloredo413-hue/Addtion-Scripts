@@ -127,6 +127,7 @@ local HAMMER_BOXES = {
 	RemoveLeaderboardCheckbox = "isRemoveLeaderboardEnabled",
 	OldHealthBarCheckbox = "isOldHealthBarEnabled",
 	NightSky2008Checkbox = "is2008NightSkyEnabled",
+	AllPlayersCheckbox = "isAllPlayersEnabled",
 }
 local OLD_DECAL_BUTTON, OLD_DECAL_KEY = "BPOldDecalButton", "isOldDecalEnabled"
 
