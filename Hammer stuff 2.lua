@@ -3418,13 +3418,13 @@ task.spawn(function()
 
 	------------------------------------------------------------
 	-- 10. HIDE GAME GUI (LOADSTRING HOOK)
-	-- The GUI Hider gist hides the game's own ScreenGuis (TopbarPlus,
-	-- HUDs, shop buttons) and leaves Bloxy Paradox and the era GUIs alone.
+	-- The GUI Hider (Hide game GUI.lua in this repo: the gist without its __namecall hook) hides the game's
+	-- own ScreenGuis (TopbarPlus, HUDs, shop buttons) and leaves Bloxy Paradox and the era GUIs alone.
 	-- It puts getgenv().GameGuiHider (Show / Hide) in place, so after the
 	-- first load the box only calls those.
 	------------------------------------------------------------
 	do
-		local GUI_HIDER_URL = "https://gist.githubusercontent.com/eloredo413-hue/5f6ae5da66e0bdeb47cbe178214a639e/raw/8690adafb55d8a2b92428cc6f9f661a937ee042a/Gui%2520Hider"
+		local GUI_HIDER_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Hide%20game%20GUI.lua"
 		local genv = (getgenv and getgenv()) or _G
 		local loading = false
 

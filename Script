@@ -101,6 +101,16 @@ local function readJsonFile(name)
     return ok and type(data) == "table" and data or nil
 end
 
+-- NO __namecall HOOKS: they make every method call of every script in the game go through them, which
+-- gets in the way of a lot of games. Ours have none (Wizard smooth, the game GUI hider); the 2024 GUI's
+-- (More guis) only serves its SpoofTouchInput option, switched off here (the rest of that GUI is the same).
+do
+    local cfg = getgenv().OldChrome2024Config
+    if type(cfg) ~= "table" then cfg = {} end
+    cfg.SpoofTouchInput = false
+    getgenv().OldChrome2024Config = cfg
+end
+
 local restoredTopbarPick = nil
 do
     local config = readJsonFile("BloxyParadoxConfig.json")
@@ -226,11 +236,10 @@ end
 -- below once loadUrl exists. (The 2021 GUI loads the same file after its rejoin, where this script
 -- doesn't run.)
 
--- Wizard smooth v10 (Wizard smooth.lua in this repo): the same as v9, but its hooks are only on while a
--- setup question is on screen (v9 kept them on for the whole game, which slowed everything down).
--- If it can't be downloaded, v9 (the gist) is used instead, so the setup is still smooth.
+-- Wizard smooth (Wizard smooth.lua in this repo): v9 (the gist), but its hook is only on while a setup question
+-- is on screen (v9 kept its hooks on for the whole game), and there is no __namecall hook any more. No
+-- fallback to v9 (it has one).
 local URL_WIZARD_SMOOTH    = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Wizard%20smooth.lua"
-local URL_WIZARD_SMOOTH_V9 = "https://gist.githubusercontent.com/eloredo413-hue/c9757141d957bb07793f812ea5c63601/raw/a16efa62bb2fa1dac7736a6d06870ac74c944f30/Wizard%2520smooth"
 
 -- Old physics camera addon: the "Old" physics climbs like the 2006 physics (Old physics camera addon.lua in this
 -- repo). The old gist is the fallback if the repo copy can't be downloaded.
@@ -444,8 +453,8 @@ end)
 for i, url in ipairs(mainAddons) do
     local _, why = loadUrl(url, "addon" .. i)
     if why == "download" and url == URL_WIZARD_SMOOTH then
-        warn("[Loader] Wizard smooth v10 couldn't be downloaded: using v9")
-        loadUrl(URL_WIZARD_SMOOTH_V9, "Wizard smooth v9")
+        -- (not v9 any more: it hooks __namecall, which gets in the way of a lot of games)
+        warn("[Loader] Wizard smooth couldn't be downloaded: the setup works as Bloxy's own, without it")
     elseif why == "download" and url == URL_EXPLOSION then
         warn("[Loader] Explosion Replace Addon (repo copy) couldn't be downloaded: using the gist")
         loadUrl(URL_EXPLOSION_GIST, "Explosion Replace Addon (gist)")

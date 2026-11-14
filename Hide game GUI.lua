@@ -141,19 +141,9 @@ if not Env.GameGuiHiderHooked
 		end)
 	end
 
-	if type(hookmetamethod) == "function" and type(getnamecallmethod) == "function" then
-		pcall(function()
-			local oldNamecall
-			oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-				if checkcaller() and getnamecallmethod() == "Clone" then
-					local result = oldNamecall(self, ...)
-					pcall(mark, result)
-					return result
-				end
-				return oldNamecall(self, ...)
-			end))
-		end)
-	end
+	-- (Addtion-Scripts) No __namecall hook here any more (it marked GUIs our scripts Clone): every method call
+	-- of every script in the game went through it, which got in the way of a lot of games. Cloned GUIs of
+	-- ours are kept by their names (KEEP_NAMES / KEEP_PATTERNS) instead.
 
 	Env.GameGuiHiderHooked = true
 end
