@@ -3921,7 +3921,7 @@ task.spawn(function()
 		stateKey      = "is2008NightSkyEnabled",
 		onEnable      = actions.apply2008NightSky,
 		onDisable     = actions.restore2008NightSky,
-		helpText      = "The 2008 night: from 18:00 to 06:00 (the game's clock) the sky goes pitch black with the classic 2008 square stars, and Roblox's own stars are off. The day sky stays as it is. Untick to put the game's sky and stars back."
+		helpText      = "The 2008 night: at sunset (17:30 - 18:15, the game's clock) the sky fades to pitch black and the classic 2008 square stars fade in; at sunrise (05:45 - 06:30) it fades back. Roblox's own stars are off. The day sky stays as it is. Untick to put the game's sky and stars back."
 	})
 
 	createAddonRow({
