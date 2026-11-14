@@ -1,7 +1,8 @@
 -- [[ ESCAPE MENU (Addtion-Scripts) ]]
 -- The old escape menus (the 2016-2021 GUIs: SettingsHub, the menu with the Players / Settings / Report /
 -- Help tab bar):
---   * a gap under the tab bar (18px for 2016 and older, 14px for 2017 and later)
+--   * a gap under the tab bar (18px for 2016 and older, 14px for 2017 and later); the page scrolls
+--     that much further, so its last row (Graphics Quality) isn't cut off
 --   * 2017 and later: Leave / Reset Character / Resume side by side across the page, like 2023 old
 -- Loaded by the loader (Script) and by the 2021 GUI after its rejoin (the loader doesn't run in the
 -- server the 2021 GUI rejoins). Only one copy runs at a time.
@@ -59,6 +60,37 @@ do
         return year ~= nil and year <= 2016
     end
 
+    -- The gap pushes the page down, but the menu sets how far its page scrolls (CanvasSize) to the
+    -- page's own height, so the last row (Graphics Quality on the Settings page) was cut off at the
+    -- bottom, most of all on phones. The scroll area is made taller by the gap, each time the menu
+    -- sets it (a menu that sizes it by itself, AutomaticCanvasSize, already counts the gap).
+    local canvasFix = setmetatable({}, { __mode = "k" })
+    local function fitCanvas(view, gap)
+        local automatic = false
+        pcall(function() automatic = view.AutomaticCanvasSize ~= Enum.AutomaticSize.None end)
+        if automatic then return end
+        local state = canvasFix[view]
+        local function grow()
+            local base = state.base
+            local want = UDim2.new(base.X.Scale, base.X.Offset, base.Y.Scale, base.Y.Offset + state.gap)
+            if view.CanvasSize ~= want then
+                state.ours = want
+                view.CanvasSize = want
+            end
+        end
+        if not state then
+            state = { base = view.CanvasSize, gap = gap }
+            canvasFix[view] = state
+            view:GetPropertyChangedSignal("CanvasSize"):Connect(function()
+                if view.CanvasSize == state.ours then return end -- the size set here
+                state.base = view.CanvasSize                     -- the menu set its own: the gap on top
+                grow()
+            end)
+        end
+        state.gap = gap
+        grow()
+    end
+
     local function padPageView(obj)
         if obj.Name ~= "PageView" or not obj:IsA("ScrollingFrame") then return end
         local clipper = obj.Parent
@@ -68,14 +100,13 @@ do
         -- made the page look pushed to the left of the tab bar
         pcall(function() obj.VerticalScrollBarInset = Enum.ScrollBarInset.None end)
         local pad = obj:FindFirstChild("BPMenuGap")
-        if pad then
-            pad.PaddingTop = UDim.new(0, gapFor(year))
-            return
+        if not pad then
+            pad = Instance.new("UIPadding")
+            pad.Name = "BPMenuGap"
+            pad.Parent = obj
         end
-        pad = Instance.new("UIPadding")
-        pad.Name = "BPMenuGap"
         pad.PaddingTop = UDim.new(0, gapFor(year))
-        pad.Parent = obj
+        pcall(fitCanvas, obj, gapFor(year))
     end
 
     -- The same gap found from the buttons: the scrolling page view they are in (for menus whose page
@@ -87,6 +118,7 @@ do
         local existing = view:FindFirstChild("BPMenuGap")
         if existing then
             existing.PaddingTop = UDim.new(0, gapFor(year))
+            pcall(fitCanvas, view, gapFor(year))
             return
         end
         -- only the escape menu's (SettingsHub: its tab bar is called HubBar)
@@ -97,6 +129,7 @@ do
         pad.Name = "BPMenuGap"
         pad.PaddingTop = UDim.new(0, gapFor(year))
         pad.Parent = view
+        pcall(fitCanvas, view, gapFor(year))
     end
 
     -- Resume: the menu is closed by its own code (SettingsHub:SetVisibility(false), found among the
