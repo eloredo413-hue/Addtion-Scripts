@@ -6,7 +6,8 @@
 	  CelestialBodiesShown = false) and enables the classic 2008 square pixel stars.
 
 	(Addtion-Scripts: Hammer stuff 2's "2008 night sky" loads this file and calls Cleanup2008NightSky to turn
-	it off. Each sky's own star count is remembered and put back by the cleanup.)
+	it off. Each sky's own star count is remembered and put back by the cleanup. The night sky is plain
+	black: the picture it used before had mountains in it.)
 ]=]
 
 local Lighting = game:GetService("Lighting")
@@ -33,7 +34,9 @@ local CONFIG = {
 	NightEndClock = 6.25,
 
 	-- Pitch-black skybox asset used only while Night is active
-	BlackSkyboxAsset = "rbxassetid://264909758",
+	-- (Addtion-Scripts) 264909758 was a purple night picture with mountains, so a mountain sky showed every
+	-- night; 163866766 is a plain black image ("Black Solid Color 500x500")
+	BlackSkyboxAsset = "rbxassetid://163866766",
 }
 
 local RENDER_STEP_NAME = "Roblox2008NightSkyLock"
