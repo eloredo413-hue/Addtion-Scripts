@@ -114,8 +114,13 @@ local function get2011Texture(relPath, fallbackAsset)
 			if isfile(filePath) then
 				okReady = true
 			else
-				for _, base in ipairs(ARCHIVE_BASES) do
-					local okHttp, bytes = pcall(game.HttpGet, game, base .. relPath)
+				-- ("dec:" in front: only the December 2010 client's picture, never another year's)
+				local bases, path = ARCHIVE_BASES, relPath
+				if relPath:sub(1, 4) == "dec:" then
+					bases, path = { ARCHIVE_BASES[1] }, relPath:sub(5)
+				end
+				for _, base in ipairs(bases) do
+					local okHttp, bytes = pcall(game.HttpGet, game, base .. path)
 					-- (a PNG: the archive's "not found" page is HTML)
 					if okHttp and type(bytes) == "string" and #bytes > 64 and bytes:sub(2, 4) == "PNG" then
 						writefile(filePath, bytes)
@@ -135,7 +140,7 @@ local function get2011Texture(relPath, fallbackAsset)
 		end
 	end
 
-	local finalFallback = fallbackAsset or ("rbxasset://textures/" .. relPath)
+	local finalFallback = fallbackAsset or ("rbxasset://textures/" .. (relPath:gsub("^dec:", "")))
 	resolvedTextureCache[relPath] = finalFallback
 	return finalFallback
 end
@@ -143,7 +148,7 @@ end
 -- Asynchronously binds normal, hover (_ovr), and pressed (_dn) textures from the 2011 archive to an ImageButton/ImageLabel
 local function bind2011ButtonStates(btn, iconTarget, normalRel, ovrRel, dnRel, fallbackId, fallbackRotation)
 	iconTarget = iconTarget or btn
-	iconTarget.Image = fallbackId or ("rbxasset://textures/" .. normalRel)
+	iconTarget.Image = fallbackId or ("rbxasset://textures/" .. (normalRel:gsub("^dec:", "")))
 	if fallbackRotation then
 		iconTarget.Rotation = fallbackRotation
 	end
@@ -1229,7 +1234,7 @@ local function make2011Button(name, order, size, parent, normal, ovr, dn, fallba
 	btn.Size = size
 	btn.BackgroundTransparency = 1
 	btn.BorderSizePixel = 0
-	btn.ScaleType = Enum.ScaleType.Stretch
+	btn.ScaleType = Enum.ScaleType.Fit -- (the picture keeps its shape: never stretched)
 	btn.ZIndex = 7
 	btn.Parent = parent
 	bind2011ButtonStates(btn, btn, normal, ovr, dn, fallback)
@@ -1324,7 +1329,8 @@ end
 local RightControlBG = Instance.new("ImageLabel")
 RightControlBG.Name = "RightControlBG"
 RightControlBG.AnchorPoint = Vector2.new(1, 0)
-RightControlBG.Size = UDim2.new(0, 270, 1, 0)
+-- (Addtion-Scripts) as narrow as the 2011 tray: only REPORT and full screen are on it
+RightControlBG.Size = UDim2.new(0, 104, 1, 0)
 RightControlBG.Position = UDim2.new(1, 0, 0, 0)
 RightControlBG.Visible = true
 RightControlBG.Active = true
@@ -1352,21 +1358,65 @@ RightPadding.PaddingRight = UDim.new(0, 8)
 RightPadding.Parent = RightButtonContainer
 
 -- 1) RecordToggle Button (RecordToggle.png, RecordToggle_ovr.png, RecordToggle_sel.png)
--- (Addtion-Scripts) the right buttons as in the 2011 client, its own pictures at their own sizes (80%): "Record",
--- the screenshot, the camera buttons (2 x 2), "! REPORT", full screen
-local RecordBtn = make2011Button("RecordToggle", 1, nativeSize(65, 30), RightButtonContainer,
-	"RecordToggle.png", "RecordToggle_ovr.png", "RecordToggle_dn.png", "rbxassetid://23847250")
-local ScreenshotBtn = make2011Button("Screenshot", 2, nativeSize(31, 31), RightButtonContainer,
-	"Screenshot.png", "Screenshot_ovr.png", "Screenshot_dn.png", "rbxassetid://4456953824")
+-- (Addtion-Scripts) As in the December 2010 client: "Record", the screenshot and the camera buttons are single
+-- icons standing just left of the right tray, not on it; the tray has "! REPORT" and full screen. The record and
+-- screenshot icons are the December 2010 ones only (square, 20 x 20; another year's are a different shape and
+-- were stretched into the button), and while recording the record button shows the stop square.
+local CameraControls = Instance.new("Frame")
+CameraControls.Name = "CameraControls"
+CameraControls.AnchorPoint = Vector2.new(1, 0)
+CameraControls.Position = UDim2.new(1, -110, 0, 0)
+CameraControls.Size = UDim2.new(0, 120, 1, 0)
+CameraControls.BackgroundTransparency = 1
+CameraControls.ZIndex = 6
+CameraControls.Parent = BottomControlFrame
+do
+	local layout = Instance.new("UIListLayout")
+	layout.FillDirection = Enum.FillDirection.Horizontal
+	layout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+	layout.VerticalAlignment = Enum.VerticalAlignment.Center
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Padding = UDim.new(0, 5)
+	layout.Parent = CameraControls
+end
+
+local ICON = 24 -- the 20 x 20 icons, a little bigger
+local RecordBtn = make2011Button("RecordToggle", 1, UDim2.new(0, ICON, 0, ICON), CameraControls,
+	"dec:RecordToggle_ovr.png", "dec:RecordToggle_ovr.png", "dec:RecordToggle_sdn.png", "rbxassetid://23847250")
+RecordBtn.ScaleType = Enum.ScaleType.Fit
+local ScreenshotBtn = make2011Button("Screenshot", 2, UDim2.new(0, ICON, 0, ICON), CameraControls,
+	"dec:Screenshot.png", "dec:Screenshot_ovr.png", "dec:Screenshot_ovr.png", "rbxassetid://4456953824")
+ScreenshotBtn.ScaleType = Enum.ScaleType.Fit
+
+-- while recording: the stop square (December 2010's), back to the film camera when it stops
+do
+	local recording = false
+	task.spawn(function()
+		local stopTex = get2011Texture("dec:RecordToggle_sovr.png", nil)
+		local filmTex = get2011Texture("dec:RecordToggle_ovr.png", nil)
+		storeConnection(RecordBtn.MouseButton1Click:Connect(function()
+			recording = not recording
+			task.defer(function()
+				if recording and stopTex then RecordBtn.Image = stopTex
+				elseif filmTex then RecordBtn.Image = filmTex end
+			end)
+		end))
+		storeConnection(RecordBtn.MouseLeave:Connect(function()
+			task.defer(function()
+				if recording and stopTex then RecordBtn.Image = stopTex end
+			end)
+		end))
+	end)
+end
 
 local CameraPanel = Instance.new("Frame")
 CameraPanel.Name = "CameraPanel"
 CameraPanel.LayoutOrder = 3
-local CAMERA_BUTTON = math.floor(21 * BAR_SCALE + 0.5)
+local CAMERA_BUTTON = 19
 CameraPanel.Size = UDim2.new(0, CAMERA_BUTTON * 2 + 2, 0, CAMERA_BUTTON * 2 + 2)
 CameraPanel.BackgroundTransparency = 1
 CameraPanel.ZIndex = 7
-CameraPanel.Parent = RightButtonContainer
+CameraPanel.Parent = CameraControls
 
 local function cameraButton(name, x, y, normal, ovr, dn, fallback, rotation)
 	local btn = Instance.new("ImageButton")
@@ -1374,7 +1424,7 @@ local function cameraButton(name, x, y, normal, ovr, dn, fallback, rotation)
 	btn.Position = UDim2.new(0, x * (CAMERA_BUTTON + 2), 0, y * (CAMERA_BUTTON + 2))
 	btn.Size = UDim2.new(0, CAMERA_BUTTON, 0, CAMERA_BUTTON)
 	btn.BackgroundTransparency = 1
-	btn.ScaleType = Enum.ScaleType.Stretch
+	btn.ScaleType = Enum.ScaleType.Fit
 	btn.ZIndex = 8
 	btn.Parent = CameraPanel
 	bind2011ButtonStates(btn, btn, normal, ovr, dn, fallback, rotation)
@@ -1385,10 +1435,13 @@ local TiltDown = cameraButton("CameraTiltDown", 0, 1, "CameraTiltDown.png", "Cam
 local ZoomIn = cameraButton("CameraZoomIn", 1, 0, "CameraZoomIn.png", "CameraZoomIn_ovr.png", "CameraZoomIn_dn.png", "rbxassetid://1074548141", 0)
 local ZoomOut = cameraButton("CameraZoomOut", 1, 1, "CameraZoomOut.png", "CameraZoomOut_ovr.png", "CameraZoomOut_dn.png", "rbxassetid://598665130", 0)
 
+-- on the tray: "! REPORT" and full screen
 local ReportAbuseBtn = make2011Button("ReportAbuse", 4, nativeSize(39, 39), RightButtonContainer,
 	"ReportAbuse.PNG", "ReportAbuse_ovr.PNG", "ReportAbuse_dn.PNG", "rbxassetid://4539289774")
+ReportAbuseBtn.ScaleType = Enum.ScaleType.Fit
 local FullscreenBtn = make2011Button("ToggleFullScreen", 5, nativeSize(39, 39), RightButtonContainer,
 	"ToggleFullScreen.png", "ToggleFullScreen_ovr.png", "ToggleFullScreen_dn.png", "rbxassetid://106850260964317")
+FullscreenBtn.ScaleType = Enum.ScaleType.Fit
 
 -- Authentic 2011 Camera Zoom & Tilt Functions
 local ZOOM_FACTOR = 0.75

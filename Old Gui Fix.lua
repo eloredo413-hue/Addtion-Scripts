@@ -6,9 +6,12 @@
 --     showed through the menu too)
 --   * on a phone the menu (only the menu: the rest of the GUI keeps its size) is shown at a PC's size, so it
 --     doesn't look zoomed in and fits on the screen (it ran past its top and bottom)
+--   * the backpack window ("Gear") ends above the hotbar instead of running under it (on a phone it did)
+-- The GUI is told by what is in it (the old menu, "UserSettingsShield"), not only by the topbar picked: the
+-- topbar's name wasn't always there to read, and then nothing was done.
 -- On a phone it also tells the safe chat to show at the same size for the GUIs before 2014 and 2013 mobile
 -- (getgenv().BPSafeChatScale, read by Better SafeChat.lua).
--- 2013 mobile has its own layout and is left as it is.
+-- 2013 mobile keeps its menu's size.
 
 local Env = (getgenv and getgenv()) or _G
 if Env.BPOldGuiFixLoaded then return end
@@ -33,22 +36,27 @@ local function topbarPick()
 	return nil
 end
 
+-- a phone (or a small tablet): a touch screen without a mouse, or a short one (some phones say they have a
+-- keyboard)
 local function onPhone()
 	local ok, result = pcall(function()
-		return UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+		if not UserInputService.TouchEnabled then return false end
+		if not UserInputService.MouseEnabled then return true end
+		local camera = workspace.CurrentCamera
+		return camera ~= nil and camera.ViewportSize.Y < 700
 	end)
 	return ok and result == true
 end
 
--- what the topbar asks for: 2012 / 2013 (not 2013 mobile) get the menu raised (and zoomed down on a phone)
-local function wanted()
+-- a GUI with the old menu (2012 / 2013): the menu raised (and, on a phone, zoomed down; not 2013 mobile's)
+local function wanted(gui)
 	local pick = topbarPick()
 	local year = pick and tonumber(string.match(pick, "(20%d%d)"))
 	local mobile = pick ~= nil and string.find(pick, "mobile", 1, true) ~= nil
-	local fix = (year == 2012 or year == 2013) and not mobile
+	local fix = gui ~= nil and gui:FindFirstChild("UserSettingsShield") ~= nil
 	-- the safe chat's size: the GUIs before 2014 and 2013 mobile, on a phone
 	local safeChat = onPhone() and year ~= nil and (year < 2014 or mobile)
-	return fix, fix and onPhone(), safeChat
+	return fix, fix and onPhone() and not mobile, safeChat
 end
 
 --========================================================
@@ -151,12 +159,45 @@ local function keepOnTopWhileOpen(gui)
 	update()
 end
 
+-- The backpack window ("Gear") opens over the middle of the screen (60% of its height, from 20% down),
+-- which on a short screen runs under the hotbar. Once it has opened, it is made to end just above the hotbar
+-- (a little higher up, a little shorter).
+local backpackFixed = setmetatable({}, { __mode = "k" })
+local function fitBackpack(gui)
+	local backpack = gui:FindFirstChild("Backpack")
+	local loadout = gui:FindFirstChild("CurrentLoadout")
+	if not (backpack and loadout and backpack:IsA("GuiObject") and loadout:IsA("GuiObject")) then return end
+	if backpackFixed[backpack] then return end
+	backpackFixed[backpack] = true
+	local ours = nil
+	local function fit()
+		if not backpack.Visible or not loadout.Visible then return end
+		local size = backpack.Size
+		if size == ours then return end
+		-- (only once it has opened: the opening and closing tweens run through small sizes)
+		if size.X.Scale < 0.5 and size.X.Offset < 200 then return end
+		local guiTop = gui.AbsolutePosition.Y
+		local screenH = gui.AbsoluteSize.Y
+		local hotbarTop = loadout.AbsolutePosition.Y - guiTop
+		local top = math.floor(screenH * 0.06)
+		local bottom = math.floor(hotbarTop - 8)
+		local nowBottom = backpack.AbsolutePosition.Y - guiTop + backpack.AbsoluteSize.Y
+		if nowBottom <= bottom or bottom - top < 120 then return end
+		ours = UDim2.new(size.X.Scale, size.X.Offset, 0, bottom - top)
+		backpack.Position = UDim2.new(backpack.Position.X.Scale, backpack.Position.X.Offset, 0, top)
+		backpack.Size = ours
+	end
+	backpack:GetPropertyChangedSignal("Size"):Connect(function() task.defer(fit) end)
+	backpack:GetPropertyChangedSignal("Visible"):Connect(function() task.defer(fit) end)
+	fit()
+end
+
 --========================================================
 -- APPLYING IT
 --========================================================
 local said = {}
 local function fixGui(gui)
-	local fix, zoom = wanted()
+	local fix, zoom = wanted(gui)
 	if not fix then return end
 	local scale = zoom and PC_SCALE or 1
 
@@ -183,10 +224,14 @@ local function fixGui(gui)
 	-- above every other GUI while the menu is open
 	keepOnTopWhileOpen(gui)
 
+	-- the backpack window above the hotbar
+	pcall(fitBackpack, gui)
+
 	local key = tostring(gui) .. tostring(scale)
 	if not said[key] then
 		said[key] = true
-		print("[Old Gui Fix] the 2012 / 2013 GUI: menu above the hotbar"
+		print("[Old Gui Fix] the 2012 / 2013 GUI (" .. gui:GetFullName() .. ", topbar " .. tostring(topbarPick())
+			.. "): menu above the hotbar, backpack above the hotbar"
 			.. (scale ~= 1 and (", the menu at a PC's size on this phone (" .. math.floor(scale * 100) .. "%)") or ""))
 	end
 end
@@ -195,6 +240,9 @@ local watched = setmetatable({}, { __mode = "k" })
 local function watchGui(gui)
 	if watched[gui] or gui.Name ~= "NewRobloxGui" then return end
 	watched[gui] = true
+	print("[Old Gui Fix] found " .. gui:GetFullName() .. " (old menu: "
+		.. tostring(gui:FindFirstChild("UserSettingsShield") ~= nil) .. ", phone: " .. tostring(onPhone())
+		.. ", topbar: " .. tostring(topbarPick()) .. ")")
 	-- the menu windows and the hotbar are made a little after the GUI
 	gui.ChildAdded:Connect(function() task.delay(0.2, function() pcall(fixGui, gui) end) end)
 	local controls = gui:FindFirstChild("ControlFrame")
@@ -204,14 +252,33 @@ local function watchGui(gui)
 	pcall(fixGui, gui)
 end
 
-task.spawn(function()
-	for _, child in ipairs(CoreGui:GetChildren()) do pcall(watchGui, child) end
-	CoreGui.ChildAdded:Connect(function(child)
-		task.defer(function() pcall(watchGui, child) end)
+local function holders()
+	local list = { CoreGui }
+	pcall(function()
+		local hui = gethui and gethui()
+		if hui and hui ~= CoreGui then table.insert(list, hui) end
 	end)
-	-- the topbar is picked after this starts (and can change): looked at again every few seconds
+	return list
+end
+
+task.spawn(function()
+	for _, holder in ipairs(holders()) do
+		pcall(function()
+			holder.ChildAdded:Connect(function(child)
+				task.defer(function() pcall(watchGui, child) end)
+			end)
+		end)
+	end
+	-- the topbar is picked after this starts (and can change), and the GUI can come in at any time:
+	-- looked at again every few seconds (the CoreGui's own list too, in case one was missed)
 	while true do
-		local _, _, safeChat = wanted()
+		for _, holder in ipairs(holders()) do
+			pcall(function()
+				local gui = holder:FindFirstChild("NewRobloxGui")
+				if gui then watchGui(gui) end
+			end)
+		end
+		local _, _, safeChat = wanted(nil)
 		Env.BPSafeChatScale = safeChat and PC_SCALE or nil
 		for gui in pairs(watched) do
 			if gui.Parent then pcall(fixGui, gui) end
