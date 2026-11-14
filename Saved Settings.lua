@@ -99,6 +99,7 @@ local BLOXY_OWN_KEYS = { "isSkipped", "isSkyboxEnabled", "isWalkingSound2016Enab
 -- Hammer stuff 1 and 2's boxes and the setting each one saves
 local HAMMER_BOXES = {
 	-- Hammer stuff 1
+	Skybox2009Checkbox = "isSkybox2009Enabled",
 	Skybox2013Checkbox = "isSkybox2013Enabled",
 	RemoveLightingCheckbox = "isRemoveLightingEnabled",
 	SmoothPlasticCheckbox = "isSmoothPlasticEnabled",
