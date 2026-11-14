@@ -292,6 +292,9 @@ local MORE_GUIS_SWAPS = {
     URL_2015EARLY = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/E2015%20Gui.lua",
     -- 2013 mobile (2013 Mobile Gui.lua): the backpack takes touch and mouse, ten slots on tablets and PC
     URL_2013MOB   = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2013%20Mobile%20Gui.lua",
+    -- 2011 (2011 Gui.lua): the chat log shows the messages again (the loader's 2011-style bubbles had switched
+    -- off the part that filled it), and the buttons as in the 2011 client (mouse lock, "Record", "REPORT")
+    URL_2011      = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2011%20Gui.lua",
     -- 2021 / 2023 new / 2023 old: the top bar's chat icon (and the 2021 Roblox logo) are drawn when their image
     -- files do not load in the client (a PC's), so they are never blank
     -- 2019 / 2017: a PC with a touch screen is a PC (it has a keyboard), so it gets the PC layout and menus
@@ -432,6 +435,14 @@ local function loadUrl(url, label, patch)
     return pcall(chunk)
 end
 
+-- Bloxy's 2012 / 2013 GUIs: the menu above the hotbar, and a PC's size on a phone (and the safe chat's size to
+-- match): see "Old Gui Fix.lua"
+local URL_OLD_GUI_FIX = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Old%20Gui%20Fix.lua"
+task.spawn(function()
+    local _, why = loadUrl(URL_OLD_GUI_FIX, "Old Gui Fix")
+    if why == "download" then warn("[Loader] Old Gui Fix.lua couldn't be downloaded") end
+end)
+
 -- the old escape menus (gap under the tab bar, three buttons): see "Escape Menu.lua"
 local URL_ESCAPE_MENU = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Escape%20Menu.lua"
 task.spawn(function()
@@ -475,7 +486,16 @@ do
     end
 end
 task.wait(0.5)
-loadUrl(URL_SAFECHAT_HOOK, "SafeChat Hook")
+-- (the hook loads this repo's copy of Better SafeChat: it can be shown smaller, the size Old Gui Fix.lua
+-- gives it on a phone for the GUIs before 2014 and 2013 mobile)
+loadUrl(URL_SAFECHAT_HOOK, "SafeChat Hook", function(src)
+    local repoCopy = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Better%20SafeChat.lua"
+    local patched, count = string.gsub(src, 'local URL_SAFECHAT%s*=%s*"[^"]*"', function()
+        return 'local URL_SAFECHAT = "' .. repoCopy .. '"'
+    end)
+    if count == 0 then warn("[Loader] SafeChat Hook: its link wasn't found, so it keeps its own Better SafeChat") end
+    return patched
+end)
 loadUrl(URL_TERRAIN_HOOK, "Terrain Hook")
 loadUrl(URL_ANIM_2007, "2007 Animation")
 task.wait(1)
