@@ -8,9 +8,14 @@
 -- tween looked through its GUI for the materials prompt). Now they are only on while a
 -- setup question is on screen (and a few seconds after), and Bloxy's own panel
 -- (HammerBigPanel, which is never a question) is no longer searched on every frame.
--- (Addtion-Scripts) No __namecall hook any more: it made every method call of every script in the game
--- go through it while the setup was up, which got in the way of a lot of games. The setup's tweens are
--- caught by the TweenService.Create hook alone, and a press's click sound by the sound sweep below.
+-- (Addtion-Scripts) No hooks at all any more (no __namecall hook, no TweenService.Create hook): the
+-- __namecall one made every method call of every script in the game go through it while the setup was up,
+-- which got in the way of a lot of games, and without it the Create hook missed Bloxy's tweens (Bloxy
+-- calls TweenService:Create, which skips it), so the hidden prompt played its whole exit again and there
+-- was a gap. Now Bloxy's own TweenService variable, in the functions its No button uses (genericExit,
+-- found through the button's connection), is pointed at a stand-in that makes the hidden prompt's
+-- tweens instant and passes every other tween on unchanged. Only Bloxy's setup goes through it. A
+-- press's click sound is stopped by the sound sweep below.
 
 task.spawn(function()
 	local TweenService = game:GetService("TweenService")
@@ -134,7 +139,7 @@ task.spawn(function()
 	-- Bloxy's own panel (the hammer menu) lives in the same GUI as the setup questions but is
 	-- never one. It stays for the whole game, so it must not be searched over and over.
 	local OWN_PANEL = "HammerBigPanel"
-	-- true while a setup question is on screen (or just was): only then do the hooks do anything
+	-- true while a setup question is on screen (or just was): only then does the stand-in change a tween
 	local hooksNeeded = false
 
 	local function inside(obj, frame)
@@ -169,41 +174,79 @@ task.spawn(function()
 		return create(self, obj, tweenInfo, goal)
 	end
 
-	-- The TweenService.Create hook is put on when a setup question appears and taken off again a few
-	-- seconds after the last one is gone (and put on again if the setup is opened again).
-	-- If this executor can't take a hook off, it stays on but does nothing while no question
-	-- is up (the hooksNeeded check), as before.
-	local createHook = nil     -- { original = ... } while the TweenService.Create hook is on
-
-	local function installCreateHook()
-		if createHook or not hookfunction then return end
-		local ok, err = pcall(function()
-			local oldCreate
-			local createWrapper = function(self, obj, tweenInfo, goal)
-				return createTween(oldCreate, self, obj, tweenInfo, goal)
+	-- The stand-in for TweenService in Bloxy's setup functions: Create goes through createTween (the
+	-- hidden prompt's tweens take 0s, every other tween is passed on as it is); anything else is
+	-- TweenService's own.
+	local tweenStandIn = setmetatable({}, {
+		__index = function(_, key)
+			local value = TweenService[key]
+			if type(value) == "function" then
+				return function(_, ...) return value(TweenService, ...) end
 			end
-			if newcclosure then createWrapper = newcclosure(createWrapper) end
-			oldCreate = hookfunction(TweenService.Create, createWrapper)
-			createHook = { original = oldCreate }
-		end)
-		log("TweenService.Create" .. (ok and " hooked" or (" hook FAILED: " .. tostring(err))))
+			return value
+		end,
+	})
+	tweenStandIn.Create = function(_, obj, tweenInfo, goal)
+		return createTween(function(service, ...) return service:Create(...) end, TweenService, obj, tweenInfo, goal)
 	end
 
-	local function removeHooks()
-		if createHook then
-			local ok = pcall(function() hookfunction(TweenService.Create, createHook.original) end)
-			if ok then
-				createHook = nil
-				log("TweenService.Create hook taken off")
+	-- Bloxy's functions that a button's click runs (genericExit, the next question): their TweenService
+	-- variable is pointed at the stand-in. Found through the button's connections (getconnections) and
+	-- the functions they use (debug.getupvalues); nothing of the game is changed.
+	local getUpvalues = debug and debug.getupvalues
+	local setUpvalue = debug and debug.setupvalue
+	local pointed = setmetatable({}, { __mode = "k" })
+	local saidPointed, saidCannot = false, false
+
+	local function pointBloxyTweens(btn)
+		if not (getconnections and getUpvalues and setUpvalue) then
+			if not saidCannot then
+				saidCannot = true
+				log("this executor can't reach Bloxy's tweens (no getconnections / debug.getupvalues): "
+					.. "the hidden prompt plays its exit (a short gap)")
+			end
+			return false
+		end
+		local ok, conns = pcall(getconnections, btn.MouseButton1Click)
+		if not ok or type(conns) ~= "table" then return false end
+		local found = false
+		for _, conn in ipairs(conns) do
+			local handler = conn.Function
+			local okUp, ups = false, nil
+			if type(handler) == "function" then okUp, ups = pcall(getUpvalues, handler) end
+			if okUp and type(ups) == "table" then
+				for _, up in pairs(ups) do
+					if type(up) == "function" then
+						if pointed[up] then
+							found = true
+						else
+							local okIn, inner = pcall(getUpvalues, up)
+							if okIn and type(inner) == "table" then
+								for index, value in pairs(inner) do
+									if rawequal(value, TweenService) or (typeof(value) == "Instance" and value == TweenService) then
+										if pcall(setUpvalue, up, index, tweenStandIn) then
+											pointed[up] = true
+											found = true
+										end
+									end
+								end
+							end
+						end
+					end
+				end
 			end
 		end
+		if found and not saidPointed then
+			saidPointed = true
+			log("Bloxy's setup tweens go through the stand-in (no hooks)")
+		elseif not found and not saidCannot then
+			saidCannot = true
+			log("Bloxy's tweens weren't found from the No button: the hidden prompt plays its exit (a short gap)")
+		end
+		return found
 	end
 
-	local function installHooks()
-		installCreateHook()
-	end
-
-	-- The hook above only catches sound:Play() calls. To catch the click
+	-- To catch the click
 	-- however the game plays it, any sound that starts within 0.3s of the
 	-- hidden press is stopped. Sounds already playing (music) are left alone.
 	local function soundsIn(roots)
@@ -309,6 +352,7 @@ task.spawn(function()
 
 		-- Let the game's own No handler run, so it records the answer and
 		-- shows the forcefield prompt itself.
+		pcall(pointBloxyTweens, noBtn)
 		local sweep = silenceNextPress()
 		local pressed = fireClick(noBtn)
 		-- Stop it before it's heard if the handler played it straight away.
@@ -331,7 +375,7 @@ task.spawn(function()
 		watchBody(frame)
 	end
 
-	-- Which setup questions are on screen decides when the hooks are on.
+	-- Which setup questions are on screen decides when the stand-in changes anything.
 	local questions = {}
 	local questionCount = 0
 	local idleToken = 0
@@ -345,9 +389,7 @@ task.spawn(function()
 		questions[child] = true
 		questionCount = questionCount + 1
 		idleToken = idleToken + 1
-		-- on before the game makes the tween for this question
 		hooksNeeded = true
-		installHooks()
 	end
 
 	local function questionGone(child)
@@ -362,7 +404,6 @@ task.spawn(function()
 		task.delay(4, function()
 			if token ~= idleToken or questionCount > 0 then return end
 			hooksNeeded = false
-			removeHooks()
 		end)
 	end
 
@@ -406,5 +447,5 @@ task.spawn(function()
 	-- questions that were already on screen when this script started
 	for _, child in ipairs(sg:GetChildren()) do questionAdded(child) end
 
-	log("v10 watching")
+	log("v11 watching (no hooks)")
 end)
