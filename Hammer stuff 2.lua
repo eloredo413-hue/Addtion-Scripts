@@ -3357,7 +3357,7 @@ task.spawn(function()
 
 	------------------------------------------------------------
 	-- 16. OLD HEALTHBAR (2013 AND 2013 MOBILE)
-	-- The GUIs before 2013 always get the 2011-2013 health bar (the loader puts it on). The 2013 GUI and
+	-- The 2011 and 2012 GUIs always get the 2011-2013 health bar (the loader puts it on; never before 2011). The 2013 GUI and
 	-- the 2013 mobile GUI keep their own unless this is ticked; it does nothing for the other GUIs.
 	------------------------------------------------------------
 	do
@@ -4089,7 +4089,7 @@ task.spawn(function()
 		stateKey      = "isOldHealthBarEnabled",
 		onEnable      = actions.applyOldHealthBar,
 		onDisable     = actions.restoreOldHealthBar,
-		helpText      = "For the 2013 and 2013 mobile GUIs only: their health bar becomes the 2011-2013 one (dark tray, green bar, HEALTH). The GUIs before 2013 always have that one. Untick for the 2013 GUIs' own bar."
+		helpText      = "For the 2013 and 2013 mobile GUIs only: their health bar becomes the 2011-2013 one (dark tray, green bar, HEALTH). The 2011 and 2012 GUIs always have that one (nothing before 2011 does). Untick for the 2013 GUIs' own bar."
 	})
 
 	------------------------------------------------------------
