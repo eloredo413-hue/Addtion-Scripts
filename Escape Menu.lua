@@ -156,6 +156,9 @@ do
                 local bottom = layer.AbsolutePosition.Y + layer.AbsoluteSize.Y - SCREEN_MARGIN
                 local cut = math.ceil(top + height - bottom)
                 cut = math.max(0, math.min(cut, math.floor(height - MIN_HEIGHT)))
+                -- (the 2019 and 2021 menus are already the right size: 2018 and older only)
+                local year = topbarYear()
+                if not (year and year <= 2018) then cut = 0 end
                 if cut == state.cut then return end
                 state.cut = cut
                 state.ours = UDim2.new(base.X.Scale, base.X.Offset, base.Y.Scale, base.Y.Offset - cut)
@@ -219,6 +222,12 @@ do
     local SCREEN_GAP = 4
     local settingsPages = setmetatable({}, { __mode = "k" })
 
+    -- the 2019 and 2021 menus' Settings page is already the right size: only 2018 and older are fitted
+    local function shrinkAllowed()
+        local year = topbarYear()
+        return year ~= nil and year <= 2018
+    end
+
     local function fitSettingsPage(page)
         local state = settingsPages[page]
         if not state or not page.Parent then return end
@@ -261,7 +270,7 @@ do
         end
         local room = bottom - top - 2
         local scale = 1
-        if room > 0 and room < natural then
+        if room > 0 and room < natural and shrinkAllowed() then
             scale = math.max(MIN_PAGE_SCALE, room / natural)
         end
         local uiScale = page:FindFirstChild("BPFitScale")
@@ -672,19 +681,35 @@ do
         end
     end)
 
+    -- Only the old GUIs' own ScreenGui is watched: "NewRobloxGui", which the 2015 - 2021 GUIs put their
+    -- escape menu in. Roblox's own menu (in "RobloxGui") is never touched (the Settings page fit made it
+    -- look wrong and lose its page animation), and the rest of the game's GUI isn't looked at: everything
+    -- added anywhere in the CoreGui, the PlayerGui and gethui was looked at, which lagged in games with a
+    -- lot of GUI (most of all while the menu opens and fills in).
+    local MENU_GUI = "NewRobloxGui"
+    local watchedGuis = setmetatable({}, { __mode = "k" })
+    local function watchGui(gui)
+        if watchedGuis[gui] or gui.Name ~= MENU_GUI then return end
+        watchedGuis[gui] = true
+        gui.DescendantAdded:Connect(function(obj) pcall(onAdded, obj) end)
+        for i, obj in ipairs(gui:GetDescendants()) do
+            pcall(onAdded, obj)
+            if i % 400 == 0 then task.wait() end
+        end
+    end
     task.spawn(function()
-        local roots = { CoreGui }
+        local holders = { CoreGui }
         pcall(function()
             local hui = gethui and gethui()
-            if hui and hui ~= CoreGui then table.insert(roots, hui) end
+            if hui and hui ~= CoreGui then table.insert(holders, hui) end
         end)
-        pcall(function()
-            table.insert(roots, Players.LocalPlayer:WaitForChild("PlayerGui", 10))
-        end)
-        for _, root in ipairs(roots) do
+        for _, holder in ipairs(holders) do
             pcall(function()
-                for _, obj in ipairs(root:GetDescendants()) do onAdded(obj) end
-                root.DescendantAdded:Connect(onAdded)
+                for _, child in ipairs(holder:GetChildren()) do pcall(watchGui, child) end
+                -- (named after it is put in place, sometimes)
+                holder.ChildAdded:Connect(function(child)
+                    task.defer(function() pcall(watchGui, child) end)
+                end)
             end)
         end
     end)

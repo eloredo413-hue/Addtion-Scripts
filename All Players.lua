@@ -3,11 +3,12 @@
 -- else's character too, on your screen only (nobody else sees it, and nothing is sent to the game):
 --   * the forcefield: 2008 (the flashing outline) or 2012 (the blue bubble, the fixed one), when they
 --     have a forcefield
---   * the animations (Bloxy's): 2008 R6 moves their joints the 2008 way; 2014 R6 plays its own
---     animations; 2006 R6 and the R15 sets play the same animations Bloxy put in YOUR character's
---     Animate script (read from it). Each set only goes on bodies of its own kind (R6 or R15), and
---     their own animations are stopped on your screen while ours play. The 2007 animation already
---     animates everyone by itself, so with it picked this leaves animations alone.
+--   * the animations (Bloxy's), each era on both kinds of body: R6 players get its R6 version and R15
+--     players its R15 version. 2008: the 2008 joint swing (R6) / Bloxy's 2008 R15 animations; 2014: the
+--     2014 animations (R6) / the 2014 R15 animation pack; 2006: still (R6) / the retro movement
+--     animations it uses (R15); R15 old: the ones in your Animate (R15). Their own animations are
+--     stopped on your screen while ours play. The 2007 animation already animates everyone by itself,
+--     so with it picked this leaves animations alone.
 --   * the 2006 body (R6): the sharp classic body meshes
 -- Not the physics, the camera or any GUI: those are only yours.
 -- The choices are read from Bloxy's saved setup (BloxyParadoxConfig.json) and followed if you change
@@ -321,9 +322,27 @@ local ANIMATE_FOLDERS = {
 }
 local LOOPED = { idle = true, walk = true, run = true, climb = true, swim = true, swimidle = true, sit = true }
 
--- which animations to show on the others: { kind = "procedural" | "keyframes", rig = R6/R15, ids = {} }
-local animSet = nil
-local animSetKey = nil
+-- Bloxy's R15 sets, from the same catalog animations and bundles its scripts use (unpacked here with
+-- GetObjects / the bundle's details, as Bloxy does)
+local R15_2008_CATALOG = {
+	sit = "rbxassetid://12520993168", idle = "rbxassetid://107407916979702",
+	walk = "rbxassetid://103979922296239", run = "rbxassetid://103979922296239",
+}
+-- (Bloxy's "2006" R6 set puts these, R15 animations, into an R6 body, which leaves it still)
+local RETRO_2006_CATALOG = {
+	idle = "rbxassetid://107407916979702", walk = "rbxassetid://103979922296239",
+	run = "rbxassetid://103979922296239", jump = "rbxassetid://119095524735341",
+	fall = "rbxassetid://119095524735341", climb = "rbxassetid://132639392250396",
+}
+local BUNDLE_2014 = 206375404533286
+local SIT_CATALOG = "rbxassetid://12520993168"
+local R6 = Enum.HumanoidRigType.R6
+local R15 = Enum.HumanoidRigType.R15
+
+-- which animations to show on the others, one for each kind of body:
+-- { [R6] = set, [R15] = set }, a set being { kind = "procedural" | "keyframes" | "still", ids = {} }
+local animSets = {}
+local animSetKeys = {}
 
 -- the set Bloxy put in YOUR character's Animate script
 local function readLocalAnimate()
@@ -341,26 +360,108 @@ local function readLocalAnimate()
 	return ids, hum.RigType
 end
 
-local function decideAnimSet()
-	local a = choices.anims
-	if not a then return nil end
-	if a == "R6_2008" then
-		return { kind = "procedural", rig = Enum.HumanoidRigType.R6 }
-	elseif a == "R6_2014" then
-		return { kind = "keyframes", rig = Enum.HumanoidRigType.R6, ids = R6_2014 }
-	elseif a == "R6_2006" or a == "R15_2008" or a == "R15_2014" or a == "R15_Old" then
-		local ids, rig = readLocalAnimate()
-		local wantRig = (a == "R6_2006") and Enum.HumanoidRigType.R6 or Enum.HumanoidRigType.R15
-		if ids and rig == wantRig then
-			return { kind = "keyframes", rig = rig, ids = ids }
+-- Unpacking (it waits on Roblox): done once in the background, the result kept
+local unpacked = {}  -- name -> ids table, or false when it couldn't be done
+local unpacking = {}
+local function unpackCatalog(catalogId)
+	local result = catalogId
+	pcall(function()
+		for _, obj in ipairs(game:GetObjects(catalogId)) do
+			if obj:IsA("Animation") then result = obj.AnimationId return end
+			local anim = obj:FindFirstChildWhichIsA("Animation", true)
+			if anim then result = anim.AnimationId return end
+		end
+	end)
+	return result
+end
+local function animateIds(animate)
+	local ids = {}
+	for state, folderName in pairs(ANIMATE_FOLDERS) do
+		local folder = animate:FindFirstChild(folderName)
+		local anim = folder and folder:FindFirstChildWhichIsA("Animation", true)
+		if anim and anim.AnimationId ~= "" then ids[state] = anim.AnimationId end
+	end
+	return next(ids) and ids or nil
+end
+local function unpackBundle(bundleId)
+	local ok, details = pcall(function() return game:GetService("AssetService"):GetBundleDetailsAsync(bundleId) end)
+	if not ok or type(details) ~= "table" or type(details.Items) ~= "table" then return nil end
+	local desc = Instance.new("HumanoidDescription")
+	for _, item in ipairs(details.Items) do
+		if item.Type == "Asset" and type(item.Name) == "string" then
+			local n = item.Name:lower()
+			if n:find("idle") then desc.IdleAnimation = item.Id
+			elseif n:find("walk") then desc.WalkAnimation = item.Id
+			elseif n:find("run") then desc.RunAnimation = item.Id
+			elseif n:find("jump") then desc.JumpAnimation = item.Id
+			elseif n:find("fall") then desc.FallAnimation = item.Id
+			elseif n:find("climb") then desc.ClimbAnimation = item.Id
+			elseif n:find("swim") then desc.SwimAnimation = item.Id end
 		end
 	end
+	local ok2, model = pcall(function() return Players:CreateHumanoidModelFromDescription(desc, R15) end)
+	if not ok2 or not model then return nil end
+	local animate = model:FindFirstChild("Animate")
+	local ids = animate and animateIds(animate)
+	pcall(function() model:Destroy() end)
+	return ids
+end
+local function getUnpacked(name, job)
+	if unpacked[name] ~= nil then return unpacked[name] or nil end
+	if not unpacking[name] then
+		unpacking[name] = true
+		task.spawn(function()
+			local ok, ids = pcall(job)
+			unpacked[name] = (ok and type(ids) == "table" and next(ids)) and ids or false
+			unpacking[name] = nil
+			if not unpacked[name] then warn("[All Players] the " .. name .. " animations couldn't be unpacked") end
+		end)
+	end
 	return nil
+end
+local function catalogJob(catalog)
+	return function()
+		local ids = {}
+		for state, id in pairs(catalog) do ids[state] = unpackCatalog(id) end
+		return ids
+	end
+end
+
+-- the R15 version and the R6 version of what you picked
+local function decideAnimSets()
+	local a = choices.anims
+	local sets = {}
+	if not a then return sets end
+	local localIds, localRig = readLocalAnimate()
+	local function fromLocal(rig)
+		-- the animations Bloxy put in YOUR Animate (only when your body is that kind)
+		if localIds and localRig == rig then return { kind = "keyframes", ids = localIds } end
+		return nil
+	end
+	local function keyframes(ids) return ids and { kind = "keyframes", ids = ids } or nil end
+
+	if a == "R6_2008" or a == "R15_2008" then
+		sets[R6] = { kind = "procedural" }
+		sets[R15] = (a == "R15_2008" and fromLocal(R15)) or keyframes(getUnpacked("2008 R15", catalogJob(R15_2008_CATALOG)))
+	elseif a == "R6_2014" or a == "R15_2014" then
+		sets[R6] = { kind = "keyframes", ids = R6_2014 }
+		sets[R15] = (a == "R15_2014" and fromLocal(R15)) or keyframes(getUnpacked("2014 R15", function()
+			local ids = unpackBundle(BUNDLE_2014)
+			if ids then ids.sit = unpackCatalog(SIT_CATALOG) end
+			return ids
+		end))
+	elseif a == "R6_2006" then
+		sets[R6] = { kind = "still" }
+		sets[R15] = keyframes(getUnpacked("2006 R15", catalogJob(RETRO_2006_CATALOG)))
+	elseif a == "R15_Old" then
+		sets[R15] = fromLocal(R15)
+	end
+	return sets
 end
 
 local function setKey(set)
 	if not set then return "none" end
-	local parts = { set.kind, tostring(set.rig) }
+	local parts = { set.kind }
 	if set.ids then
 		local names = {}
 		for state in pairs(set.ids) do table.insert(names, state) end
@@ -415,7 +516,6 @@ end
 
 local function setupKeyframes(char, data, set)
 	local hum = data.hum
-	if hum.RigType ~= set.rig then return end
 	local st = { conns = {}, tracks = {}, ours = {}, current = nil, currentName = nil }
 	local animator = holdTheirsOff(st, hum)
 	local function track(name)
@@ -490,15 +590,39 @@ local function setupProcedural(char, data)
 	data.anim = st
 end
 
+-- 2006 on R6: no animation at all, as Bloxy's 2006 gives you (their own are stopped, the joints straight)
+local function setupStill(char, data)
+	local st = { conns = {}, ours = {} }
+	holdTheirsOff(st, data.hum)
+	local torso = char:FindFirstChild("Torso")
+	if torso then
+		st.joints = {}
+		for _, name in ipairs({ "Right Shoulder", "Left Shoulder", "Right Hip", "Left Hip" }) do
+			local joint = torso:FindFirstChild(name)
+			if joint then
+				table.insert(st.joints, joint)
+				pcall(function() joint.MaxVelocity = 0.5 joint:SetDesiredAngle(0) end)
+			end
+		end
+	end
+	data.anim = st
+end
+
 local function checkAnim(char, data)
-	if data.anim and data.animKey == animSetKey then return end
+	if not data.hum then return end
+	local rig = data.hum.RigType
+	local key = animSetKeys[rig] or "none"
+	if data.animKey == key and (data.anim or key == "none") then return end
 	removeAnim(data)
-	data.animKey = animSetKey
-	if not animSet or not data.hum then return end
-	if animSet.kind == "procedural" then
+	data.animKey = key
+	local set = animSets[rig]
+	if not set then return end
+	if set.kind == "procedural" then
 		setupProcedural(char, data)
+	elseif set.kind == "still" then
+		setupStill(char, data)
 	else
-		setupKeyframes(char, data, animSet)
+		setupKeyframes(char, data, set)
 	end
 end
 
@@ -551,11 +675,9 @@ end)
 --========================================================
 local function refreshChoices()
 	choices = readChoices()
-	local set = decideAnimSet()
-	local key = setKey(set)
-	if key ~= animSetKey then
-		animSet, animSetKey = set, key
-	end
+	local sets = decideAnimSets()
+	animSets = sets
+	animSetKeys = { [R6] = setKey(sets[R6]), [R15] = setKey(sets[R15]) }
 	for char, data in others() do
 		pcall(checkBody, char, data)
 		pcall(checkAnim, char, data)

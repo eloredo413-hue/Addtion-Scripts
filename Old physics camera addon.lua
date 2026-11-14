@@ -294,6 +294,10 @@ local function setupCharacter(char)
 		else
 			hipOffset = hipOffset * (decayRate ^ (dt * 60))
 		end
+		-- R15: the hip height stays the avatar's own. Roblox's R15 Animate plays the animations faster the
+		-- lower the hip height is (it takes it for a smaller body), so lowering it in the air made the
+		-- animations run twice as fast after a jump.
+		if isR15 then hipOffset = 0 end
 		applyHip()
 	end)
 
