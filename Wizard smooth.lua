@@ -8,6 +8,9 @@
 -- tween looked through its GUI for the materials prompt). Now they are only on while a
 -- setup question is on screen (and a few seconds after), and Bloxy's own panel
 -- (HammerBigPanel, which is never a question) is no longer searched on every frame.
+-- (Addtion-Scripts) No __namecall hook any more: it made every method call of every script in the game
+-- go through it while the setup was up, which got in the way of a lot of games. The setup's tweens are
+-- caught by the TweenService.Create hook alone, and a press's click sound by the sound sweep below.
 
 task.spawn(function()
 	local TweenService = game:GetService("TweenService")
@@ -166,16 +169,11 @@ task.spawn(function()
 		return create(self, obj, tweenInfo, goal)
 	end
 
-	-- Set when the hidden No is pressed so the game's click sound for it is
-	-- swallowed; the player already heard one for the body prompt.
-	local muteClickUntil = 0
-
-	-- The two hooks are put on when a setup question appears and taken off again a few
+	-- The TweenService.Create hook is put on when a setup question appears and taken off again a few
 	-- seconds after the last one is gone (and put on again if the setup is opened again).
 	-- If this executor can't take a hook off, it stays on but does nothing while no question
 	-- is up (the hooksNeeded check), as before.
 	local createHook = nil     -- { original = ... } while the TweenService.Create hook is on
-	local namecallHook = nil   -- { original = ... } while the __namecall hook is on
 
 	local function installCreateHook()
 		if createHook or not hookfunction then return end
@@ -191,47 +189,7 @@ task.spawn(function()
 		log("TweenService.Create" .. (ok and " hooked" or (" hook FAILED: " .. tostring(err))))
 	end
 
-	-- The game calls TweenService:Create(...), which goes through __namecall
-	-- and skips the hookfunction hook above on many executors.
-	local function installNamecallHook()
-		if namecallHook or not (hookmetamethod and getnamecallmethod) then return end
-		local ok, err = pcall(function()
-			local oldNamecall
-			local namecallWrapper = function(self, ...)
-				if muteClickUntil > 0 and os.clock() < muteClickUntil then
-					-- No Instance namecalls before oldNamecall below, or the pending
-					-- method name changes; ClassName is a plain property read.
-					-- Lowercase too: older games use the deprecated sound:play().
-					local method = tostring(getnamecallmethod()):lower()
-					if ((method == "play" or method == "resume")
-					    and typeof(self) == "Instance" and self.ClassName == "Sound")
-					   or (method == "playlocalsound" and self == SoundService) then
-						return
-					end
-				end
-				if hooksNeeded and self == TweenService and getnamecallmethod() == "Create" then
-					-- Index call, not a namecall: anything namecalled while checking
-					-- changes the pending method name, so oldNamecall can't be reused.
-					return createTween(TweenService.Create, self, ...)
-				end
-				return oldNamecall(self, ...)
-			end
-			if newcclosure then namecallWrapper = newcclosure(namecallWrapper) end
-			oldNamecall = hookmetamethod(game, "__namecall", namecallWrapper)
-			namecallHook = { original = oldNamecall }
-		end)
-		log("__namecall" .. (ok and " hooked" or (" hook FAILED: " .. tostring(err))))
-	end
-
 	local function removeHooks()
-		if namecallHook then
-			-- every method call in the game goes through this hook: it must not stay for nothing
-			local ok = pcall(function() hookmetamethod(game, "__namecall", namecallHook.original) end)
-			if ok then
-				namecallHook = nil
-				log("__namecall hook taken off")
-			end
-		end
 		if createHook then
 			local ok = pcall(function() hookfunction(TweenService.Create, createHook.original) end)
 			if ok then
@@ -243,7 +201,6 @@ task.spawn(function()
 
 	local function installHooks()
 		installCreateHook()
-		installNamecallHook()
 	end
 
 	-- The hook above only catches sound:Play() calls. To catch the click
@@ -280,7 +237,6 @@ task.spawn(function()
 		end
 
 		local stopAt = os.clock() + 0.3
-		muteClickUntil = stopAt
 
 		-- Sounds created on the spot can be parented anywhere.
 		local added = game.DescendantAdded:Connect(function(d)
