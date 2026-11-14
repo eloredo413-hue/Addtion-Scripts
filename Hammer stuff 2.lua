@@ -1,6 +1,6 @@
 -- [[ (Addtion-Scripts copy: Remove Pro keeps shadows) HEALTH ESP + REMOVE PRO + CLASSIC OUTLINE + LENS FLARE + AVATAR DROPDOWN (OLD / 2006)
 --    + CLASSIC FACE + COLOR LIMITER DROPDOWN (2012 / 2006 / 2005) + HIDE GAME GUI + LEGACY LIGHTING
---    + OLD DECAL RENDERING BUTTON ]]
+--    + OLD DECAL RENDERING BUTTON + 2008 NIGHT SKY ]]
 -- Execute Hammer stuff 1 first, then this.
 
 task.spawn(function()
@@ -69,6 +69,7 @@ task.spawn(function()
 		is2015AudioEnabled      = config.is2015AudioEnabled or false,
 		is2016AudioEnabled      = config.is2016AudioEnabled or false,
 		isOldHealthBarEnabled   = config.isOldHealthBarEnabled or false,
+		is2008NightSkyEnabled   = config.is2008NightSkyEnabled or false,
 	}
 
 	-- Hammer stuff 1 (and the base GUI) save to the same file, so re-read it first and
@@ -3380,6 +3381,42 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
+	-- 17. 2008 NIGHT SKY (2008 Night Sky.lua in this repo)
+	-- At night (18:00 - 06:00 by the game's clock) a pitch-black sky with the classic 2008 square stars; the
+	-- day sky as it is. Roblox's own stars off. Unticking puts the game's sky and stars back.
+	------------------------------------------------------------
+	do
+		local NIGHT_SKY_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2008%20Night%20Sky.lua"
+		local genv = (getgenv and getgenv()) or _G
+		local loading = false
+		local function cleanup()
+			local fn = _G.Cleanup2008NightSky or genv.Cleanup2008NightSky
+			if type(fn) == "function" then pcall(fn) end
+			_G.Cleanup2008NightSky = nil
+			genv.Cleanup2008NightSky = nil
+		end
+		function actions.apply2008NightSky()
+			if loading then return end
+			loading = true
+			task.spawn(function()
+				local ok, err = pcall(function()
+					loadstring(game:HttpGet(NIGHT_SKY_URL))()
+				end)
+				loading = false
+				if not ok then
+					warn("[2008 Night Sky] couldn't load: " .. tostring(err))
+					return
+				end
+				-- unticked while it was downloading
+				if not state.is2008NightSkyEnabled then cleanup() end
+			end)
+		end
+		function actions.restore2008NightSky()
+			cleanup()
+		end
+	end
+
+	------------------------------------------------------------
 	-- 10. HIDE GAME GUI (LOADSTRING HOOK)
 	-- The GUI Hider gist hides the game's own ScreenGuis (TopbarPlus,
 	-- HUDs, shop buttons) and leaves Bloxy Paradox and the era GUIs alone.
@@ -3876,6 +3913,18 @@ task.spawn(function()
 	})
 
 	createAddonRow({
+		containerName = "NightSky2008Container",
+		checkboxName  = "NightSky2008Checkbox",
+		helpName      = "NightSky2008HelpButton",
+		label         = "2008 night sky",
+		yPos          = startY + 13 * ROW_HEIGHT,
+		stateKey      = "is2008NightSkyEnabled",
+		onEnable      = actions.apply2008NightSky,
+		onDisable     = actions.restore2008NightSky,
+		helpText      = "The 2008 night: from 18:00 to 06:00 (the game's clock) the sky goes pitch black with the classic 2008 square stars, and Roblox's own stars are off. The day sky stays as it is. Untick to put the game's sky and stars back."
+	})
+
+	createAddonRow({
 		containerName = "OutlineContainer",
 		checkboxName  = "OutlineCheckbox",
 		helpName      = "OutlineHelpButton",
@@ -4233,6 +4282,7 @@ task.spawn(function()
 	if state.isOldPartSoundsEnabled then task.spawn(actions.applyOldPartSounds) end
 	if state.isRemoveLeaderboardEnabled then task.spawn(actions.applyRemoveLeaderboard) end
 	if state.isOldHealthBarEnabled then task.spawn(actions.applyOldHealthBar) end
+	if state.is2008NightSkyEnabled then task.spawn(actions.apply2008NightSky) end
 	if state.is2013DynamicEnabled then task.spawn(actions.apply2013Dynamic) end
 	if state.is2015AudioEnabled then task.spawn(actions.apply2015Audio)
 	elseif state.is2016AudioEnabled then task.spawn(actions.apply2016Audio) end
