@@ -94,6 +94,29 @@ do
         grow()
     end
 
+    -- Runs fn once whatever it watches has stopped changing for `quiet` seconds (one waiting thread at
+    -- a time). The menu slides in from the top when it opens, and measuring it on every frame of that
+    -- (and resizing the page each time) made opening the menu lag.
+    local function whenStill(fn, quiet)
+        local lastChange, waiting = 0, false
+        local function check()
+            local left = quiet - (os.clock() - lastChange)
+            if left > 0 then
+                task.delay(left, check)
+                return
+            end
+            waiting = false
+            pcall(fn)
+        end
+        return function()
+            lastChange = os.clock()
+            if not waiting then
+                waiting = true
+                task.delay(quiet, check)
+            end
+        end
+    end
+
     -- On phones the menu's page area (PageViewClipper) runs past the bottom of the screen, so the last
     -- row of the Settings page (Graphics Quality) was cut off by the screen's edge and couldn't be scrolled
     -- to (the page thought it was all on show). The page area is made shorter so it ends just above the
@@ -108,7 +131,7 @@ do
         if not state then
             state = { base = window.Size, cut = 0, said = false }
             windowFix[window] = state
-            local function later() task.defer(function() pcall(state.fit) end) end
+            local later = whenStill(function() state.fit() end, 0.2)
             state.fit = function()
                 local parent = window.Parent
                 local layer = window:FindFirstAncestorWhichIsA("LayerCollector")
@@ -282,15 +305,15 @@ do
         if not inOldMenu(page) then return end
         local state = { baseX = page.Size.X.Scale }
         settingsPages[page] = state
+        local later = whenStill(function() fitSettingsPage(page) end, 0.2)
         page:GetPropertyChangedSignal("Size"):Connect(function()
             if page.Size == state.ours then return end -- the size set here
             state.baseX = page.Size.X.Scale              -- the menu set its own
             state.ours = nil
-            task.defer(function() pcall(fitSettingsPage, page) end)
+            later()
         end)
-        page:GetPropertyChangedSignal("AbsolutePosition"):Connect(function()
-            task.defer(function() pcall(fitSettingsPage, page) end)
-        end)
+        -- (when the menu has finished sliding in, not on every frame of it)
+        page:GetPropertyChangedSignal("AbsolutePosition"):Connect(later)
         local view = page:FindFirstAncestorWhichIsA("ScrollingFrame")
         print("[Loader] escape menu Settings page found (" .. page:GetFullName() .. ")")
         pcall(noStrip, view)
@@ -534,17 +557,40 @@ do
             applying = false
         end
         apply()
-        for _, button in ipairs(order) do
-            button:GetPropertyChangedSignal("Position"):Connect(function() task.defer(apply) end)
-            button:GetPropertyChangedSignal("Size"):Connect(function() task.defer(apply) end)
+        -- Put back at most once a frame, however many of the buttons' properties the menu changed. If the
+        -- menu keeps moving them back (its own layout code running every frame), the two would fight on
+        -- every frame while the menu is open, which lags: then the buttons are left to the menu.
+        local queued, gaveUp = false, false
+        local windowStart, count = os.clock(), 0
+        local function queue()
+            if queued or gaveUp then return end
+            queued = true
+            task.defer(function()
+                queued = false
+                local now = os.clock()
+                if now - windowStart > 2 then windowStart, count = now, 0 end
+                count = count + 1
+                if count > 30 then
+                    gaveUp = true
+                    print("[Loader] escape menu: the menu keeps moving its buttons back, so they are left to it"
+                        .. " (fighting it made the menu lag)")
+                    return
+                end
+                apply()
+            end)
         end
-        if grid then grid:GetPropertyChangedSignal("CellSize"):Connect(function() task.defer(apply) end) end
+        for _, button in ipairs(order) do
+            button:GetPropertyChangedSignal("Position"):Connect(queue)
+            button:GetPropertyChangedSignal("Size"):Connect(queue)
+        end
+        if grid then grid:GetPropertyChangedSignal("CellSize"):Connect(queue) end
         print("[Loader] escape menu (" .. tostring(year) .. "): Leave / Reset / Resume in one row")
     end
 
     -- The menu can be built before the topbar is picked: what was seen is looked at again for a while.
     local seenViews, seenParents = setmetatable({}, { __mode = "k" }), setmetatable({}, { __mode = "k" })
     local seenHubs = setmetatable({}, { __mode = "k" }) -- the escape menus (what holds a HubBar)
+    local hubLooked = setmetatable({}, { __mode = "k" }) -- when each menu was first and last looked through
     local function onAdded(obj)
         if obj.Name == "PageView" then
             seenViews[obj] = true
@@ -586,8 +632,18 @@ do
         for page in pairs(settingsPages) do pcall(fitSettingsPage, page) end
         -- the menus themselves are looked through too: some put the words on their buttons after the
         -- buttons are made, which the check when a text is added can miss
+        local now = os.clock()
         for hub in pairs(seenHubs) do
-            if hub.Parent then
+            -- the whole menu is looked through every recheck for its first minute, then every 15 seconds
+            -- (it has a lot in it: going through all of it every 2 seconds was more than needed)
+            local seen = hubLooked[hub]
+            if not seen then
+                seen = { first = now, last = 0 }
+                hubLooked[hub] = seen
+            end
+            local due = (now - seen.first < 60) or (now - seen.last >= 15)
+            if due then seen.last = now end
+            if hub.Parent and due then
                 pcall(function()
                     for _, d in ipairs(hub:GetDescendants()) do
                         if d:IsA("TextLabel") or d:IsA("TextButton") then pcall(settingsRowLabel, d) end
