@@ -1,6 +1,9 @@
 -- [[ PHYSICS + CAMERA WIZARD STEP — with None option ]]
 -- (Addtion-Scripts copy: the "Old" physics climbs like the 2006 physics: walk into a small part and the
---  character climbs it in the real Climbing state, and lets go when you stop moving or jump.)
+--  character climbs it in the real Climbing state, and lets go when you stop moving or jump.
+--  R15 avatars work too: the hip height moves around the avatar's own (an R15 body stands on it; R6 legs
+--  hold an R6 body up at 0, which sank an R15 one into the floor), and the climbing check is measured
+--  from the feet. The "2006" physics is this repo's copy (2006 Physics.lua), which also takes R15.)
 
 task.spawn(function()
 	local HttpService = game:GetService("HttpService")
@@ -11,7 +14,9 @@ task.spawn(function()
 
 	local CONFIG_FILE = "BloxyParadoxConfig.json"
 	local CAMERA_URL = "https://gist.githubusercontent.com/eloredo413-hue/81660979f9506a61e0344f32a8096f96/raw/05a2619b3a2737d7c4a97814650f8980e103c5ef/Retro%2520camera"
-	local PHYSICS_2006_URL = "https://gist.githubusercontent.com/eloredo413-hue/03ef8e46682bfb53e26e6847abfde344/raw/0fb71153c3b4a369a0390228a2bec3a4a5655c56/2006%2520Physics"
+	-- the repo copy works with R15 avatars too; the gist (R6 only) is the fallback
+	local PHYSICS_2006_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2006%20Physics.lua"
+	local PHYSICS_2006_GIST = "https://gist.githubusercontent.com/eloredo413-hue/03ef8e46682bfb53e26e6847abfde344/raw/0fb71153c3b4a369a0390228a2bec3a4a5655c56/2006%2520Physics"
 
 	local player = Players.LocalPlayer
 	local pg = player:WaitForChild("PlayerGui", 15)
@@ -113,6 +118,21 @@ local function setupCharacter(char)
 	if not humanoid or not rootPart or not torso then
 		warn("[Retro Master] Character parts could not be found.")
 		return
+	end
+
+	-- R15: the body stands on its hip height, so the hip-height changes below go around its own (R6: 0).
+	-- Its own is followed if Roblox changes it (the body being scaled).
+	local isR15 = humanoid.RigType == Enum.HumanoidRigType.R15
+	local baseHip = isR15 and (humanoid.HipHeight > 0 and humanoid.HipHeight or 2) or 0
+	local hipOffset = 0
+	local lastSetHip = nil
+	local function applyHip()
+		if isR15 and lastSetHip and math.abs(humanoid.HipHeight - lastSetHip) > 0.001 then
+			baseHip = humanoid.HipHeight - hipOffset -- changed by something else: that's the new base
+		end
+		local value = baseHip + hipOffset
+		humanoid.HipHeight = value
+		lastSetHip = value
 	end
 
 	local oldClimbing = char:FindFirstChild("Climbing")
@@ -251,27 +271,30 @@ local function setupCharacter(char)
 		end
 		dt = math.min(0.1, dt)
 		if humanoid.SeatPart then
-			humanoid.HipHeight = 0
+			hipOffset = 0
+			applyHip()
 			lastLevel = getFloorLevel()
 			return
 		end
-		-- The 2006 physics keeps the hip height at 0 while climbing; floating up with the climb
-		-- kick would lift the feet-level search above the part being climbed.
+		-- The 2006 physics keeps the hip height at 0 (R15: its own) while climbing; floating up with the
+		-- climb kick would lift the feet-level search above the part being climbed.
 		if climbActive then
-			humanoid.HipHeight = 0
+			hipOffset = 0
+			applyHip()
 			lastLevel = getFloorLevel()
 			return
 		end
 		local level, dist = getFloorLevel()
 		local yVelocity = rootPart.AssemblyLinearVelocity.Y
 		if math.abs(yVelocity) > 8 then
-			humanoid.HipHeight = moveTowards(humanoid.HipHeight, math.sign(yVelocity), stepRate * dt)
+			hipOffset = moveTowards(hipOffset, math.sign(yVelocity), stepRate * dt)
 		elseif lastLevel ~= level then
-			humanoid.HipHeight = math.sign(lastLevel - level) * math.clamp(dist - 3, 0, 1)
+			hipOffset = math.sign(lastLevel - level) * math.clamp(dist - 3, 0, 1)
 			lastLevel = level
 		else
-			humanoid.HipHeight = humanoid.HipHeight * (decayRate ^ (dt * 60))
+			hipOffset = hipOffset * (decayRate ^ (dt * 60))
 		end
+		applyHip()
 	end)
 
 	local camera = Workspace.CurrentCamera
@@ -329,8 +352,16 @@ local function setupCharacter(char)
 	local function climbablePartAhead()
 		-- (the hip height is taken out: the Old physics squashes it after a fall, which would lower the
 		-- search box into the ground and miss the bottom of a ladder)
-		local checkPos = torso.Position - Vector3.new(0, 1 + humanoid.HipHeight, 0)
-		local boxCFrame = CFrame.new(checkPos + torso.CFrame.LookVector / 2) * CFrame.new(0, -0.5, 0)
+		local boxCFrame
+		if isR15 then
+			-- R15: the same place as on R6, 1 to 2 studs above the feet, just in front
+			local feet = rootPart.Position.Y - rootPart.Size.Y / 2 - baseHip - hipOffset
+			local ahead = rootPart.Position + rootPart.CFrame.LookVector / 2
+			boxCFrame = CFrame.new(ahead.X, feet + 1.5, ahead.Z)
+		else
+			local checkPos = torso.Position - Vector3.new(0, 1 + humanoid.HipHeight, 0)
+			boxCFrame = CFrame.new(checkPos + torso.CFrame.LookVector / 2) * CFrame.new(0, -0.5, 0)
+		end
 		local parts = Workspace:GetPartBoundsInBox(boxCFrame, CLIMB_BOX, overlapParams)
 		for _, part in ipairs(parts) do
 			local worldSize = part.CFrame:VectorToWorldSpace(part.Size)
@@ -552,13 +583,16 @@ print("[Retro Master] Full script loaded successfully.")
 	local function fetchPhysics2006Script()
 		if PHYSICS_2006_SRC then return PHYSICS_2006_SRC end
 		print("[Physics/Camera] Fetching 2006 physics script...")
-		local ok, src = pcall(function()
-			return game:HttpGet(PHYSICS_2006_URL, true)
-		end)
-		if ok and type(src) == "string" and #src > 100 then
-			PHYSICS_2006_SRC = src
-			print("[Physics/Camera] 2006 physics script fetched (" .. #src .. " bytes).")
-			return src
+		for _, url in ipairs({ PHYSICS_2006_URL, PHYSICS_2006_GIST }) do
+			local ok, src = pcall(function()
+				return game:HttpGet(url, true)
+			end)
+			if ok and type(src) == "string" and #src > 100 and not src:find("^%s*<") and not src:find("^404") then
+				PHYSICS_2006_SRC = src
+				print("[Physics/Camera] 2006 physics script fetched (" .. #src .. " bytes"
+					.. (url == PHYSICS_2006_GIST and ", the gist: R6 only" or ", works with R15 too") .. ").")
+				return src
+			end
 		end
 		warn("[Physics/Camera] Failed to fetch 2006 physics script.")
 		return nil
