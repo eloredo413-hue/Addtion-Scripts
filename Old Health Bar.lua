@@ -7,7 +7,7 @@
 -- GUI's HealthFrame, or any bar made of the same pictures) is hidden, and this one goes exactly where it
 -- was, at its size. With none to be found it goes at the bottom middle, 170 x 18 (the size the GUIs use).
 --
--- getgenv().OldHealthBar = { Start, Stop, IsRunning }: the loader starts it for the GUIs before 2014 (the
+-- getgenv().OldHealthBar = { Start, Stop, IsRunning }: the loader starts it for the 2011 and 2012 GUIs (the
 -- 2013 and 2013 mobile GUIs only with Hammer stuff 2's "old healthbar" ticked) and stops it for the others.
 
 local Env = (getgenv and getgenv()) or _G
