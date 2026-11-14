@@ -75,6 +75,14 @@ local Camera = Workspace.CurrentCamera
 -- 2011 ROBLONIUM ARCHIVE TEXTURE LOADER
 --========================================================
 local ARCHIVE_BASE = "https://archive.roblonium.com/Client/Windows/RobloxApp/2011/10.2011/October%2025%20%280.47.0.380%29/version-87de5333d4254860/content/textures/"
+-- (Addtion-Scripts) the December 2, 2010 client (the first with this look) first; what it doesn't have, from
+-- May 2011, February 2011, then October 2011 (the same pictures)
+local ARCHIVE_BASES = {
+	"https://archive.roblonium.com/Client/Windows/RobloxApp/2010/12.2010/December%202%20%280.29.0.1%29%20-%20First%20client%20with%20new%20UI/version-ddd9de6fd55e4df2/content/textures/",
+	"https://archive.roblonium.com/Client/Windows/RobloxApp/2011/5.2011/May%2020%20%280.40.0.202%29/version-5fb0645efa584e24/content/textures/",
+	"https://archive.roblonium.com/Client/Windows/RobloxApp/2011/2.2011/February%20%280.34.0.22%29/version-2de7d827839d40a3/content/textures/",
+	ARCHIVE_BASE,
+}
 local customAssetFunc = (type(getcustomasset) == "function" and getcustomasset)
 	or (type(getsynasset) == "function" and getsynasset)
 local canWriteFiles = (type(writefile) == "function") and (type(isfile) == "function") and (customAssetFunc ~= nil)
@@ -96,7 +104,7 @@ local function get2011Texture(relPath, fallbackAsset)
 	end
 
 	if canWriteFiles then
-		local safeName = "Early2011_" .. relPath:gsub("[^%w%.]", "_")
+		local safeName = "Early2011v2_" .. relPath:gsub("[^%w%.]", "_")
 		local filePath = (type(isfolder) == "function" and isfolder("Early2011Textures"))
 			and ("Early2011Textures/" .. safeName)
 			or safeName
@@ -106,10 +114,14 @@ local function get2011Texture(relPath, fallbackAsset)
 			if isfile(filePath) then
 				okReady = true
 			else
-				local okHttp, bytes = pcall(game.HttpGet, game, ARCHIVE_BASE .. relPath)
-				if okHttp and type(bytes) == "string" and #bytes > 64 and not bytes:find("<!DOCTYPE", 1, true) then
-					writefile(filePath, bytes)
-					okReady = true
+				for _, base in ipairs(ARCHIVE_BASES) do
+					local okHttp, bytes = pcall(game.HttpGet, game, base .. relPath)
+					-- (a PNG: the archive's "not found" page is HTML)
+					if okHttp and type(bytes) == "string" and #bytes > 64 and bytes:sub(2, 4) == "PNG" then
+						writefile(filePath, bytes)
+						okReady = true
+						break
+					end
 				end
 			end
 		end)
@@ -1203,140 +1215,97 @@ local UIPaddingBar = Instance.new("UIPadding")
 UIPaddingBar.PaddingLeft = UDim.new(0, 8)
 UIPaddingBar.Parent = ButtonContainer
 
-local buttonDefs = {
-	{Order = 1, Name = "LeaveBtn", Size = UDim2.new(0, 60, 0, 36), ImageId = "rbxassetid://90232828981032", IsImage = true, FullGlow = true, TransparentBg = true},
-	{Order = 2, Name = "ExpandBtn", Size = UDim2.new(0, 32, 0, 36), ImageId = "rbxassetid://106850260964317", IsImage = true},
-	-- (Addtion-Scripts) the mouse lock button in place of "≡", as in the 2011 client (the list button opens the menu)
-	{Order = 3, Name = "MouseLockBtn", Size = UDim2.new(0, 32, 0, 36), ImageId = "rbxasset://textures/ArrowCursor.png", IsImage = true},
-	{Order = 4, Name = "SettingsBtn", Size = UDim2.new(0, 32, 0, 36), ImageId = "rbxassetid://14306059173", IsImage = true}
-}
-
-for _, info in ipairs(buttonDefs) do
-	local btn
-	local iconImage
-
-	if info.IsImage then
-		btn = Instance.new("ImageButton")
-		btn.Image = ""
-
-		iconImage = Instance.new("ImageLabel")
-		if info.FullGlow then
-			iconImage.Size = UDim2.new(1, 0, 1, 0)
-		else
-			iconImage.Size = UDim2.new(0, 22, 0, 22)
-		end
-		iconImage.Position = UDim2.new(0.5, 0, 0.5, 0)
-		iconImage.AnchorPoint = Vector2.new(0.5, 0.5)
-		iconImage.BackgroundTransparency = 1
-		iconImage.Image = info.ImageId
-		iconImage.ImageColor3 = Color3.fromRGB(220, 220, 220)
-		iconImage.ScaleType = Enum.ScaleType.Fit
-		iconImage.ZIndex = 8
-		iconImage.Parent = btn
-	else
-		btn = Instance.new("TextButton")
-		btn.Font = Enum.Font.SourceSansBold
-		btn.Text = info.Text
-		btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-		btn.TextSize = 16
-	end
-
-	btn.Name = info.Name
-	btn.LayoutOrder = info.Order
-	btn.Size = info.Size
-
-	if info.TransparentBg then
-		btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-		btn.BackgroundTransparency = 1
-		btn.BorderSizePixel = 0
-	else
-		btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-		btn.BackgroundTransparency = 0.5
-		btn.BorderSizePixel = 1
-		btn.BorderColor3 = Color3.fromRGB(80, 80, 80)
-	end
-
+-- (Addtion-Scripts) The buttons as in the 2011 client: its own pictures (normal / under the mouse / pressed) at
+-- their own sizes (80% of them, to fit the bar): Leave, the list (the menu), the tool cursor (mouse lock; on
+-- a phone shift lock), the gear (settings).
+local BAR_SCALE = 0.8
+local function nativeSize(w, h)
+	return UDim2.new(0, math.floor(w * BAR_SCALE + 0.5), 0, math.floor(h * BAR_SCALE + 0.5))
+end
+local function make2011Button(name, order, size, parent, normal, ovr, dn, fallback)
+	local btn = Instance.new("ImageButton")
+	btn.Name = name
+	btn.LayoutOrder = order
+	btn.Size = size
+	btn.BackgroundTransparency = 1
+	btn.BorderSizePixel = 0
+	btn.ScaleType = Enum.ScaleType.Stretch
 	btn.ZIndex = 7
-	btn.Parent = ButtonContainer
+	btn.Parent = parent
+	bind2011ButtonStates(btn, btn, normal, ovr, dn, fallback)
+	return btn
+end
 
-	if info.Name == "LeaveBtn" then
-		storeConnection(btn.MouseButton1Click:Connect(function()
-			pcall(function()
-				game:Shutdown()
-			end)
-		end))
-	elseif info.Name == "SettingsBtn" then
-		storeConnection(btn.MouseButton1Click:Connect(function()
-			SettingsDialog.Visible = not SettingsDialog.Visible
-		end))
-	elseif info.Name == "ExpandBtn" then
-		-- (Addtion-Scripts) the list button opens the menu (what "≡" did)
-		storeConnection(btn.MouseButton1Click:Connect(function()
-			HelpDialog.Visible = not HelpDialog.Visible
-		end))
-	elseif info.Name == "MouseLockBtn" then
-		-- (Addtion-Scripts) mouse lock: the character turns with the camera and the camera sits over the
-		-- right shoulder (on a phone, shift lock); on a PC the mouse is held in the middle too
-		local locked = false
-		local BIND = "Early2011MouseLock"
-		local function setLocked(on)
-			locked = on
-			local character = LocalPlayer.Character
-			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-			if on then
-				pcall(function() RunService:UnbindFromRenderStep(BIND) end)
-				RunService:BindToRenderStep(BIND, Enum.RenderPriority.Camera.Value + 1, function()
-					local char = LocalPlayer.Character
-					local hum = char and char:FindFirstChildOfClass("Humanoid")
-					local root = char and char:FindFirstChild("HumanoidRootPart")
-					local cam = Workspace.CurrentCamera
-					if not (hum and root and cam) or hum.Health <= 0 or hum.Sit then return end
-					hum.AutoRotate = false
-					hum.CameraOffset = Vector3.new(1.75, 0, 0)
-					local look = cam.CFrame.LookVector
-					local flat = Vector3.new(look.X, 0, look.Z)
-					if flat.Magnitude > 0.01 then
-						root.CFrame = CFrame.lookAt(root.Position, root.Position + flat.Unit)
-					end
-					if UserInputService.MouseEnabled then
-						UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
-					end
-				end)
-			else
-				pcall(function() RunService:UnbindFromRenderStep(BIND) end)
-				if humanoid then
-					humanoid.AutoRotate = true
-					humanoid.CameraOffset = Vector3.new(0, 0, 0)
+local LeaveBtn = make2011Button("LeaveBtn", 1, nativeSize(75, 39), ButtonContainer,
+	"Exit.png", "Exit_ovr.png", "Exit_dn.png", "rbxassetid://90232828981032")
+local ListBtn = make2011Button("ExpandBtn", 2, nativeSize(39, 39), ButtonContainer,
+	"TogglePlayMode.png", "TogglePlayMode_ovr.png", "TogglePlayMode_dn.png", "rbxassetid://106850260964317")
+local MouseLockBtn = make2011Button("MouseLockBtn", 3, nativeSize(39, 39), ButtonContainer,
+	"ui/ToolButton.png", "ui/ToolButton_dn.png", "ui/ToolButton_dn.png", "rbxasset://textures/ArrowCursor.png")
+local SettingsBtn = make2011Button("SettingsBtn", 4, nativeSize(39, 39), ButtonContainer,
+	"ui/SettingsButton.png", "ui/SettingsButton_ovr.png", "ui/SettingsButton_dn.png", "rbxassetid://14306059173")
+
+storeConnection(LeaveBtn.MouseButton1Click:Connect(function()
+	pcall(function()
+		game:Shutdown()
+	end)
+end))
+storeConnection(SettingsBtn.MouseButton1Click:Connect(function()
+	SettingsDialog.Visible = not SettingsDialog.Visible
+end))
+storeConnection(ListBtn.MouseButton1Click:Connect(function()
+	HelpDialog.Visible = not HelpDialog.Visible
+end))
+
+-- mouse lock: the character turns with the camera and the camera sits over the right shoulder (on a phone,
+-- shift lock); on a PC the mouse is held in the middle too. While it's on, the button keeps a red edge (as
+-- the 2011 buttons have under the mouse).
+do
+	local locked = false
+	local BIND = "Early2011MouseLock"
+	local onEdge = Instance.new("UIStroke")
+	onEdge.Color = Color3.fromRGB(220, 0, 0)
+	onEdge.Thickness = 2
+	onEdge.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	onEdge.Enabled = false
+	onEdge.Parent = MouseLockBtn
+	local function setLocked(on)
+		locked = on
+		onEdge.Enabled = on
+		local character = LocalPlayer.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		pcall(function() RunService:UnbindFromRenderStep(BIND) end)
+		if on then
+			RunService:BindToRenderStep(BIND, Enum.RenderPriority.Camera.Value + 1, function()
+				local char = LocalPlayer.Character
+				local hum = char and char:FindFirstChildOfClass("Humanoid")
+				local root = char and char:FindFirstChild("HumanoidRootPart")
+				local cam = Workspace.CurrentCamera
+				if not (hum and root and cam) or hum.Health <= 0 or hum.Sit then return end
+				hum.AutoRotate = false
+				hum.CameraOffset = Vector3.new(1.75, 0, 0)
+				local look = cam.CFrame.LookVector
+				local flat = Vector3.new(look.X, 0, look.Z)
+				if flat.Magnitude > 0.01 then
+					root.CFrame = CFrame.lookAt(root.Position, root.Position + flat.Unit)
 				end
 				if UserInputService.MouseEnabled then
-					UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+					UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
 				end
+			end)
+		else
+			if humanoid then
+				humanoid.AutoRotate = true
+				humanoid.CameraOffset = Vector3.new(0, 0, 0)
 			end
-			btn.BackgroundTransparency = on and 0.1 or 0.5
-			btn.BorderColor3 = on and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(80, 80, 80)
+			if UserInputService.MouseEnabled then
+				UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+			end
 		end
-		storeConnection(btn.MouseButton1Click:Connect(function() setLocked(not locked) end))
-		storeConnection(LocalPlayer.CharacterAdded:Connect(function()
-			if locked then setLocked(false) end
-		end))
 	end
-
-	storeConnection(btn.MouseEnter:Connect(function()
-		if not info.TransparentBg then
-			TweenService:Create(btn, TweenInfo.new(0.12), {BackgroundTransparency = 0.1, BorderColor3 = Color3.fromRGB(255, 255, 255)}):Play()
-		end
-		if iconImage then
-			TweenService:Create(iconImage, TweenInfo.new(0.12), {ImageColor3 = Color3.fromRGB(255, 255, 255)}):Play()
-		end
-	end))
-
-	storeConnection(btn.MouseLeave:Connect(function()
-		if not info.TransparentBg then
-			TweenService:Create(btn, TweenInfo.new(0.12), {BackgroundTransparency = 0.5, BorderColor3 = Color3.fromRGB(80, 80, 80)}):Play()
-		end
-		if iconImage then
-			TweenService:Create(iconImage, TweenInfo.new(0.12), {ImageColor3 = Color3.fromRGB(220, 220, 220)}):Play()
-		end
+	storeConnection(MouseLockBtn.MouseButton1Click:Connect(function() setLocked(not locked) end))
+	storeConnection(LocalPlayer.CharacterAdded:Connect(function()
+		if locked then setLocked(false) end
 	end))
 end
 
@@ -1383,153 +1352,43 @@ RightPadding.PaddingRight = UDim.new(0, 8)
 RightPadding.Parent = RightButtonContainer
 
 -- 1) RecordToggle Button (RecordToggle.png, RecordToggle_ovr.png, RecordToggle_sel.png)
--- (Addtion-Scripts) "Record" with its words beside the icon, on a dark button, as in the 2011 client
-local RecordBtn = Instance.new("ImageButton")
-RecordBtn.Name = "RecordToggle"
-RecordBtn.LayoutOrder = 1
-RecordBtn.Size = UDim2.new(0, 70, 0, 26)
-RecordBtn.Image = ""
-RecordBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-RecordBtn.BackgroundTransparency = 0.15
-RecordBtn.BorderSizePixel = 0
-RecordBtn.ZIndex = 7
-RecordBtn.Parent = RightButtonContainer
-do
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 4)
-	corner.Parent = RecordBtn
-	local stroke = Instance.new("UIStroke")
-	stroke.Color = Color3.fromRGB(120, 120, 120)
-	stroke.Thickness = 1
-	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	stroke.Parent = RecordBtn
-end
-local RecordIcon = Instance.new("ImageLabel")
-RecordIcon.Name = "Icon"
-RecordIcon.BackgroundTransparency = 1
-RecordIcon.Size = UDim2.new(0, 20, 0, 20)
-RecordIcon.Position = UDim2.new(0, 4, 0.5, -10)
-RecordIcon.ScaleType = Enum.ScaleType.Fit
-RecordIcon.ZIndex = 8
-RecordIcon.Parent = RecordBtn
-local RecordText = Instance.new("TextLabel")
-RecordText.Name = "RecordText"
-RecordText.BackgroundTransparency = 1
-RecordText.Position = UDim2.new(0, 26, 0, 0)
-RecordText.Size = UDim2.new(1, -28, 1, 0)
-RecordText.Font = Enum.Font.ArialBold
-RecordText.TextSize = 12
-RecordText.TextColor3 = Color3.fromRGB(255, 255, 255)
-RecordText.TextXAlignment = Enum.TextXAlignment.Left
-RecordText.Text = "Record"
-RecordText.ZIndex = 8
-RecordText.Parent = RecordBtn
-bind2011ButtonStates(RecordBtn, RecordIcon, "RecordToggle.png", "RecordToggle_ovr.png", "RecordToggle_sel.png", "rbxassetid://23847250")
+-- (Addtion-Scripts) the right buttons as in the 2011 client, its own pictures at their own sizes (80%): "Record",
+-- the screenshot, the camera buttons (2 x 2), "! REPORT", full screen
+local RecordBtn = make2011Button("RecordToggle", 1, nativeSize(65, 30), RightButtonContainer,
+	"RecordToggle.png", "RecordToggle_ovr.png", "RecordToggle_dn.png", "rbxassetid://23847250")
+local ScreenshotBtn = make2011Button("Screenshot", 2, nativeSize(31, 31), RightButtonContainer,
+	"Screenshot.png", "Screenshot_ovr.png", "Screenshot_dn.png", "rbxassetid://4456953824")
 
--- 2) Screenshot Button (Screenshot.png, Screenshot_ovr.png, Screenshot_dn.png)
-local ScreenshotBtn = Instance.new("ImageButton")
-ScreenshotBtn.Name = "Screenshot"
-ScreenshotBtn.LayoutOrder = 2
-ScreenshotBtn.Size = UDim2.new(0, 30, 0, 28)
-ScreenshotBtn.BackgroundTransparency = 1
-ScreenshotBtn.BorderSizePixel = 0
-ScreenshotBtn.ScaleType = Enum.ScaleType.Fit
-ScreenshotBtn.ZIndex = 7
-ScreenshotBtn.Parent = RightButtonContainer
-bind2011ButtonStates(ScreenshotBtn, ScreenshotBtn, "Screenshot.png", "Screenshot_ovr.png", "Screenshot_dn.png", "rbxassetid://4456953824")
-
--- 3) 2x2 Camera Control Cluster (CameraTiltUp, CameraTiltDown, CameraZoomIn, CameraZoomOut)
 local CameraPanel = Instance.new("Frame")
 CameraPanel.Name = "CameraPanel"
 CameraPanel.LayoutOrder = 3
-CameraPanel.Size = UDim2.new(0, 36, 0, 34)
+local CAMERA_BUTTON = math.floor(21 * BAR_SCALE + 0.5)
+CameraPanel.Size = UDim2.new(0, CAMERA_BUTTON * 2 + 2, 0, CAMERA_BUTTON * 2 + 2)
 CameraPanel.BackgroundTransparency = 1
 CameraPanel.ZIndex = 7
 CameraPanel.Parent = RightButtonContainer
 
-local TiltUp = Instance.new("ImageButton")
-TiltUp.Name = "CameraTiltUp"
-TiltUp.Position = UDim2.new(0, 0, 0, 0)
-TiltUp.Size = UDim2.new(0, 16, 0, 16)
-TiltUp.BackgroundTransparency = 1
-TiltUp.ScaleType = Enum.ScaleType.Fit
-TiltUp.ZIndex = 8
-TiltUp.Parent = CameraPanel
-bind2011ButtonStates(TiltUp, TiltUp, "CameraTiltUp_ds.png", "CameraTiltUp_ovr.png", "CameraTiltUp_dn.png", "rbxassetid://598662248", 0)
+local function cameraButton(name, x, y, normal, ovr, dn, fallback, rotation)
+	local btn = Instance.new("ImageButton")
+	btn.Name = name
+	btn.Position = UDim2.new(0, x * (CAMERA_BUTTON + 2), 0, y * (CAMERA_BUTTON + 2))
+	btn.Size = UDim2.new(0, CAMERA_BUTTON, 0, CAMERA_BUTTON)
+	btn.BackgroundTransparency = 1
+	btn.ScaleType = Enum.ScaleType.Stretch
+	btn.ZIndex = 8
+	btn.Parent = CameraPanel
+	bind2011ButtonStates(btn, btn, normal, ovr, dn, fallback, rotation)
+	return btn
+end
+local TiltUp = cameraButton("CameraTiltUp", 0, 0, "CameraTiltUp.png", "CameraTiltUp_ovr.png", "CameraTiltUp_dn.png", "rbxassetid://598662248", 0)
+local TiltDown = cameraButton("CameraTiltDown", 0, 1, "CameraTiltDown.png", "CameraTiltDown_ovr.png", "CameraTiltDown_dn.png", "rbxassetid://598662248", 180)
+local ZoomIn = cameraButton("CameraZoomIn", 1, 0, "CameraZoomIn.png", "CameraZoomIn_ovr.png", "CameraZoomIn_dn.png", "rbxassetid://1074548141", 0)
+local ZoomOut = cameraButton("CameraZoomOut", 1, 1, "CameraZoomOut.png", "CameraZoomOut_ovr.png", "CameraZoomOut_dn.png", "rbxassetid://598665130", 0)
 
-local TiltDown = Instance.new("ImageButton")
-TiltDown.Name = "CameraTiltDown"
-TiltDown.Position = UDim2.new(0, 0, 0, 18)
-TiltDown.Size = UDim2.new(0, 16, 0, 16)
-TiltDown.BackgroundTransparency = 1
-TiltDown.ScaleType = Enum.ScaleType.Fit
-TiltDown.ZIndex = 8
-TiltDown.Parent = CameraPanel
-bind2011ButtonStates(TiltDown, TiltDown, "CameraTiltDown_ds.png", "CameraTiltDown_ovr.png", "CameraTiltDown_dn.png", "rbxassetid://598662248", 180)
-
-local ZoomIn = Instance.new("ImageButton")
-ZoomIn.Name = "CameraZoomIn"
-ZoomIn.Position = UDim2.new(0, 19, 0, 0)
-ZoomIn.Size = UDim2.new(0, 16, 0, 16)
-ZoomIn.BackgroundTransparency = 1
-ZoomIn.ScaleType = Enum.ScaleType.Fit
-ZoomIn.ZIndex = 8
-ZoomIn.Parent = CameraPanel
-bind2011ButtonStates(ZoomIn, ZoomIn, "CameraZoomIn.png", "CameraZoomIn_ovr.png", "CameraZoomIn_dn.png", "rbxassetid://1074548141", 0)
-
-local ZoomOut = Instance.new("ImageButton")
-ZoomOut.Name = "CameraZoomOut"
-ZoomOut.Position = UDim2.new(0, 19, 0, 18)
-ZoomOut.Size = UDim2.new(0, 16, 0, 16)
-ZoomOut.BackgroundTransparency = 1
-ZoomOut.ScaleType = Enum.ScaleType.Fit
-ZoomOut.ZIndex = 8
-ZoomOut.Parent = CameraPanel
-bind2011ButtonStates(ZoomOut, ZoomOut, "CameraZoomOut_ds.png", "CameraZoomOut_ovr.png", "CameraZoomOut_dn.png", "rbxassetid://598665130", 0)
-
--- 4) ReportAbuse Button (ReportAbuse_ds.PNG, ReportAbuse_ovr.PNG, ReportAbuse_dn.PNG)
--- (Addtion-Scripts) the "!" with "REPORT" under it, as in the 2011 client
-local ReportAbuseBtn = Instance.new("ImageButton")
-ReportAbuseBtn.Name = "ReportAbuse"
-ReportAbuseBtn.LayoutOrder = 4
-ReportAbuseBtn.Size = UDim2.new(0, 40, 0, 36)
-ReportAbuseBtn.Image = ""
-ReportAbuseBtn.BackgroundTransparency = 1
-ReportAbuseBtn.BorderSizePixel = 0
-ReportAbuseBtn.ZIndex = 7
-ReportAbuseBtn.Parent = RightButtonContainer
-local ReportIcon = Instance.new("ImageLabel")
-ReportIcon.Name = "Icon"
-ReportIcon.BackgroundTransparency = 1
-ReportIcon.Size = UDim2.new(0, 24, 0, 24)
-ReportIcon.Position = UDim2.new(0.5, -12, 0, 0)
-ReportIcon.ScaleType = Enum.ScaleType.Fit
-ReportIcon.ZIndex = 8
-ReportIcon.Parent = ReportAbuseBtn
-local ReportText = Instance.new("TextLabel")
-ReportText.Name = "ReportText"
-ReportText.BackgroundTransparency = 1
-ReportText.Position = UDim2.new(0, 0, 1, -11)
-ReportText.Size = UDim2.new(1, 0, 0, 11)
-ReportText.Font = Enum.Font.ArialBold
-ReportText.TextSize = 9
-ReportText.TextColor3 = Color3.fromRGB(255, 255, 255)
-ReportText.Text = "REPORT"
-ReportText.ZIndex = 8
-ReportText.Parent = ReportAbuseBtn
-bind2011ButtonStates(ReportAbuseBtn, ReportIcon, "ReportAbuse_ds.PNG", "ReportAbuse_ovr.PNG", "ReportAbuse_dn.PNG", "rbxassetid://4539289774")
-
--- 5) ToggleFullScreen Button (ToggleFullScreen.png, ToggleFullScreen_ovr.png, ToggleFullScreen_dn.png)
-local FullscreenBtn = Instance.new("ImageButton")
-FullscreenBtn.Name = "ToggleFullScreen"
-FullscreenBtn.LayoutOrder = 5
-FullscreenBtn.Size = UDim2.new(0, 30, 0, 28)
-FullscreenBtn.BackgroundTransparency = 1
-FullscreenBtn.BorderSizePixel = 0
-FullscreenBtn.ScaleType = Enum.ScaleType.Fit
-FullscreenBtn.ZIndex = 7
-FullscreenBtn.Parent = RightButtonContainer
-bind2011ButtonStates(FullscreenBtn, FullscreenBtn, "ToggleFullScreen.png", "ToggleFullScreen_ovr.png", "ToggleFullScreen_dn.png", "rbxassetid://106850260964317")
+local ReportAbuseBtn = make2011Button("ReportAbuse", 4, nativeSize(39, 39), RightButtonContainer,
+	"ReportAbuse.PNG", "ReportAbuse_ovr.PNG", "ReportAbuse_dn.PNG", "rbxassetid://4539289774")
+local FullscreenBtn = make2011Button("ToggleFullScreen", 5, nativeSize(39, 39), RightButtonContainer,
+	"ToggleFullScreen.png", "ToggleFullScreen_ovr.png", "ToggleFullScreen_dn.png", "rbxassetid://106850260964317")
 
 -- Authentic 2011 Camera Zoom & Tilt Functions
 local ZOOM_FACTOR = 0.75

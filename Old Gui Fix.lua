@@ -2,10 +2,10 @@
 -- Bloxy's 2012 and 2013 GUIs (the legacy package's "NewRobloxGui"):
 --   * their menu (and its other windows: help, report, save) is drawn above the hotbar: the menu sits at
 --     ZIndex 1 - 5 and the hotbar's slot numbers at 4 - 9 in the same GUI, so the numbers showed through it
---   * on a phone they are shown at a PC's size, zoomed down like the 2011 GUI (UIScale), so the menu fits on
---     the screen (it ran past its top and bottom): the menu windows, the hotbar and the bottom corner buttons.
---     Each is put back in its place the way the GUI does it (the hotbar centred over the bottom, the corner
---     buttons in the corners), since the GUI places them from their size.
+--   * while the menu is open, the GUI is put above every other GUI (a hotbar or inventory of another GUI
+--     showed through the menu too)
+--   * on a phone the menu (only the menu: the rest of the GUI keeps its size) is shown at a PC's size, so it
+--     doesn't look zoomed in and fits on the screen (it ran past its top and bottom)
 -- On a phone it also tells the safe chat to show at the same size for the GUIs before 2014 and 2013 mobile
 -- (getgenv().BPSafeChatScale, read by Better SafeChat.lua).
 -- 2013 mobile has its own layout and is left as it is.
@@ -19,12 +19,10 @@ local UserInputService = game:GetService("UserInputService")
 
 local PC_SCALE = 0.7  -- the size on a phone (the same as the safe chat's)
 local LIFT = 10       -- how far the menu windows are raised above everything else in the GUI
-local LOADOUT_PADDING = 43 -- (the GUI's own gap under the hotbar)
 
 local MENU_WINDOWS = {
 	UserSettingsShield = true, HelpDialogShield = true, SaveDialogShield = true, ReportAbuseShield = true,
 }
-local CORNERS = { BottomLeftControl = "left", BottomRightControl = "right" }
 
 local function topbarPick()
 	for _, value in ipairs({ Env.BloxyTopbarPick, Env.BP_PendingTopbar, Env.BloxyTopbarRaw }) do
@@ -121,28 +119,36 @@ local function fitWindow(window, scale)
 	end
 end
 
--- the hotbar and the corner buttons, put back where the GUI puts them (from their size)
-local function placeHotbar(gui, loadout)
-	local w = gui.AbsoluteSize.X
-	local size = loadout.AbsoluteSize
-	local want = UDim2.new(0, math.floor(w / 2 - size.X / 2), loadout.Position.Y.Scale, -size.Y - LOADOUT_PADDING)
-	if loadout.Position ~= want then loadout.Position = want end
-end
-local function placeCorner(corner, side)
-	local size = corner.AbsoluteSize
-	local want = (side == "left") and UDim2.new(0, 0, 1, -size.Y) or UDim2.new(1, -size.X, 1, -size.Y)
-	if corner.Position ~= want then corner.Position = want end
-end
-
-local placed = setmetatable({}, { __mode = "k" })
-local function keepPlaced(obj, place)
-	if placed[obj] then return end
-	placed[obj] = true
-	local function again() task.defer(function() pcall(place) end) end
-	obj:GetPropertyChangedSignal("AbsoluteSize"):Connect(again)
-	obj:GetPropertyChangedSignal("Position"):Connect(function()
-		if obj:FindFirstChild("BPPcScale") then again() end
-	end)
+-- While a menu window is open, the whole GUI goes above every other GUI (and back when it closes).
+local ON_TOP = 1000000000 -- (below this script's own panels: the save disk, the safe chat)
+local topWatch = setmetatable({}, { __mode = "k" })
+local function keepOnTopWhileOpen(gui)
+	local state = topWatch[gui]
+	if not state then
+		state = { order = gui.DisplayOrder, windows = setmetatable({}, { __mode = "k" }) }
+		topWatch[gui] = state
+	end
+	local function update()
+		local open = false
+		for window in pairs(state.windows) do
+			if window.Parent == gui and window.Visible then open = true break end
+		end
+		if open then
+			if gui.DisplayOrder ~= ON_TOP then
+				state.order = gui.DisplayOrder
+				gui.DisplayOrder = ON_TOP
+			end
+		elseif gui.DisplayOrder == ON_TOP then
+			gui.DisplayOrder = state.order
+		end
+	end
+	for _, child in ipairs(gui:GetChildren()) do
+		if MENU_WINDOWS[child.Name] and child:IsA("GuiObject") and not state.windows[child] then
+			state.windows[child] = true
+			child:GetPropertyChangedSignal("Visible"):Connect(update)
+		end
+	end
+	update()
 end
 
 --========================================================
@@ -161,40 +167,27 @@ local function fixGui(gui)
 		end
 	end
 
+	-- (the hotbar and the corner buttons keep their own size: only the menu is zoomed down)
 	local loadout = gui:FindFirstChild("CurrentLoadout")
-	if loadout and loadout:IsA("GuiObject") then
-		scaleOf(loadout, scale)
-		if scale ~= 1 then
-			keepPlaced(loadout, function()
-				if loadout:FindFirstChild("BPPcScale") then placeHotbar(gui, loadout) end
-			end)
-			pcall(placeHotbar, gui, loadout)
+	if loadout and loadout:IsA("GuiObject") and loadout:FindFirstChild("BPPcScale") then
+		scaleOf(loadout, 1)
+	end
+	local controls = gui:FindFirstChild("ControlFrame")
+	if controls then
+		for _, name in ipairs({ "BottomLeftControl", "BottomRightControl", "TopLeftControl" }) do
+			local corner = controls:FindFirstChild(name)
+			if corner and corner:FindFirstChild("BPPcScale") then scaleOf(corner, 1) end
 		end
 	end
 
-	local controls = gui:FindFirstChild("ControlFrame")
-	if controls then
-		for name, side in pairs(CORNERS) do
-			local corner = controls:FindFirstChild(name)
-			if corner and corner:IsA("GuiObject") then
-				scaleOf(corner, scale)
-				if scale ~= 1 then
-					keepPlaced(corner, function()
-						if corner:FindFirstChild("BPPcScale") then placeCorner(corner, side) end
-					end)
-					pcall(placeCorner, corner, side)
-				end
-			end
-		end
-		local topLeft = controls:FindFirstChild("TopLeftControl")
-		if topLeft and topLeft:IsA("GuiObject") then scaleOf(topLeft, scale) end
-	end
+	-- above every other GUI while the menu is open
+	keepOnTopWhileOpen(gui)
 
 	local key = tostring(gui) .. tostring(scale)
 	if not said[key] then
 		said[key] = true
 		print("[Old Gui Fix] the 2012 / 2013 GUI: menu above the hotbar"
-			.. (scale ~= 1 and (", shown at a PC's size on this phone (" .. math.floor(scale * 100) .. "%)") or ""))
+			.. (scale ~= 1 and (", the menu at a PC's size on this phone (" .. math.floor(scale * 100) .. "%)") or ""))
 	end
 end
 
