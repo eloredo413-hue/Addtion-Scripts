@@ -3,7 +3,9 @@
 -- Help tab bar):
 --   * a gap under the tab bar (18px for 2016 and older, 14px for 2017 and later); the page scrolls
 --     that much further, and on phones its page area ends above the bottom of the screen (it ran past
---     it), so its last row (Graphics Quality) isn't cut off
+--     it); a page a little too tall for the room (Settings on a phone: Graphics Quality) is shrunk a
+--     little so all of it shows, and on phones the page area's scroll bar strip is taken away (it cut off
+--     Resume Game and the player rows on the right)
 --   * 2017 and later: Leave / Reset Character / Resume side by side across the page, like 2023 old
 -- Loaded by the loader (Script) and by the 2021 GUI after its rejoin (the loader doesn't run in the
 -- server the 2021 GUI rejoins). Only one copy runs at a time.
@@ -155,6 +157,105 @@ do
             end)
         end
         state.fit()
+    end
+
+    -- PHONES: the page area (PageView) keeps a strip on its right for its scroll bar (12 wide), and nothing
+    -- is drawn under it, so whatever reached the right edge was cut off there (Resume Game, the player
+    -- rows). Phones scroll by dragging, so the strip is taken away on a touch screen with no keyboard.
+    -- A page that is only a little too tall for the room under the tab bar (the Settings page on a phone:
+    -- Graphics Quality hung off the bottom of the screen) is shrunk a little (UIScale) so all of it shows;
+    -- its width is kept. A page much too tall (more than 30%) still scrolls, and the Players page (a list
+    -- that grows) is left as it is.
+    local UserInputService = game:GetService("UserInputService")
+    local function touchOnly()
+        local ok, result = pcall(function()
+            return UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+        end)
+        return ok and result == true
+    end
+
+    local MIN_PAGE_SCALE = 0.7
+    local pageFix = setmetatable({}, { __mode = "k" })
+    local function isPlayersPage(page)
+        return page:FindFirstChild("ResetButton", true) ~= nil or page:FindFirstChild("LeaveButton", true) ~= nil
+            or page:FindFirstChild("ResumeButton", true) ~= nil or page:FindFirstChild("FriendStatus", true) ~= nil
+    end
+    local function fitPage(view, page)
+        if not page:IsA("GuiObject") or page.Parent ~= view then return end
+        local state = pageFix[page]
+        if not state then
+            state = { baseX = page.Size.X.Scale }
+            pageFix[page] = state
+            page:GetPropertyChangedSignal("Size"):Connect(function()
+                if page.Size == state.ours then return end -- the size set here
+                state.baseX = page.Size.X.Scale              -- the menu set its own
+                state.ours = nil
+                task.defer(function() pcall(fitPage, view, page) end)
+            end)
+        end
+        local size = page.Size
+        local natural = size.Y.Offset -- the page's own height (each row adds to it)
+        local scale = 1
+        if size.Y.Scale == 0 and natural > 0 and not isPlayersPage(page) then
+            local pad = view:FindFirstChild("BPMenuGap")
+            local gap = pad and pad.PaddingTop.Offset or 0
+            local room = view.AbsoluteSize.Y - gap - 2
+            if room > 0 and room < natural then
+                scale = room / natural
+                if scale < MIN_PAGE_SCALE then scale = 1 end
+            end
+        end
+        local uiScale = page:FindFirstChild("BPFitScale")
+        if scale == 1 and not uiScale then return end
+        if not uiScale then
+            uiScale = Instance.new("UIScale")
+            uiScale.Name = "BPFitScale"
+            uiScale.Parent = page
+        end
+        if math.abs(uiScale.Scale - scale) > 0.0005 then uiScale.Scale = scale end
+        -- as wide as before: the page is made wider by as much as the scale makes it narrower
+        local want = UDim2.new(state.baseX / scale, size.X.Offset, size.Y.Scale, size.Y.Offset)
+        if page.Size ~= want then
+            state.ours = want
+            page.Size = want
+        end
+        if scale < 1 and state.said ~= math.floor(scale * 100) then
+            state.said = math.floor(scale * 100)
+            print("[Loader] escape menu: a page " .. natural .. " tall had " .. math.floor(view.AbsoluteSize.Y)
+                .. " of room, so it is shown at " .. state.said .. "% (all of it fits)")
+        end
+    end
+
+    local fixedViews = setmetatable({}, { __mode = "k" })
+    local function fixPageView(view)
+        if fixedViews[view] or view.Name ~= "PageView" or not view:IsA("ScrollingFrame") then return end
+        local clipper = view.Parent
+        if not (clipper and clipper.Name == "PageViewClipper") then return end
+        fixedViews[view] = true
+        local phone = touchOnly()
+        if phone then
+            local function noStrip()
+                if view.ScrollBarThickness ~= 0 then view.ScrollBarThickness = 0 end
+            end
+            noStrip()
+            view:GetPropertyChangedSignal("ScrollBarThickness"):Connect(noStrip)
+        end
+        local function fitAll()
+            for _, page in ipairs(view:GetChildren()) do pcall(fitPage, view, page) end
+        end
+        view.ChildAdded:Connect(function(page)
+            task.defer(function() pcall(fitPage, view, page) end)
+        end)
+        view:GetPropertyChangedSignal("AbsoluteSize"):Connect(function() task.defer(fitAll) end)
+        fitAll()
+        print("[Loader] escape menu page area found (" .. view:GetFullName() .. ", "
+            .. math.floor(view.AbsoluteSize.X) .. " x " .. math.floor(view.AbsoluteSize.Y) .. ")"
+            .. (phone and ": no scroll bar strip on this phone" or ""))
+    end
+    getgenv().BPFitMenuPages = function()
+        for view in pairs(fixedViews) do
+            for _, page in ipairs(view:GetChildren()) do pcall(fitPage, view, page) end
+        end
     end
 
     local function padPageView(obj)
@@ -414,6 +515,14 @@ do
             end
             seenHubs[obj.Parent] = true
         end
+        -- the menu names its parts after putting them in place (Create sets properties in any order), so
+        -- they are looked at again once that is done
+        if obj:IsA("ScrollingFrame") or obj:IsA("ImageLabel") then
+            task.defer(function()
+                if obj.Name == "PageView" then pcall(fixPageView, obj) end
+                if obj.Name == "HubBar" and obj.Parent then seenHubs[obj.Parent] = true end
+            end)
+        end
         if obj:IsA("TextLabel") or obj:IsA("TextButton") then
             task.defer(function()
                 if not isMenuWord(obj.Text) then return end
@@ -430,6 +539,20 @@ do
     -- so the menu parts seen are looked at again at Confirm and every few seconds after (only those).
     local function recheck()
         for view in pairs(seenViews) do pcall(padPageView, view) end
+        -- the page area, found from the menus (and the old GUIs' own ScreenGui) if it was missed
+        pcall(function()
+            local holders = {}
+            for hub in pairs(seenHubs) do table.insert(holders, hub) end
+            local gui = CoreGui:FindFirstChild("NewRobloxGui")
+            if gui then table.insert(holders, gui) end
+            for _, holder in ipairs(holders) do
+                local view = holder.Parent and holder:FindFirstChild("PageView", true)
+                if view then pcall(fixPageView, view) end
+            end
+        end)
+        for view in pairs(fixedViews) do
+            for _, page in ipairs(view:GetChildren()) do pcall(fitPage, view, page) end
+        end
         -- the menus themselves are looked through too: some put the words on their buttons after the
         -- buttons are made, which the check when a text is added can miss
         for hub in pairs(seenHubs) do
