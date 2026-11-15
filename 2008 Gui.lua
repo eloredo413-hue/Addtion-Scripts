@@ -1166,22 +1166,12 @@ local HealthFrame =
 	Instance.new("Frame")
 HealthFrame.Name =
 	"ClassicHealthFrame"
--- (Addtion-Scripts) As in the 2008 client: a short bar on the right just under the player list (its top a
--- little below the list's bottom, under the list's right part). In the GUI's own units, so it is scaled with
--- the rest of it (on a phone the whole GUI is shown smaller) and stays under the list whatever its size.
-local HEALTH_WIDTH, HEALTH_HEIGHT, HEALTH_GAP = 6, 60, 12
+-- (Addtion-Scripts) As in the 2008 client (measured on a 2008 screenshot, as parts of the screen's height):
+-- the bar 1.25% wide and 12.5% tall, its middle 9% in from the player list's right edge, its top 28% of the
+-- way down but never over the list (this list is a little taller), "Health" right under it. Placed below,
+-- once the label is made, and again when the screen or the list changes.
 HealthFrame.AnchorPoint =
-	Vector2.new(1, 0)
-HealthFrame.Size =
-	UDim2.new(0, HEALTH_WIDTH, 0, HEALTH_HEIGHT)
-local function placeHealthBar()
-	local listPos, listSize = PlayerList.Position, PlayerList.Size
-	HealthFrame.Position = UDim2.new(1, listPos.X.Offset - 25, 0,
-		listPos.Y.Offset + listSize.Y.Offset + HEALTH_GAP)
-end
-placeHealthBar()
-storeConnection(PlayerList:GetPropertyChangedSignal("Size"):Connect(placeHealthBar))
-storeConnection(PlayerList:GetPropertyChangedSignal("Position"):Connect(placeHealthBar))
+	Vector2.new(0.5, 0)
 HealthFrame.BackgroundColor3 =
 	Color3.fromRGB(255, 0, 0)
 HealthFrame.BorderSizePixel = 0
@@ -1221,6 +1211,27 @@ HealthLabel.Font =
 HealthLabel.TextSize = 16
 HealthLabel.Parent =
 	HealthFrame
+-- (Addtion-Scripts) the 2008 client's size and place, worked out from the screen's height in the GUI's own
+-- units (its scale makes them the right size on the screen)
+local function placeHealthBar()
+	local scale = (uiScale and uiScale.Scale > 0) and uiScale.Scale or 1
+	local h = math.max(1, ScreenGui.AbsoluteSize.Y / scale)
+	local width = math.max(3, math.floor(h * 0.0125 + 0.5))
+	local height = math.max(30, math.floor(h * 0.125 + 0.5))
+	local listPos, listSize = PlayerList.Position, PlayerList.Size
+	local middleX = listPos.X.Offset - h * 0.09
+	local top = math.max(listPos.Y.Offset + listSize.Y.Offset + h * 0.012, h * 0.279)
+	HealthFrame.Size = UDim2.new(0, width, 0, height)
+	HealthFrame.Position = UDim2.new(1, math.floor(middleX + 0.5), 0, math.floor(top + 0.5))
+	HealthLabel.TextSize = math.max(10, math.floor(h * 0.03 + 0.5))
+	HealthLabel.Size = UDim2.new(0, math.floor(h * 0.14 + 0.5), 0, math.floor(h * 0.035 + 0.5))
+	HealthLabel.Position = UDim2.new(0.5, 0, 1, math.floor(h * 0.01 + 0.5))
+end
+placeHealthBar()
+storeConnection(PlayerList:GetPropertyChangedSignal("Size"):Connect(placeHealthBar))
+storeConnection(PlayerList:GetPropertyChangedSignal("Position"):Connect(placeHealthBar))
+storeConnection(ScreenGui:GetPropertyChangedSignal("AbsoluteSize"):Connect(placeHealthBar))
+if uiScale then storeConnection(uiScale:GetPropertyChangedSignal("Scale"):Connect(placeHealthBar)) end
 local function setupHealthTracking(character)
 	local humanoid =
 		character:WaitForChild(
