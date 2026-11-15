@@ -23,6 +23,7 @@
 	* getgenv().LegacyLightingOriginal(instance, property) gives the game's own (undarkened) value.
 	* With Bloxy's "2016 textures" picked (saved in its settings, or its stud textures showing up, also when
 	  it is picked while this runs): the retro studs (LegacyStuds) come on and Bloxy's 2016 studs are hidden;
+	  never on players or NPCs (their body, hats or the tool in their hand);
 	  stopping this gives Bloxy's back.
 ]]
 
@@ -397,16 +398,27 @@ watchNeon = function(part)
 end
 
 ----------------------------------------------------------------------------------------------------
--- studs: only plain block parts outside characters (a Top-face texture gets stretched over a whole mesh,
--- which showed up as skin-coloured patches on character limbs)
+-- studs: only plain block parts, never on players or NPCs (a Top-face texture gets stretched over a whole
+-- mesh, which showed up as skin-coloured patches on character limbs; and players don't get studs at all:
+-- their body, hats and the tool in their hand)
 ----------------------------------------------------------------------------------------------------
 local FACES = { "Back", "Bottom", "Front", "Left", "Right", "Top" }
+
+-- part of a character: its body, a hat (in an accessory) or a tool it holds, at any depth
+local function onCharacter(part)
+	local p = part.Parent
+	while p and p ~= workspace do
+		if p:FindFirstChildOfClass("Humanoid") then return true end
+		if p:IsA("Model") and Players:GetPlayerFromCharacter(p) then return true end
+		p = p.Parent
+	end
+	return false
+end
 
 local function studsAllowed(part)
 	if part:IsA("MeshPart") then return false end
 	if part:FindFirstChildWhichIsA("DataModelMesh") then return false end
-	local parent = part.Parent
-	if parent and parent:FindFirstChildOfClass("Humanoid") then return false end
+	if onCharacter(part) then return false end
 	return true
 end
 
@@ -445,10 +457,22 @@ local function addStuds(part)
 	if not retroStuds then return end
 	if not (part:IsA("Part") or part:IsA("WedgePart")) then return end
 	if part.Material ~= Enum.Material.Plastic or not studsAllowed(part) then
-		for _, t in ipairs(studTextures(part)) do
-			-- (a face mirrored from Bloxy's 2016 studs stays while Bloxy's is there: see RETRO STUDS)
+		local list = studTextures(part)
+		local worn = #list > 0 and onCharacter(part)
+		for _, t in ipairs(list) do
+			-- (a face mirrored from Bloxy's 2016 studs stays while Bloxy's is there, see RETRO STUDS, but not
+			-- on a character)
 			local face = string.sub(t.Name, 12)
-			if not part:FindFirstChild(face .. "Surface_ClassicTexture") then t:Destroy() end
+			if worn or not part:FindFirstChild(face .. "Surface_ClassicTexture") then t:Destroy() end
+		end
+		-- on a character for now (a tool in a hand): watched, so it gets its studs once it is put down
+		if part.Material == Enum.Material.Plastic and not studWatched[part] and onCharacter(part) then
+			for _, face in ipairs(FACES) do
+				if part[face .. "Surface"] == Enum.SurfaceType.Studs then
+					watchStudPart(part)
+					break
+				end
+			end
 		end
 		return
 	end
@@ -459,6 +483,12 @@ local function addStuds(part)
 		end
 	end
 	if madeAny then watchStudPart(part) end
+end
+
+-- this script's studs off a part that is on a character now
+local function clearWornStuds(part)
+	if stopped or not onCharacter(part) then return end
+	for _, t in ipairs(studTextures(part)) do pcall(function() t:Destroy() end) end
 end
 
 watchStudPart = function(part)
@@ -472,6 +502,17 @@ watchStudPart = function(part)
 				for _, t in ipairs(studTextures(part)) do t.Transparency = 1 end
 			end
 		end))
+		-- picked up (a tool from the ground) or put on a character: its studs go; put down again: back
+		track(part.AncestryChanged:Connect(function()
+			if stopped then return end
+			if onCharacter(part) then
+				clearWornStuds(part)
+			elseif part:IsDescendantOf(workspace) then
+				pcall(addStuds, part)
+			end
+		end))
+		-- (a character whose Humanoid shows up a moment after its parts)
+		task.defer(clearWornStuds, part)
 	end
 end
 studsFollowMaterial = addStuds
@@ -497,12 +538,19 @@ local function hideBloxyStud(t)
 	local part = t.Parent
 	local face = string.match(t.Name, "^(%a+)Surface_ClassicTexture$")
 	if not (part and part:IsA("BasePart") and face and Enum.NormalId[face]) then return end
-	if ensureStud(part, face) then watchStudPart(part) end
+	-- (on a player or NPC: Bloxy's stays hidden and none of ours either)
+	if not onCharacter(part) and ensureStud(part, face) then watchStudPart(part) end
 	track(t.AncestryChanged:Connect(function()
-		if stopped or t.Parent == part then return end
-		-- Bloxy took its stud away (the face isn't studs any more, or the part isn't Plastic): ours goes too
+		if stopped then return end
 		local ours = part:FindFirstChild("LegacyStuds" .. face)
-		if ours and ownedSet[ours] then pcall(function() ours:Destroy() end) end
+		if t.Parent ~= part or onCharacter(part) then
+			-- Bloxy took its stud away (the face isn't studs any more, or the part isn't Plastic), or the part
+			-- is on a character now (a tool picked up): ours goes too
+			if ours and ownedSet[ours] then pcall(function() ours:Destroy() end) end
+		elseif not ours and part:IsDescendantOf(workspace) then
+			-- off the character again (a tool put down): ours back
+			if ensureStud(part, face) then watchStudPart(part) end
+		end
 	end))
 end
 

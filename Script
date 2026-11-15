@@ -30,8 +30,8 @@
 -- + Saved settings: a floppy disk under Bloxy's hammer opens a panel to save / load / rename / delete named
 --   copies of the setup and hammer settings (Saved Settings.lua)
 -- + "Skip setup" brings back More guis' topbars too (2013 mobile, 2023 old...): the pick is saved at Confirm
--- + 2006 / 2008 / 2010: the inventory sits right on the chat bar (no gap); the green outline of the tool in
---   hand still shows whole
+-- + 2006 / 2008 / 2010: the inventory sits right on the chat bar (no gap), the bar drawn over the green outline;
+--   2010's "Health" text a little bigger and pure blue, like the 2010 client
 --========================================================
 
 if getgenv().ClassicDialogCleanup then
@@ -3015,12 +3015,14 @@ end
 end)
 
 --========================================================
--- 2006 / 2008 / 2010 GUIS: THE INVENTORY RIGHT ON TOP OF THE CHAT BAR
--- Their inventory (ClassicBackpack) sat 2 pixels above the chat bar, room left for the green outline of the
--- tool in hand, which is drawn just outside its slot. It now sits right on the bar, and is drawn above the
--- bar, so that outline is still whole (its bottom edge goes over the top of the bar). The same for the 2006
--- gist, the 2008 GUI, the new 2010 GUI and Bloxy's own 2010: they share this inventory and chat bar. 2005
--- (no inventory) and 2011 (another GUI) are not touched.
+-- 2006 / 2008 / 2010 GUIS: THE INVENTORY RIGHT ON THE CHAT BAR, AND 2010'S "HEALTH"
+-- * Their inventory (ClassicBackpack) sat 2 pixels above the chat bar. It now sits right on the bar, and the bar
+--   is drawn over it: the bottom edge of the green outline (the tool in hand, drawn just outside its slot) goes
+--   behind the bar. The same for the 2006 gist, the 2008 GUI, the new 2010 GUI and Bloxy's own 2010: they
+--   share this inventory and chat bar. 2005 (no inventory) and 2011 (another GUI) are not touched.
+-- * 2010 (the new GUI and Bloxy's own): "Health" under the health bar is a little bigger (16, was 14) and pure
+--   blue, as in the 2010 client (its light blue had some green in it). Only the text: the bar stays as it was.
+--   The 2006 and 2008 ones are their own and are left alone.
 --========================================================
 if getgenv().BPChatGapCleanup then
     pcall(getgenv().BPChatGapCleanup)
@@ -3028,9 +3030,33 @@ if getgenv().BPChatGapCleanup then
 end
 do
     local conns = {}
+    local HEALTH_TEXT_SIZE = 16
+    local HEALTH_TEXT_COLOR = Color3.fromRGB(0, 0, 255)
+
     local function bottomAnchored(obj)
         return obj.AnchorPoint.Y == 1 and obj.Position.Y.Scale == 1 and obj.Size.Y.Scale == 0
     end
+
+    -- With "Global" layering every element is drawn by its own ZIndex: the bar and what is on it are lifted
+    -- above everything in the inventory (the outline's frame is 10).
+    local function liftBar(bar, pack)
+        local packTop = pack.ZIndex
+        for _, d in ipairs(pack:GetDescendants()) do
+            if d:IsA("GuiObject") and d.ZIndex > packTop then packTop = d.ZIndex end
+        end
+        local items = { bar }
+        for _, d in ipairs(bar:GetDescendants()) do
+            if d:IsA("GuiObject") then table.insert(items, d) end
+        end
+        local low = math.huge
+        for _, o in ipairs(items) do
+            if o.ZIndex < low then low = o.ZIndex end
+        end
+        if low > packTop then return end
+        local shift = packTop + 1 - low
+        for _, o in ipairs(items) do o.ZIndex = o.ZIndex + shift end
+    end
+
     -- true once the inventory is placed (or was already)
     local function closeGap(gui)
         local bar = gui:FindFirstChild("ClassicBottomChatBar")
@@ -3043,22 +3069,76 @@ do
         if pack.Position.Y.Offset ~= bottom then
             pack.Position = UDim2.new(x.Scale, x.Offset, 1, bottom)
         end
-        if pack.ZIndex <= bar.ZIndex then pack.ZIndex = bar.ZIndex + 1 end
+        local global = false
+        pcall(function() global = gui.ZIndexBehavior == Enum.ZIndexBehavior.Global end)
+        if global then
+            liftBar(bar, pack)
+            -- (the slots are made after the inventory is put on screen)
+            table.insert(conns, pack.DescendantAdded:Connect(function() liftBar(bar, pack) end))
+            table.insert(conns, bar.DescendantAdded:Connect(function() liftBar(bar, pack) end))
+        elseif bar.ZIndex <= pack.ZIndex then
+            -- ("Sibling" layering: the bar, and all on it, over the inventory and all in it)
+            bar.ZIndex = pack.ZIndex + 1
+        end
         return true
     end
+
+    -- 2010's "Health" text: ArialBold 14 in (0, 100, 255). true once the frame has its "Health" text (2010's
+    -- changed; 2006's and 2008's, which are made another way, left alone)
+    local function fixHealthText(frame)
+        for _, label in ipairs(frame:GetChildren()) do
+            if label:IsA("TextLabel") and label.Text == "Health" then
+                local c = label.TextColor3
+                local is2010 = label.Font == Enum.Font.ArialBold and label.TextSize == 14
+                    and math.floor(c.R * 255 + 0.5) == 0 and math.floor(c.G * 255 + 0.5) == 100
+                    and math.floor(c.B * 255 + 0.5) == 255
+                if is2010 then
+                    label.TextSize = HEALTH_TEXT_SIZE
+                    label.TextColor3 = HEALTH_TEXT_COLOR
+                end
+                return true
+            end
+        end
+        return false
+    end
+
     local function watchGui(gui)
         if gui.Name ~= "Classic2010Gui" or not gui:IsA("LayerCollector") then return end
-        if closeGap(gui) then return end
-        -- the GUI is put on screen empty and filled afterwards: the chat bar comes before the inventory
+        local gapDone, healthDone, healthWatch = false, false, nil
+        local function check()
+            if not gapDone then gapDone = closeGap(gui) end
+            if not healthDone and not healthWatch then
+                local frame = gui:FindFirstChild("ClassicHealthFrame")
+                if frame then
+                    if fixHealthText(frame) then
+                        healthDone = true
+                    else
+                        -- the frame is put on screen before its text is made
+                        healthWatch = frame.ChildAdded:Connect(function()
+                            if healthWatch and fixHealthText(frame) then
+                                healthDone = true
+                                healthWatch:Disconnect()
+                                healthWatch = nil
+                            end
+                        end)
+                        table.insert(conns, healthWatch)
+                    end
+                end
+            end
+            return gapDone and (healthDone or healthWatch ~= nil)
+        end
+        if check() then return end
+        -- the GUI is put on screen empty and filled afterwards (the chat bar comes before the inventory)
         local conn
         conn = gui.ChildAdded:Connect(function()
-            if conn and closeGap(gui) then
+            if conn and check() then
                 conn:Disconnect()
                 conn = nil
             end
         end)
         table.insert(conns, conn)
     end
+
     -- where these GUIs are put: gethui() when the executor has it, CoreGui when not
     local containers, seen = {}, {}
     pcall(function()
