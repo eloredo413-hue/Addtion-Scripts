@@ -134,6 +134,7 @@ local HAMMER_BOXES = {
 	HideMobileControlsCheckbox = "isHideMobileControlsEnabled",
 	IWLegacyLightingCheckbox = "isIWLegacyLightingEnabled",
 	ChatBarCheckbox = "isChatBarEnabled",
+	Pre2018CameraCheckbox = "isPre2018CameraEnabled",
 }
 local OLD_DECAL_BUTTON, OLD_DECAL_KEY = "BPOldDecalButton", "isOldDecalEnabled"
 
