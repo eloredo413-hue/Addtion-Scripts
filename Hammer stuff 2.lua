@@ -3858,14 +3858,41 @@ task.spawn(function()
 			return (ok and type(list) == "table") and list or {}
 		end
 
+		-- (Addtion-Scripts) It can be on together with "iw legacy lighting": that one's own effects (marked
+		-- BPIWLegacyLighting) are taken out of Lighting while the gist runs, so it doesn't switch them off for
+		-- good, and the gist's grey colour correction is marked BPLegacyLighting, which iw legacy lighting
+		-- leaves on. The game's own Technology is kept in getgenv().BPGameTechnology by whichever of the two
+		-- changed it first, and given back by the last one to stop.
+		local genv = (getgenv and getgenv()) or _G
+
+		local function isModernTechnology(value)
+			for _, name in ipairs({ "Future", "ShadowMap" }) do
+				local ok, item = pcall(function() return Enum.Technology[name] end)
+				if ok and value == item then return true end
+			end
+			return false
+		end
+
 		function actions.applyLegacyLighting()
 			if llState.active or llState.busy then return end
 			llState.busy = true
+
+			-- iw legacy lighting's own effects: out of the gist's way while it runs
+			local iwEffects = {}
+			for _, child in ipairs(Lighting:GetChildren()) do
+				if child:GetAttribute("BPIWLegacyLighting") then
+					table.insert(iwEffects, child)
+					pcall(function() child.Parent = nil end)
+				end
+			end
 
 			-- Remember everything the gist changes
 			local saved = { effects = {}, atmospheres = {}, children = {} }
 			if type(gethiddenproperty) == "function" then
 				pcall(function() saved.technology = gethiddenproperty(Lighting, "Technology") end)
+			end
+			if genv.BPGameTechnology == nil and saved.technology ~= nil then
+				genv.BPGameTechnology = saved.technology
 			end
 			for _, child in ipairs(Lighting:GetChildren()) do
 				saved.children[child] = true
@@ -3886,6 +3913,9 @@ task.spawn(function()
 				loadstring(game:HttpGet(LEGACY_LIGHTING_URL))()
 			end)
 			llState.busy = false
+			for _, child in ipairs(iwEffects) do
+				pcall(function() child.Parent = Lighting end)
+			end
 			if not ok then
 				warn("[Legacy Lighting] Loadstring failed: " .. tostring(err))
 				return
@@ -3901,13 +3931,20 @@ task.spawn(function()
 			end
 			saved.newChildren = {}
 			for _, child in ipairs(Lighting:GetChildren()) do
-				if not saved.children[child] and child:IsA("ColorCorrectionEffect") then
+				if not saved.children[child] and child:IsA("ColorCorrectionEffect")
+				   and not child:GetAttribute("BPIWLegacyLighting") then
 					table.insert(saved.newChildren, child)
+					-- (iw legacy lighting leaves it on)
+					pcall(function()
+						child:SetAttribute("BPLegacyLighting", true)
+						child.Enabled = true
+					end)
 				end
 			end
 
 			llState.saved = saved
 			llState.active = true
+			genv.BPLegacyLightingOn = true
 			print("[Legacy Lighting] Loaded via loadstring.")
 
 			-- Unticked while it was downloading
@@ -3917,6 +3954,7 @@ task.spawn(function()
 		function actions.restoreLegacyLighting()
 			if not llState.active then return end
 			llState.active = false
+			genv.BPLegacyLightingOn = nil
 			local saved = llState.saved
 			llState.saved = nil
 			if not saved then return end
@@ -3954,8 +3992,22 @@ task.spawn(function()
 				end
 			end
 
-			if saved.technology ~= nil and type(sethiddenproperty) == "function" then
-				pcall(sethiddenproperty, Lighting, "Technology", saved.technology)
+			if type(sethiddenproperty) == "function" then
+				if type(genv.LegacyLightingStop) == "function" then
+					-- iw legacy lighting is still on: what was there before the gist, but never Future /
+					-- ShadowMap under it (Voxel then); it gives the game's own back when it stops
+					local back = saved.technology
+					if back == nil or isModernTechnology(back) then
+						local ok, voxel = pcall(function() return Enum.Technology.Voxel end)
+						back = ok and voxel or nil
+					end
+					if back ~= nil then pcall(sethiddenproperty, Lighting, "Technology", back) end
+				else
+					local original = genv.BPGameTechnology
+					if original == nil then original = saved.technology end
+					genv.BPGameTechnology = nil
+					if original ~= nil then pcall(sethiddenproperty, Lighting, "Technology", original) end
+				end
 			end
 			print("[Legacy Lighting] Disabled, original lighting restored.")
 		end
@@ -4282,8 +4334,7 @@ task.spawn(function()
 		stateKey      = "isLegacyLightingEnabled",
 		onEnable      = actions.applyLegacyLighting,
 		onDisable     = actions.restoreLegacyLighting,
-		exclusiveWith = { "isIWLegacyLightingEnabled" },
-		helpText      = "2017 OldGraphics lighting: Compatibility technology, no bloom, blur, sun rays, depth of field or atmosphere, and flat grey colors. Untick to put the original lighting back."
+		helpText      = "2017 OldGraphics lighting: Compatibility technology, no bloom, blur, sun rays, depth of field or atmosphere, and flat grey colors. Can be on together with iw legacy lighting. Untick to put the original lighting back."
 	})
 
 	createAddonRow({
@@ -4295,8 +4346,7 @@ task.spawn(function()
 		stateKey      = "isIWLegacyLightingEnabled",
 		onEnable      = actions.applyIWLegacyLighting,
 		onDisable     = actions.restoreIWLegacyLighting,
-		exclusiveWith = { "isLegacyLightingEnabled" },
-		helpText      = "The 2017 legacy lighting, only on your screen: brighter light with darker colors like the old Voxel look, the game's bloom / atmosphere / sun rays off, terrain darkened, no 3D clouds or grass blades. The game's time of day keeps going. Works with classic faces. Untick to put the game back as it was (lighting, effects, colors, terrain)."
+		helpText      = "The 2017 legacy lighting, only on your screen: brighter light with darker colors like the old Voxel look, the game's bloom / atmosphere / sun rays off, terrain darkened, no 3D clouds or grass blades. The game's time of day keeps going. Works with classic faces, and can be on together with legacy lighting. Untick to put the game back as it was (lighting, effects, colors, terrain)."
 	})
 
 	createAddonRow({
@@ -4831,7 +4881,7 @@ task.spawn(function()
 	if state.isHideMobileControlsEnabled then task.spawn(actions.applyHideMobileControls) end
 	if state.isChatBarEnabled then task.spawn(actions.applyChatBar) end
 	if state.isPre2018CameraEnabled then task.spawn(actions.applyPre2018Camera) end
-	if state.isIWLegacyLightingEnabled and not state.isLegacyLightingEnabled then task.spawn(actions.applyIWLegacyLighting) end
+	if state.isIWLegacyLightingEnabled then task.spawn(actions.applyIWLegacyLighting) end
 	if state.is2013DynamicEnabled then task.spawn(actions.apply2013Dynamic) end
 	if state.is2015AudioEnabled then task.spawn(actions.apply2015Audio)
 	elseif state.is2016AudioEnabled then task.spawn(actions.apply2016Audio) end
