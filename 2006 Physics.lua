@@ -5,8 +5,10 @@
 --     no landing squash (Roblox's R15 Animate speeds the animations up when the hip height drops)
 --   * the climbing check (a small box in front of the feet) is measured from the feet, as on R6
 -- R6 works exactly as before.
--- Climbing holds on between two rungs (a ladder is climbed in one go, as in 2006), keeps pushing into what you
--- climb, hops over the top, and a let-go never leaves the climbing switched off for good.
+-- Climbing holds on between two rungs (a rung within reach higher up keeps it going, so a ladder is climbed in one
+-- go, as in 2006), keeps pushing into what you climb, hops over the top only at the real top (it used to shove you
+-- into the ladder at every gap, which bounced you off), grabs a ladder you jump into (the jump's glide bounced you
+-- off it), and a let-go never leaves the climbing switched off for good.
 -- Sinking into the ground, as in 2006 (and as the "Old" physics does): falling lowers the body up to a stud,
 -- so a landing ends with the legs in the ground, and the body rises back out within about half a second.
 local Players = game:GetService("Players")
@@ -160,6 +162,7 @@ local function setupCharacterPhysics(character)
     local TOP_OUT_SPEED = 14      -- hop forward over the top
     local TOP_OUT_UP = 9          -- ...and a little up
     local MAX_FALL_TO_GRAB = 8    -- falling faster than this: no grabbing
+    local REACH_UP = 2            -- studs above the climbing box: a rung there (in front of the chest) keeps a climb going
     local grabStartY, lastGrab, grabbingNow = nil, 0, false
 
     if timePeriod < 1 then
@@ -250,21 +253,27 @@ local function setupCharacterPhysics(character)
     overlapParams.FilterDescendantsInstances = { character, workspace.CurrentCamera }
     overlapParams.RespectCanCollide = true
 
-    local function isFlyBug()
+    -- (Addtion-Scripts) what is in the 1-stud box just in front, `lift` studs above the climbing box (0: 1 to 2
+    -- studs above the feet; 2: in front of the chest)
+    local function partsAhead(lift)
         local boxCFrame
         if isR15 then
             -- (Addtion-Scripts) the same place as on R6: 1 to 2 studs above the feet, just in front
             local feet = rootPart.Position.Y - rootPart.Size.Y / 2 - r15HipHeight
             local ahead = rootPart.Position + rootPart.CFrame.LookVector / 2
-            boxCFrame = CFrame.new(ahead.X, feet + 1.5, ahead.Z)
+            boxCFrame = CFrame.new(ahead.X, feet + 1.5 + lift, ahead.Z)
         else
             -- (Addtion-Scripts) the sink taken out: just after a landing the body is lower, which would put the box
             -- into the ground and miss the bottom rung of a ladder
             local checkPos = torso.Position - Vector3.new(0, 1 + sinkOffset, 0)
             torso:GetConnectedParts()
-            boxCFrame = CFrame.new(checkPos + torso.CFrame.LookVector / 2) * CFrame.new(0, -0.5, 0)
+            boxCFrame = CFrame.new(checkPos + torso.CFrame.LookVector / 2) * CFrame.new(0, -0.5 + lift, 0)
         end
-        local parts = workspace:GetPartBoundsInBox(boxCFrame, Vector3.new(1, 1, 1), overlapParams)
+        return workspace:GetPartBoundsInBox(boxCFrame, Vector3.new(1, 1, 1), overlapParams)
+    end
+
+    local function isFlyBug(lift)
+        local parts = partsAhead(lift or 0)
 
         for _, part in pairs(parts) do
             local worldSize = part.CFrame:VectorToWorldSpace(part.Size)
@@ -515,13 +524,20 @@ local function setupCharacterPhysics(character)
             humanoid.AutoRotate = autoRotateTime < os.clock()
         end
 
-        local canTrussClimb = isFlyBug() and not checkIfTrippedState()
+        -- (Addtion-Scripts) while climbing, a rung still within reach higher up (in front of the chest) keeps the climb
+        -- going through the gap below it
+        local climbingNow = grabStartY ~= nil and os.clock() - lastGrab <= GRAB_GRACE
+        local canTrussClimb = (isFlyBug(0) or (climbingNow and isFlyBug(REACH_UP))) and not checkIfTrippedState()
 
-        -- (Addtion-Scripts) not while letting go, and not in a real fall (dropping past a wall must not grab it)
+        -- (Addtion-Scripts) not while letting go, and not in a real fall (dropping past a wall must not grab it).
+        -- Jumping into something climbable (a ladder) grabs it and ends the jump's glide: the glide bounced you off it.
         local moving = humanoid.MoveDirection.Magnitude > 0.01
         local fallingFast = torso.AssemblyLinearVelocity.Y < -MAX_FALL_TO_GRAB
-        local walkingIntoPart = not humanoid.Sit and moving and glideVelocity.Parent == nil and canTrussClimb
+        local walkingIntoPart = not humanoid.Sit and moving and canTrussClimb
             and not releasing and not fallingFast
+        if walkingIntoPart and glideVelocity.Parent ~= nil then
+            glideVelocity.Parent = nil
+        end
         if walkingIntoPart then
             local damp = timePeriod <= 14 and 0.8 or 0.4
             humanoid:ChangeState(Enum.HumanoidStateType.Climbing)
@@ -537,7 +553,10 @@ local function setupCharacterPhysics(character)
         elseif grabStartY then
             if now - lastGrab > TOP_OUT_TIME then
                 grabStartY = nil
-            elseif moving and not releasing and torso.Position.Y - grabStartY >= TOP_OUT_MIN_RISE then
+            elseif moving and not releasing and torso.Position.Y - grabStartY >= TOP_OUT_MIN_RISE
+                and #partsAhead(REACH_UP) == 0 then
+                -- (only at the real top: nothing at all in front of the chest. Between two rungs, or with the wall
+                -- still there, this shoved you into the ladder and you bounced off it)
                 local v = torso.AssemblyLinearVelocity
                 local dir = humanoid.MoveDirection
                 torso.AssemblyLinearVelocity = Vector3.new(dir.X * TOP_OUT_SPEED, math.max(v.Y, TOP_OUT_UP), dir.Z * TOP_OUT_SPEED)
