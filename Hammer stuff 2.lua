@@ -905,12 +905,142 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
+	-- CLASSIC LIMBS (Addtion-Scripts): the old procedural arm / leg swing on both kinds of body, for the old
+	-- avatar and the 2006 avatar.
+	--   * R6: the Torso's four joints turned with SetDesiredAngle, as the old Animate script did.
+	--   * R15 (no Torso: the old avatar did nothing there): the same four joints (RightShoulder, LeftShoulder,
+	--     RightHip, LeftHip) given the same angles through their Transform, set each frame after the
+	--     animations (Stepped) and moved no faster than the old motors (MaxVelocity a 60th of a second). The
+	--     rest of the body is held straight. Works on other players' characters too (on your screen).
+	-- ClassicLimbs.joints(char) -> rS, lS, rH, lH, humanoid, handle (the joints answer SetDesiredAngle,
+	-- MaxVelocity and CurrentAngle on both bodies); ClassicLimbs.release(handle) lets them go;
+	-- ClassicLimbs.drive(char, conns) animates the character by itself (its pose followed).
+	------------------------------------------------------------
+	local ClassicLimbs = {}
+	do
+		local moving = {} -- R15 joints being moved -> true
+		local stepConn = nil
+		local function step(_, dt)
+			dt = math.min(dt or 1 / 60, 0.1)
+			for j in pairs(moving) do
+				if not j.motor.Parent then
+					moving[j] = nil
+				else
+					local maxStep = j.MaxVelocity * dt * 60
+					local diff = j.desired - j.CurrentAngle
+					if math.abs(diff) <= maxStep then
+						j.CurrentAngle = j.desired
+					else
+						j.CurrentAngle = j.CurrentAngle + (diff > 0 and maxStep or -maxStep)
+					end
+					-- (a turn about the joint's X axis: forward for a positive angle, the left side mirrored as on R6)
+					pcall(function() j.motor.Transform = CFrame.Angles(j.sign * j.CurrentAngle, 0, 0) end)
+				end
+			end
+			if next(moving) == nil and stepConn then
+				stepConn:Disconnect()
+				stepConn = nil
+			end
+		end
+		local function virtualJoint(motor, sign)
+			local j = { motor = motor, sign = sign, MaxVelocity = 0.1, CurrentAngle = 0, desired = 0 }
+			function j:SetDesiredAngle(angle) self.desired = angle end
+			moving[j] = true
+			if not stepConn then stepConn = RunService.Stepped:Connect(step) end
+			return j
+		end
+
+		function ClassicLimbs.joints(char, timeout)
+			timeout = timeout or 10
+			local hum = char:FindFirstChildOfClass("Humanoid") or char:WaitForChild("Humanoid", timeout)
+			if not hum then return nil end
+			if hum.RigType == Enum.HumanoidRigType.R15 then
+				local function motor(partName, jointName)
+					local part = char:WaitForChild(partName, timeout)
+					local m = part and part:WaitForChild(jointName, timeout)
+					return (m and m:IsA("Motor6D")) and m or nil
+				end
+				local rS, lS = motor("RightUpperArm", "RightShoulder"), motor("LeftUpperArm", "LeftShoulder")
+				local rH, lH = motor("RightUpperLeg", "RightHip"), motor("LeftUpperLeg", "LeftHip")
+				if not (rS and lS and rH and lH) then return nil end
+				-- the rest of the body straight (it keeps the last pose of its own animations otherwise)
+				for _, m in ipairs(char:GetDescendants()) do
+					if m:IsA("Motor6D") and m ~= rS and m ~= lS and m ~= rH and m ~= lH then
+						pcall(function() m.Transform = CFrame.new() end)
+					end
+				end
+				local set = { virtualJoint(rS, 1), virtualJoint(lS, -1), virtualJoint(rH, 1), virtualJoint(lH, -1) }
+				return set[1], set[2], set[3], set[4], hum, { r15 = set }
+			end
+			local torso = char:WaitForChild("Torso", timeout)
+			if not torso then return nil end
+			local rS = torso:WaitForChild("Right Shoulder", timeout)
+			local lS = torso:WaitForChild("Left Shoulder", timeout)
+			local rH = torso:WaitForChild("Right Hip", timeout)
+			local lH = torso:WaitForChild("Left Hip", timeout)
+			if not (rS and lS and rH and lH) then return nil end
+			return rS, lS, rH, lH, hum, { r6 = { rS, lS, rH, lH } }
+		end
+
+		function ClassicLimbs.release(handle)
+			if type(handle) ~= "table" then return end
+			for _, j in ipairs(handle.r15 or {}) do
+				moving[j] = nil
+				pcall(function() j.motor.Transform = CFrame.new() end)
+			end
+			for _, joint in ipairs(handle.r6 or {}) do
+				pcall(function() joint.MaxVelocity = 0.5 joint:SetDesiredAngle(0) end)
+			end
+		end
+
+		-- the classic motion by itself (standing sway, running swing, arms up when jumping / falling, sitting,
+		-- climbing); its connections go in conns, a release with them. False when the body has no such joints.
+		function ClassicLimbs.drive(char, conns)
+			local rS, lS, rH, lH, hum, handle = ClassicLimbs.joints(char)
+			if not rS then return false end
+			local pose = "Standing"
+			table.insert(conns, hum.Running:Connect(function(speed) pose = (speed > 0.1) and "Running" or "Standing" end))
+			table.insert(conns, hum.Jumping:Connect(function() pose = "Jumping" end))
+			table.insert(conns, hum.FreeFalling:Connect(function() pose = "FreeFall" end))
+			table.insert(conns, hum.Seated:Connect(function() pose = "Seated" end))
+			table.insert(conns, hum.Climbing:Connect(function() pose = "Climbing" end))
+			table.insert(conns, hum.Swimming:Connect(function(speed) pose = (speed > 0.1) and "Running" or "Standing" end))
+			table.insert(conns, hum.Died:Connect(function() pose = "Dead" end))
+			table.insert(conns, RunService.Stepped:Connect(function()
+				if not char.Parent or hum.Health <= 0 or pose == "Dead" then return end
+				if pose == "Jumping" or pose == "FreeFall" then
+					rS.MaxVelocity = 0.75; lS.MaxVelocity = 0.75
+					rS:SetDesiredAngle(3.14); lS:SetDesiredAngle(-3.14); rH:SetDesiredAngle(0); lH:SetDesiredAngle(0)
+				elseif pose == "Seated" then
+					rS.MaxVelocity = 0.15; lS.MaxVelocity = 0.15
+					rS:SetDesiredAngle(1.57); lS:SetDesiredAngle(-1.57); rH:SetDesiredAngle(1.57); lH:SetDesiredAngle(-1.57)
+				else
+					local amp, freq, climb = 0.1, 1, 0
+					if pose == "Running" then
+						rS.MaxVelocity = 0.15; lS.MaxVelocity = 0.15; amp = 1; freq = 9
+					elseif pose == "Climbing" then
+						rS.MaxVelocity = 0.5; lS.MaxVelocity = 0.5; amp = 1; freq = 9; climb = 3.14
+					end
+					local ang = amp * math.sin(os.clock() * freq)
+					rS:SetDesiredAngle(ang + climb)
+					lS:SetDesiredAngle(ang - climb)
+					rH:SetDesiredAngle(-ang)
+					lH:SetDesiredAngle(-ang)
+				end
+			end))
+			table.insert(conns, { Disconnect = function() ClassicLimbs.release(handle) end })
+			return true
+		end
+	end
+
+	------------------------------------------------------------
 	-- 5. OLD AVATAR (RETRO SUITE 2006) LOGIC
 	------------------------------------------------------------
 	do
 		local retroState = {
 			active = false,
 			cleanup = {},
+			limbs = {},  -- (Addtion-Scripts) ClassicLimbs handles, let go when turned off
 			otherTracked = {},
 			headModel = nil,
 			bodyModel = nil,
@@ -1171,9 +1301,11 @@ task.spawn(function()
 		end
 
 		local function runLocalCharacter(char)
-			local humanoid = char:WaitForChild("Humanoid", 10)
-			local torso = char:WaitForChild("Torso", 10)
-			if not humanoid or not torso then return end
+			-- (Addtion-Scripts) R6 or R15: the four joints from ClassicLimbs (R15 ones answer the same way)
+			local RightShoulder, LeftShoulder, RightHip, LeftHip, humanoid, limbs = ClassicLimbs.joints(char)
+			if not RightShoulder then return end
+			if not retroState.active then ClassicLimbs.release(limbs) return end
+			table.insert(retroState.limbs, limbs)
 
 			local defaultAnimate = char:FindFirstChild("Animate")
 			if defaultAnimate then defaultAnimate.Disabled = true end
@@ -1181,12 +1313,6 @@ task.spawn(function()
 			for _, track in ipairs(humanoid:GetPlayingAnimationTracks()) do
 				track:Stop()
 			end
-
-			local RightShoulder = torso:WaitForChild("Right Shoulder", 10)
-			local LeftShoulder = torso:WaitForChild("Left Shoulder", 10)
-			local RightHip = torso:WaitForChild("Right Hip", 10)
-			local LeftHip = torso:WaitForChild("Left Hip", 10)
-			if not (RightShoulder and LeftShoulder and RightHip and LeftHip) then return end
 
 			local pose = "Standing"
 			local toolAnim = "None"
@@ -1314,6 +1440,7 @@ task.spawn(function()
 			table.insert(conns, char.AncestryChanged:Connect(function(_, p)
 				if not p then
 					for _, c in ipairs(conns) do c:Disconnect() end
+					ClassicLimbs.release(limbs)
 				end
 			end))
 
@@ -1322,20 +1449,16 @@ task.spawn(function()
 
 		local function setupOther(char)
 			if not char then return end
-			local hum = char:WaitForChild("Humanoid", 10)
-			local torso = char:WaitForChild("Torso", 10)
-			if not hum or not torso then return end
+			-- (Addtion-Scripts) R6 or R15: the four joints from ClassicLimbs (R15 ones answer the same way)
+			local rS, lS, rH, lH, hum, limbs = ClassicLimbs.joints(char)
+			if not rS then return end
+			if not retroState.active then ClassicLimbs.release(limbs) return end
+			table.insert(retroState.limbs, limbs)
 
 			local anim = char:FindFirstChild("Animate")
 			if anim then anim.Disabled = true end
 
 			for _, t in ipairs(hum:GetPlayingAnimationTracks()) do t:Stop(0) end
-
-			local rS = torso:WaitForChild("Right Shoulder", 10)
-			local lS = torso:WaitForChild("Left Shoulder", 10)
-			local rH = torso:WaitForChild("Right Hip", 10)
-			local lH = torso:WaitForChild("Left Hip", 10)
-			if not (rS and lS and rH and lH) then return end
 
 			local entry = {
 				char = char, hum = hum,
@@ -1354,6 +1477,7 @@ task.spawn(function()
 				if not p then
 					for _, c in ipairs(entry.conns) do c:Disconnect() end
 					retroState.otherTracked[char] = nil
+					ClassicLimbs.release(limbs)
 				end
 			end))
 
@@ -1365,13 +1489,14 @@ task.spawn(function()
 
 			local function onCharacter(character)
 				task.spawn(function()
-					applyFullRetroAvatar(character)
+					-- (Addtion-Scripts) the look in a pcall: an error there no longer leaves the character unanimated
+					pcall(applyFullRetroAvatar, character)
 					if targetPlayer == player then
 						runLocalCharacter(character)
 					else
 						setupOther(character)
 					end
-					setupCustomAudio(character)
+					pcall(setupCustomAudio, character)
 				end)
 
 				local bc = character:WaitForChild("BodyColors", 3)
@@ -1482,6 +1607,9 @@ task.spawn(function()
 			end
 			table.clear(retroState.otherTracked)
 			table.clear(retroState.isSnappingColor)
+			-- the joints let go (R15 ones straight again, R6 ones back to 0) before the game's Animate is back
+			for _, limbs in ipairs(retroState.limbs) do ClassicLimbs.release(limbs) end
+			table.clear(retroState.limbs)
 
 			for _, plr in ipairs(Players:GetPlayers()) do
 				local char = plr.Character
@@ -2096,6 +2224,19 @@ task.spawn(function()
 					task.defer(function() child.Disabled = true end)
 				end
 			end))
+
+			-- (Addtion-Scripts) An R6 body: the classic arm and leg swing (the retro animations below are R15 ones,
+			-- which leave an R6 body standing still). Its own animations are kept off.
+			if humanoid.RigType == Enum.HumanoidRigType.R6 then
+				pcall(function()
+					for _, t in ipairs(animator:GetPlayingAnimationTracks()) do t:Stop(0) end
+				end)
+				table.insert(charConns, animator.AnimationPlayed:Connect(function(track)
+					pcall(function() track:Stop(0) end)
+				end))
+				ClassicLimbs.drive(character, charConns)
+				return
+			end
 
 			local currentTrack, currentAnimId
 
@@ -4449,7 +4590,7 @@ task.spawn(function()
 				exclusiveWith = { "is2006AvatarEnabled" },
 				onEnable      = actions.applyOldAvatar,
 				onDisable     = actions.restoreOldAvatar,
-				helpText      = "Retro Suite 2006: 2010 Motor6D procedural animations for all players, 31-color palette quantization, 1-hat/1-hair enforcement, legacy audio, and original mesh/face textures."
+				helpText      = "Retro Suite 2006: 2010 Motor6D procedural animations for all players (R6 and R15 bodies), 31-color palette quantization, 1-hat/1-hair enforcement, legacy audio, and original mesh/face textures."
 			},
 			{
 				containerName = "Avatar2006Container",
@@ -4460,7 +4601,7 @@ task.spawn(function()
 				exclusiveWith = { "isOldAvatarEnabled" },
 				onEnable      = actions.apply2006Avatar,
 				onDisable     = actions.restore2006Avatar,
-				helpText      = "Retro Suite 2006 Executor Edition: random 2006 body colors, classic head and face, sharp R6 meshes, the 2006 T-shirt badge, retro animations and sounds for all players. Removes accessories and clothing; respawn to get them back after disabling."
+				helpText      = "Retro Suite 2006 Executor Edition: random 2006 body colors, classic head and face, sharp R6 meshes, the 2006 T-shirt badge, retro animations (the classic arm swing on R6 bodies) and sounds for all players. Removes accessories and clothing; respawn to get them back after disabling."
 			},
 		}
 	})
