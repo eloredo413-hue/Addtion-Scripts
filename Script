@@ -22,8 +22,8 @@
 -- + Less lag: no more scans of the whole GUI / workspace many times a second (see SPEED-UPS below,
 --   and Wizard smooth v10, which no longer leaves its hooks on for the whole game)
 -- + The 2006 avatar's T-shirt shows again with the 2011-2014 chat bubbles (they only remove bubbles now)
--- + Old-style speedometer (a blue bar) for 2010-2014, only when the game has a speedometer on; none before 2010
---   (2008 / 2006 / 2005); the game's own (modern) speedometer from 2015 on
+-- + Old-style speedometer (a blue bar) for 2010-2014 and 2015 early, only when the game has a speedometer on;
+--   none before 2010 (2008 / 2006 / 2005); the game's own (modern) speedometer from 2015 on
 -- + 2008 (More guis): treated like 2010, so no bubble script of ours runs over it (it has no chat bubbles)
 -- + Chat bubbles by era: 2005 and 2006 have none; 2010 and 2015 early draw their own (no bubble script
 --   of ours runs over them); 2011-2014 / mobile use the built-in 2011-style ones; 2015/2016 the 2017 ones
@@ -962,19 +962,19 @@ task.spawn(function()
     end
 
     --========================================================
-    -- OLD-STYLE SPEEDOMETER (2010-2014), AND NO MODERN ONE BEFORE 2015
+    -- OLD-STYLE SPEEDOMETER (2010-2014 AND 2015 EARLY), AND NO MODERN ONE BEFORE 2015
     -- A solid blue bar with "Speed: 46" under it, as in the old car HUD of https://youtu.be/HgcfN5V0I-4.
     -- From frames of a screen recording of it: the bar is plain blue, no background, always at the same
     -- place on the screen (centred, a little below the middle), and its width grows with the speed,
     -- roughly 7 pixels for every point of speed on a 720p screen; the text is small, plain blue, no
     -- outline, centred under it. It is a screen GUI, not attached to the player or the car.
-    --   * The modern speedometer only shows from 2015 on. In every era up to 2014 it is switched off
+    --   * The modern speedometer only shows from 2015 on. In every era up to 2015 early it is switched off
     --     (and kept off if it is switched on again): Roblox's own vehicle speed display (the "Speed 0"
     --     with a segmented bar at the bottom, CoreGui.RobloxGui.VehicleHudFrame), the game's own
     --     readout and the GUI around it that is named like a speedometer, and any GUI named like one
     --     (Speedometer, SpeedoFrame ...). A dashboard on the car is left alone. 2015 and later get
     --     the modern one back untouched.
-    --   * 2010-2014 (2010, 2011-2014, mobile) get this old one in its place, while driving: whatever the
+    --   * 2010-2014 (2010, 2011-2014, mobile) and 2015 early get this old one in its place, while driving: whatever the
     --     game has. If the game has a visible speed readout, its number is shown (so the units match),
     --     else the car's own speed. 2005 and 2006 have no speedometer at all.
     --   * Only while you are sitting in a VehicleSeat (another seat once it moves).
@@ -1102,7 +1102,7 @@ task.spawn(function()
             return nil
         end
 
-        -- The game's own speedometer is switched off for as long as this runs (every era up to 2014), also
+        -- The game's own speedometer is switched off for as long as this runs (every era up to 2015 early), also
         -- when you are not in a car, and switched off again if the game switches it on. When this stops
         -- (a 2015 or later topbar) the game's own comes back: if you are in a car it is switched on.
         local function holdGame(target, prop)
@@ -1384,7 +1384,7 @@ task.spawn(function()
             end)
 
             -- Roblox's own speed display belongs to the VehicleSeat: remember whether it was on (that is
-            -- the game having a speedometer), and switch it off (this script runs only up to 2014)
+            -- the game having a speedometer), and switch it off (this script runs only up to 2015 early)
             local hudSeat, hudWas = nil, nil
             if seat:IsA("VehicleSeat") then
                 pcall(function()
@@ -1456,7 +1456,7 @@ task.spawn(function()
         -- the game's speedometer GUIs that are already there, and Roblox's own vehicle speed display
         pcall(switchOffMeters)
         pcall(switchOffVehicleHud)
-        print("[Loader] " .. (showOurs and "old speedometer on (2010-2014, when the game has one)" or "no speedometer (2008 / 2006 / 2005)") .. ": the game's own speedometer is switched off")
+        print("[Loader] " .. (showOurs and "old speedometer on (2010-2014 / 2015 early, when the game has one)" or "no speedometer (2008 / 2006 / 2005)") .. ": the game's own speedometer is switched off")
     end
 
     local function stopSpeedometer()
@@ -2793,8 +2793,8 @@ end
             if getgenv().Bubble2017Cleanup then pcall(getgenv().Bubble2017Cleanup) end
         end
 
-        -- The game's own (modern) speedometer only shows from 2015 on. Up to 2014 it is switched off:
-        -- 2010-2014 get the old speedometer in its place, 2005 / 2006 have none.
+        -- The game's own (modern) speedometer only shows from 2015 on. Up to 2015 early it is switched off:
+        -- 2010-2014 and 2015 early get the old speedometer (the blue bar) in its place, 2005 / 2006 have none.
         -- 2013 (regular and mobile): its backpack takes touch and mouse (the 2013 GUI's own one loses tools you drag)
         if era == "classic" and tostring(raw) == "2013" and not backpack2013Loaded then
             backpack2013Loaded = true
@@ -2810,7 +2810,7 @@ end
         -- (the 2008 GUI of More guis is a "y2010" for the bubbles, but older than 2010: no speedometer)
         local is2008 = tostring(raw) == "2008"
         if not (is2008 and era == "y2010") then stopDialogBubbleHider() end
-        if (era == "classic" or era == "y2010") and not is2008 then
+        if (era == "classic" or era == "y2010" or era == "early2015") and not is2008 then
             local ok, err = pcall(startSpeedometer, "show")
             if not ok then warn("[Loader] the speedometer didn't start: " .. tostring(err)) end
         elseif era == "y2006" or era == "y2005" or is2008 then
