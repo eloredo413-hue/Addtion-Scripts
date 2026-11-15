@@ -2205,6 +2205,61 @@ task.spawn(function()
 			end
 		end
 
+		-- (Addtion-Scripts) "Normal" picked in Bloxy's animation step (Roblox's own animations; the 2007 and Modern R6
+		-- animations of this repo save Bloxy's pick as Normal, so those are checked too)
+		local function normalAnimationsPicked()
+			local env = (getgenv and getgenv()) or _G
+			for _, name in ipairs({ "Animation2007", "ModernR6Animation" }) do
+				local api = env[name]
+				if type(api) == "table" and type(api.IsRunning) == "function" then
+					local ok, on = pcall(api.IsRunning)
+					if ok and on then return false end
+				end
+			end
+			local pick = nil
+			pcall(function()
+				if isfile and readfile and isfile("BloxyParadoxConfig.json") then
+					local cfg = HttpService:JSONDecode(readfile("BloxyParadoxConfig.json"))
+					pick = type(cfg) == "table" and type(cfg.Choices) == "table" and cfg.Choices.Anims or nil
+				end
+			end)
+			return pick == nil or string.lower(tostring(pick)) == "normal"
+		end
+
+		-- (Addtion-Scripts) the arms and legs held straight, as on a 2006 character: no swing, no tilt (the swing / the
+		-- avatar's own animations angled the arms out). After the animations every frame (Stepped), on both bodies.
+		local STRAIGHT_JOINTS = {
+			["Right Shoulder"] = true, ["Left Shoulder"] = true, ["Right Hip"] = true, ["Left Hip"] = true,
+			RightShoulder = true, LeftShoulder = true, RightElbow = true, LeftElbow = true, RightWrist = true, LeftWrist = true,
+			RightHip = true, LeftHip = true, RightKnee = true, LeftKnee = true, RightAnkle = true, LeftAnkle = true,
+		}
+		local function holdLimbsStraight(character, charConns, humanoid)
+			local joints = {}
+			local function consider(m)
+				if m:IsA("Motor6D") and STRAIGHT_JOINTS[m.Name] then joints[m] = true end
+			end
+			for _, d in ipairs(character:GetDescendants()) do consider(d) end
+			table.insert(charConns, character.DescendantAdded:Connect(consider))
+			local identity = CFrame.new()
+			table.insert(charConns, RunService.Stepped:Connect(function()
+				if not character.Parent or humanoid.Health <= 0 then return end
+				for m in pairs(joints) do
+					if not m.Parent then
+						joints[m] = nil
+					else
+						if m.Transform ~= identity then m.Transform = identity end
+						-- (R6 joints also turn by angle, as the old Animate scripts turned them)
+						if m.CurrentAngle ~= 0 or m.DesiredAngle ~= 0 then
+							pcall(function()
+								m.DesiredAngle = 0
+								m.CurrentAngle = 0
+							end)
+						end
+					end
+				end
+			end))
+		end
+
 		local function injectClassicAnimations(character, charConns, isCurrent)
 			local humanoid = character:WaitForChild("Humanoid", 8)
 			if not humanoid then return end
@@ -2224,6 +2279,18 @@ task.spawn(function()
 					task.defer(function() child.Disabled = true end)
 				end
 			end))
+
+			-- (Addtion-Scripts) "Normal" picked (Roblox's own animations): arms and legs straight, nothing else plays
+			if normalAnimationsPicked() then
+				pcall(function()
+					for _, t in ipairs(animator:GetPlayingAnimationTracks()) do t:Stop(0) end
+				end)
+				table.insert(charConns, animator.AnimationPlayed:Connect(function(track)
+					pcall(function() track:Stop(0) end)
+				end))
+				holdLimbsStraight(character, charConns, humanoid)
+				return
+			end
 
 			-- (Addtion-Scripts) An R6 body: the classic arm and leg swing (the retro animations below are R15 ones,
 			-- which leave an R6 body standing still). Its own animations are kept off.
