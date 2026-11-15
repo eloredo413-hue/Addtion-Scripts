@@ -25,6 +25,9 @@
 	  it is picked while this runs): the retro studs (LegacyStuds) come on and Bloxy's 2016 studs are hidden;
 	  never on players or NPCs (their body, hats or the tool in their hand);
 	  stopping this gives Bloxy's back.
+	* Lamps show at night: light sources are made stronger by as much as the colours they light are darkened.
+	  Nothing glows like neon that shouldn't: textured meshes in the map are darkened too (they kept their full
+	  colour under the boosted light), and so are particles, beams and trails that take the scene's light.
 ]]
 
 local Settings = {
@@ -49,8 +52,14 @@ local Settings = {
 	AutoBrightness   = true,  -- weaker sun on maps built mostly from white / very pale parts, which otherwise wash out.
 	                          -- Dark and mid-coloured maps are left as they are. Set false to always use SunBoost as written
 	FixTexturedMeshes = true, -- redraw textured mesh hats/hair/limbs on characters so they darken too (they went white in R15 games)
-	FixWorldMeshes   = false, -- the same for textured meshes in the map. Try it when the MAP is too bright. Heavier on big maps
-	MaxMeshFixes     = 800,   -- upper limit for the two settings above
+	FixWorldMeshes   = true,  -- (Addtion-Scripts: on) the same for textured meshes in the map (props, trees, furniture...),
+	                          -- which otherwise kept their full colour under the boosted light and glowed like neon
+	MaxMeshFixes     = 800,   -- upper limit for the characters' ones
+	MaxWorldMeshFixes = 1000, -- (Addtion-Scripts) upper limit for the map's ones (counted apart, so players' hats always get theirs)
+	BrightLamps      = true,  -- (Addtion-Scripts) lamps and other lights (PointLight, SpotLight, SurfaceLight) as bright as in the game:
+	                          -- what they light is darkened, so they are made stronger by the same amount (they hardly showed at night)
+	DimLitParticles  = true,  -- (Addtion-Scripts) particles, beams and trails that take the scene's light are darkened like colours
+	                          -- (they took the whole boost and glowed)
 	DarkenTerrain    = true,  -- darken terrain (ground, sand, rock and the grass blades) like parts, so it stops blowing out
 	FixUnionColors   = true,  -- unions ignore their Color, so they never darkened and went pure white. This makes them use it.
 	                          -- A union built from parts of several colours becomes one colour; set false if that looks wrong
@@ -674,7 +683,8 @@ end
 ----------------------------------------------------------------------------------------------------
 local MESH_PROXY = "LegacyMeshProxy"
 local meshFix = setmetatable({}, { __mode = "k" })
-local meshFixCount = 0
+local meshFixCount = 0      -- on characters
+local worldMeshFixCount = 0 -- in the map
 
 local function meshScale(part)
 	local ms = part.MeshSize
@@ -700,7 +710,12 @@ end
 local function fixTexturedMesh(part)
 	if stopped or meshFix[part] then return end
 	if not meshFixWanted(part) then return end
-	if meshFixCount >= (Settings.MaxMeshFixes or 800) then return end
+	local worn = isWorn(part)
+	if worn then
+		if meshFixCount >= (Settings.MaxMeshFixes or 800) then return end
+	elseif worldMeshFixCount >= (Settings.MaxWorldMeshFixes or 1000) then
+		return
+	end
 	local scale = meshScale(part)
 	if not scale then return end
 
@@ -733,8 +748,13 @@ local function fixTexturedMesh(part)
 
 	local rec = { proxy = proxy, transparency = part.Transparency }
 	meshFix[part] = rec
-	meshFixCount += 1
-	proxy.Destroying:Connect(function() meshFixCount -= 1 end)
+	if worn then
+		meshFixCount += 1
+		proxy.Destroying:Connect(function() meshFixCount -= 1 end)
+	else
+		worldMeshFixCount += 1
+		proxy.Destroying:Connect(function() worldMeshFixCount -= 1 end)
+	end
 	proxy.Parent = part -- the colour pass darkens the SpecialMesh's VertexColor when it appears
 
 	-- hide the original; if the game changes its transparency, pass that on to the stand-in
@@ -760,6 +780,75 @@ local function fixTexturedMesh(part)
 		end
 	end))
 end
+
+----------------------------------------------------------------------------------------------------
+-- (Addtion-Scripts) light sources and lit particles. The colours are darkened and the sun and shade light
+-- boosted to make up for it, but a lamp's own light (PointLight, SpotLight, SurfaceLight) was not boosted, so
+-- what it lit came out at about a third of the game's brightness: at night lamps hardly showed. Their
+-- Brightness is raised by as much as the colours are lowered. Particles, beams and trails that take the
+-- scene's light (LightInfluence above 0) are the other way round: they took the whole boost and glowed, so the
+-- lit share of their Brightness is lowered like a colour. Kept when the game changes them again (a flickering
+-- lamp), recognised by value like the colours, and put back when this stops.
+----------------------------------------------------------------------------------------------------
+local LIGHT_CLASSES = { PointLight = true, SpotLight = true, SurfaceLight = true }
+local LIT_FX_CLASSES = { ParticleEmitter = true, Beam = true, Trail = true }
+
+-- instance -> { orig = the game's Brightness, last = what this script wrote }, kept in getgenv like the colours
+local brightState = genv.__LegacyLightingBrightness
+if type(brightState) ~= "table" then
+	brightState = setmetatable({}, { __mode = "k" })
+	genv.__LegacyLightingBrightness = brightState
+end
+
+local function brightnessFactor(inst)
+	if LIGHT_CLASSES[inst.ClassName] then return divisor end
+	local influence = math.clamp(read(inst, "LightInfluence") or 0, 0, 1)
+	return 1 - influence + influence / divisor
+end
+
+local function writeBrightness(inst, rec)
+	rec.writing = true -- (games with immediate signals call the watcher during the write itself)
+	pcall(function() inst.Brightness = rec.orig * brightnessFactor(inst) end)
+	rec.writing = false
+	rec.last = read(inst, "Brightness")
+end
+
+local function adjustBrightness(inst)
+	if LIGHT_CLASSES[inst.ClassName] then
+		if not Settings.BrightLamps then return end
+	elseif not Settings.DimLitParticles then
+		return
+	end
+	local cur = read(inst, "Brightness")
+	if type(cur) ~= "number" then return end -- (an older Roblox client without it)
+	local rec = brightState[inst]
+	if not (rec and rec.last ~= nil and cur == rec.last) then -- (still set by a run that was never stopped: kept)
+		rec = { orig = cur }
+		brightState[inst] = rec
+	end
+	writeBrightness(inst, rec)
+	track(inst:GetPropertyChangedSignal("Brightness"):Connect(function()
+		if stopped or rec.writing then return end
+		local now = read(inst, "Brightness")
+		if now == nil or now == rec.last then return end -- our own write coming back
+		rec.orig = now
+		writeBrightness(inst, rec)
+	end))
+	if LIT_FX_CLASSES[inst.ClassName] then
+		track(inst:GetPropertyChangedSignal("LightInfluence"):Connect(function()
+			if not stopped then writeBrightness(inst, rec) end
+		end))
+	end
+end
+
+onStop(function()
+	for inst, rec in pairs(brightState) do
+		pcall(function()
+			if rec.last ~= nil and inst.Brightness == rec.last then inst.Brightness = rec.orig end
+		end)
+		brightState[inst] = nil
+	end
+end)
 
 ----------------------------------------------------------------------------------------------------
 -- one entry point for everything that appears in the workspace
@@ -802,7 +891,7 @@ local function handle(v)
 		end
 		if v:IsA("MeshPart") and (Settings.FixTexturedMeshes or Settings.FixWorldMeshes) then
 			pcall(fixTexturedMesh, v)
-			if not meshFix[v] and v.TextureID == "" and (Settings.FixWorldMeshes or isWorn(v)) then
+			if not meshFix[v] and v.TextureID == "" and isWorn(v) then
 				-- its texture can come a moment later (an avatar still loading): it is redrawn then
 				local c
 				c = v:GetPropertyChangedSignal("TextureID"):Connect(function()
@@ -860,6 +949,8 @@ local function handle(v)
 		if Settings.NoClouds and hold(v, "Enabled", false, true) then cloudsOff += 1 end
 	elseif class == "CharacterMesh" then
 		convertCharacterMesh(v)
+	elseif LIGHT_CLASSES[class] or LIT_FX_CLASSES[class] then
+		adjustBrightness(v)
 	elseif Settings.LitSurfaceGuis then
 		lightSurfaceGui(v)
 	end
@@ -1413,7 +1504,7 @@ task.spawn(function()
 	end
 	if stopped then return end
 	print(string.format("[LegacyLighting] map done in %.1f s (%d objects, %d caught by the second look) | textured meshes redrawn so they darken too: %d | unions switched to their darkened colour: %d",
-		os.clock() - startedAt, count, missed, meshFixCount, unionFixCount))
+		os.clock() - startedAt, count, missed, meshFixCount + worldMeshFixCount, unionFixCount))
 	lightUp()
 	local extras = { "clouds hidden: " .. cloudsOff, "highlights hidden: " .. highlightsOff, "PBR textures removed: " .. #pbrRemoved }
 	for _, note in ipairs(extraNotes) do extras[#extras + 1] = note end
