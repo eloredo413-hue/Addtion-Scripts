@@ -14,7 +14,8 @@
 --     Barrel, Hex, ...; read from Roblox's head shape, the head item's name or its mesh), else the plain one
 --
 -- The classic head on a dynamic head has the head's skin colour and follows it when it changes (a game that
--- paints you, a skin tone block). It works with iw legacy lighting (lit like the body).
+-- paints you, a skin tone block), and the body's material (the same matte look, not shinier). It works with iw
+-- legacy lighting (lit like the body).
 --
 -- Nothing of the player's own is deleted: their face decals and dynamic head are only hidden, so
 -- getgenv().ClassicFace.Stop() puts every head back as it was. It waits for each avatar to load, and
@@ -997,6 +998,15 @@ end
 -- The skin colour the head has right now, so the classic head follows it: a game that paints you (a "touch to
 -- change your skin" block) sets the head's colour, not the body colours. Read through iw legacy lighting when it
 -- is on (it darkens every colour, and gives the game's own value back); the body colours only as a last resort.
+-- The classic head's material: the body's (its torso's), so it has the same matte look as the rest of the body
+-- under any lighting. (It was SmoothPlastic, which is shinier than the body's Plastic: under old-style lighting
+-- the forehead showed a bright white shine.)
+local function bodyMaterial(character)
+	local torso = character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
+	if torso and torso:IsA("BasePart") then return torso.Material end
+	return Enum.Material.Plastic
+end
+
 local function headSkinColor(character, head)
 	local original = Env.LegacyLightingOriginal
 	if type(original) == "function" then
@@ -1094,7 +1104,7 @@ local function apply(player, character)
 		fake.Size = Vector3.new(2, 1, 1)
 		st.skin = headSkinColor(character, head)
 		fake.Color = st.skin
-		fake.Material = Enum.Material.SmoothPlastic
+		fake.Material = bodyMaterial(character)
 		fake.CanCollide = false
 		fake.CanTouch = false
 		fake.CanQuery = false
@@ -1253,6 +1263,9 @@ function api.Start()
 					st.skin = color
 					fake.Color = color
 				end
+				-- (the body's material, if something changes it: the old avatar makes the body SmoothPlastic)
+				local material = bodyMaterial(character)
+				if fake.Material ~= material then fake.Material = material end
 				if fake.LocalTransparencyModifier ~= head.LocalTransparencyModifier then
 					fake.LocalTransparencyModifier = head.LocalTransparencyModifier
 				end
