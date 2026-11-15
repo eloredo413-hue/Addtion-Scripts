@@ -1,10 +1,13 @@
 --[[ CHAT BAR (Addtion-Scripts) ]]
--- Hammer stuff 2's "chatbar": the normal 2013 GUI shows a "Chat" button on a touch screen (its chat script makes
--- "ChatTouchFrame" there instead of its bar). This hides that button and puts back the bar the GUI has on a PC: a
--- black strip along the bottom of the screen, "To chat click here or press "/" key". Tapping it (or "/") lets
--- you type; sending puts the message in the chat, the same way its own bar does.
--- Only the normal 2013 GUI: nothing is done for the 2013 mobile GUI or any other, nor where the GUI already
--- shows its bar.
+-- Hammer stuff 2's "chatbar", for the old GUIs on a phone or tablet:
+--   * 2012 / 2013 (and 2014): their chat script shows a "Chat" button on a touch screen ("ChatTouchFrame") instead
+--     of its bar. This hides that button and puts back the bar they have on a PC: a black strip along the bottom
+--     of the screen, "To chat click here or press "/" key". Tapping it (or "/") lets you type; sending puts the
+--     message in the chat, the same way their own bar does.
+--   * 2015 early: its chat makes that bar itself ("ChatBarContainer"), and E2015 Gui.lua keeps it hidden on
+--     phones unless BPChatBar is set on NewRobloxGui. This sets it, and hides the Chat button
+--     ("TouchDeviceChatButton").
+-- Nothing is done for the 2013 mobile GUI or the 2011 GUI (it has its own bar), nor on a PC.
 -- getgenv().BPChatBar = { Enable, Disable, IsOn }
 
 local Env = (getgenv and getgenv()) or _G
@@ -18,13 +21,14 @@ local UserInputService = game:GetService("UserInputService")
 local TextChatService = game:GetService("TextChatService")
 
 local GUI_NAME = "ParadoxChatBar" -- ("Paradox" in the name: the game GUI hider leaves it alone)
-local BAR_HEIGHT = 22
+local BAR_HEIGHT = 20 -- (the strip the old GUIs keep along the bottom for it)
 local HINT = "To chat click here or press \"/\" key"
 
 local on = false
 local connections = {}
 local gui, hint, box = nil, nil, nil
 local hiddenButtons = setmetatable({}, { __mode = "k" }) -- the GUI's chat button -> its watcher
+local markedGui = nil -- the 2015 early NewRobloxGui given BPChatBar
 
 local function connect(signal, fn)
 	local ok, c = pcall(function() return signal:Connect(fn) end)
@@ -66,28 +70,41 @@ local function mobile2013()
 	return false
 end
 
--- the normal 2013 GUI: the topbar picked, else its make-up (the 2012 one has a Resizer and a ToolTip, the 2014
--- one a HealthScript and a ToolTip; the 2013 one none of them)
-local function is2013(legacy)
-	local pick = topbarPick()
-	local year = pick and tonumber(string.match(pick, "(20%d%d)"))
-	if year then return year == 2013 and not string.find(pick, "mobile", 1, true) end
-	return legacy:FindFirstChild("ControlFrame") ~= nil and legacy:FindFirstChild("Resizer") == nil
-		and legacy:FindFirstChild("ToolTip") == nil and legacy:FindFirstChild("HealthScript") == nil
-		and legacy:FindFirstChild("Topbar") == nil
+-- the 2011 GUI: it has its own bar
+local function gui2011()
+	for _, holder in ipairs(holders()) do
+		if holder:FindFirstChild("Early2011Gui") then return true end
+	end
+	return false
 end
 
--- the normal 2013 GUI, when it shows its chat button and not its bar
-local function legacyWithButton()
+-- The old GUI on screen and what to do there:
+--   "own"  (2015 early): its chat made its own bar; it gets BPChatBar, and its Chat button (if any) is hidden
+--   "ours" (2012 / 2013 / 2014): only a Chat button; it is hidden and our bar shown
+-- (on a PC this changes nothing: 2015 early's bar always shows there, and the others make their bar, not the button)
+local function findLegacy()
+	if mobile2013() or gui2011() then return nil end
 	for _, holder in ipairs(holders()) do
-		local legacy = holder:FindFirstChild("NewRobloxGui")
-		if legacy and is2013(legacy) then
-			local button = legacy:FindFirstChild("ChatTouchFrame", true)
-			local ownBar = legacy:FindFirstChild("ClickToChat", true)
-			if button and not ownBar then return legacy, button end
+		for _, legacy in ipairs(holder:GetChildren()) do
+			if legacy.Name == "NewRobloxGui" then
+				if legacy:FindFirstChild("ChatBarContainer") then
+					return "own", legacy, legacy:FindFirstChild("TouchDeviceChatButton")
+				end
+				local button = legacy:FindFirstChild("ChatTouchFrame", true)
+				if button and not legacy:FindFirstChild("ClickToChat", true) then
+					return "ours", legacy, button
+				end
+			end
 		end
 	end
 	return nil
+end
+
+local function mark(legacy)
+	if markedGui == legacy then return end
+	if markedGui then pcall(function() markedGui:SetAttribute("BPChatBar", nil) end) end
+	markedGui = legacy
+	if legacy then pcall(function() legacy:SetAttribute("BPChatBar", true) end) end
 end
 
 local function hideButton(button)
@@ -138,7 +155,7 @@ local function makeBar()
 	gui.Name = GUI_NAME
 	gui.ResetOnSpawn = false
 	gui.IgnoreGuiInset = true
-	gui.DisplayOrder = 101 -- (just above the 2013 GUI, which is 100)
+	gui.DisplayOrder = 101 -- (just above the old GUIs, which are 100)
 	gui.Enabled = false
 
 	box = Instance.new("TextBox")
@@ -207,40 +224,41 @@ function api.Enable()
 	if on then return end
 	on = true
 	makeBar()
-	local said = false
+	local said = {}
 	task.spawn(function()
 		while on do
-			local wanted = false
-			if not mobile2013() then
-				local legacy, button = legacyWithButton()
-				if legacy then
-					wanted = true
-					pcall(hideButton, button)
-				end
+			local mode, legacy, button = findLegacy()
+			mark(mode == "own" and legacy or nil)
+			if button then
+				pcall(hideButton, button)
+			elseif not mode then
+				showButtons()
 			end
-			if not wanted then showButtons() end
+			local wanted = mode == "ours"
 			if gui and gui.Enabled ~= wanted then
 				gui.Enabled = wanted
 				if not wanted and box and box:IsFocused() then pcall(function() box:ReleaseFocus() end) end
 			end
-			if wanted and not said then
-				said = true
-				print("[Chat Bar] the 2013 chat button is now a chat bar along the bottom")
+			if mode and not said[mode] then
+				said[mode] = true
+				print(mode == "own" and "[Chat Bar] 2015 early: its chat bar along the bottom is shown, the Chat button hidden"
+					or "[Chat Bar] the Chat button is now a chat bar along the bottom")
 			end
 			task.wait(1)
 		end
 	end)
-	print("[Chat Bar] On: in the normal 2013 GUI on a touch screen the chat button becomes a chat bar")
+	print("[Chat Bar] On: in the 2012 / 2013 / 2015 early GUIs on a touch screen the Chat button becomes a chat bar")
 end
 
 function api.Disable()
 	on = false
 	for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
 	table.clear(connections)
+	mark(nil)
 	showButtons()
 	if gui then pcall(function() gui:Destroy() end) end
 	gui, hint, box = nil, nil, nil
-	print("[Chat Bar] Off: the GUI's own chat button is back")
+	print("[Chat Bar] Off: the GUI's own Chat button is back")
 end
 
 function api.IsOn()
