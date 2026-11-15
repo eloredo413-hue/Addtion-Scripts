@@ -131,6 +131,7 @@ local HAMMER_BOXES = {
 	NightSky2008Checkbox = "is2008NightSkyEnabled",
 	AllPlayersCheckbox = "isAllPlayersEnabled",
 	FpsCapCheckbox = "isFpsCapEnabled",
+	HideMobileControlsCheckbox = "isHideMobileControlsEnabled",
 }
 local OLD_DECAL_BUTTON, OLD_DECAL_KEY = "BPOldDecalButton", "isOldDecalEnabled"
 
