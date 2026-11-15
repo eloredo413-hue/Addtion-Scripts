@@ -72,6 +72,7 @@ task.spawn(function()
 		is2008NightSkyEnabled   = config.is2008NightSkyEnabled or false,
 		isAllPlayersEnabled     = config.isAllPlayersEnabled or false,
 		isFpsCapEnabled         = config.isFpsCapEnabled or false,
+		isHideMobileControlsEnabled = config.isHideMobileControlsEnabled or false,
 		fpsCap                  = math.max(0, math.floor(tonumber(config.fpsCap) or 0)),
 	}
 
@@ -3465,6 +3466,74 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
+	-- 21. HIDE MOBILE CONTROLS
+	-- The joystick and the jump button can't be seen but still work: each part of them gets a see-through
+	-- UIGradient (it hides what is drawn, and doesn't fight the controls' own fading in and out), and they
+	-- stay shown and active, so taps still reach them. Roblox's touch controls (TouchGui, also Bloxy's old
+	-- jump button on it) and the 2013 mobile GUI's (LegacyTouchControls).
+	------------------------------------------------------------
+	do
+		local TOUCH_GUIS = { TouchGui = true, LegacyTouchControls = true }
+		local MARK = "BPHiddenTouch"
+		local CoreGuiService = game:GetService("CoreGui")
+		local hideConns = {}
+		local hidden = false
+
+		local function hideObject(obj)
+			if not obj:IsA("GuiObject") or obj:FindFirstChild(MARK) then return end
+			local gradient = Instance.new("UIGradient")
+			gradient.Name = MARK
+			gradient.Transparency = NumberSequence.new(1)
+			gradient.Parent = obj
+		end
+		local function hideGui(gui)
+			if not (gui:IsA("ScreenGui") and TOUCH_GUIS[gui.Name]) then return end
+			for _, d in ipairs(gui:GetDescendants()) do pcall(hideObject, d) end
+			table.insert(hideConns, gui.DescendantAdded:Connect(function(d)
+				task.defer(function() if hidden then pcall(hideObject, d) end end)
+			end))
+		end
+		local function touchHolders()
+			local list = {}
+			local playerGui = player and player:FindFirstChildOfClass("PlayerGui")
+			if playerGui then table.insert(list, playerGui) end
+			table.insert(list, CoreGuiService)
+			pcall(function()
+				local hui = gethui and gethui()
+				if hui and hui ~= CoreGuiService then table.insert(list, hui) end
+			end)
+			return list
+		end
+
+		function actions.applyHideMobileControls()
+			if hidden then return end
+			hidden = true
+			for _, holder in ipairs(touchHolders()) do
+				for _, gui in ipairs(holder:GetChildren()) do pcall(hideGui, gui) end
+				table.insert(hideConns, holder.ChildAdded:Connect(function(child)
+					task.delay(0.2, function() if hidden then pcall(hideGui, child) end end)
+				end))
+			end
+			print("[Addon] Mobile controls hidden (they still work).")
+		end
+		function actions.restoreHideMobileControls()
+			hidden = false
+			for _, c in ipairs(hideConns) do pcall(function() c:Disconnect() end) end
+			table.clear(hideConns)
+			for _, holder in ipairs(touchHolders()) do
+				for _, gui in ipairs(holder:GetChildren()) do
+					if gui:IsA("ScreenGui") and TOUCH_GUIS[gui.Name] then
+						for _, d in ipairs(gui:GetDescendants()) do
+							if d.Name == MARK and d:IsA("UIGradient") then d:Destroy() end
+						end
+					end
+				end
+			end
+			print("[Addon] Mobile controls shown again.")
+		end
+	end
+
+	------------------------------------------------------------
 	-- 20. FPS CAP
 	-- The frame rate capped at the number typed in. The executor's setfpscap does it; when there is none, or
 	-- the frame rate stays above the cap anyway (some executors have one that does nothing), a frame limiter
@@ -4025,6 +4094,18 @@ task.spawn(function()
 	createCategory("BPCategoryGraphics", "graphics & lighting")
 
 	createAddonRow({
+		containerName = "NightSky2008Container",
+		checkboxName  = "NightSky2008Checkbox",
+		helpName      = "NightSky2008HelpButton",
+		label         = "2008 night sky",
+		yPos          = startY + 13 * ROW_HEIGHT,
+		stateKey      = "is2008NightSkyEnabled",
+		onEnable      = actions.apply2008NightSky,
+		onDisable     = actions.restore2008NightSky,
+		helpText      = "The 2008 night: at sunset (17:30 - 18:15, the game's clock) the sky fades to pitch black and the classic 2008 square stars fade in; at sunrise (05:45 - 06:30) it fades back. Roblox's own stars are off. The day sky stays as it is. Untick to put the game's sky and stars back."
+	})
+
+	createAddonRow({
 		containerName = "RemoveProContainer",
 		checkboxName  = "RemoveProCheckbox",
 		helpName      = "RemoveProHelpButton",
@@ -4060,17 +4141,6 @@ task.spawn(function()
 		helpText      = "2013 dynamic lights: turns the game's SurfaceLights into 2013-style SpotLights and PointLights. Press 8 to switch between the 2013 lights and the SurfaceLights. Untick to put every SurfaceLight back."
 	})
 
-	createAddonRow({
-		containerName = "NightSky2008Container",
-		checkboxName  = "NightSky2008Checkbox",
-		helpName      = "NightSky2008HelpButton",
-		label         = "2008 night sky",
-		yPos          = startY + 13 * ROW_HEIGHT,
-		stateKey      = "is2008NightSkyEnabled",
-		onEnable      = actions.apply2008NightSky,
-		onDisable     = actions.restore2008NightSky,
-		helpText      = "The 2008 night: at sunset (17:30 - 18:15, the game's clock) the sky fades to pitch black and the classic 2008 square stars fade in; at sunrise (05:45 - 06:30) it fades back. Roblox's own stars are off. The day sky stays as it is. Untick to put the game's sky and stars back."
-	})
 
 	createAddonRow({
 		containerName = "OutlineContainer",
@@ -4254,6 +4324,18 @@ task.spawn(function()
 	createCategory("BPCategoryInterface", "interface")
 
 	createAddonRow({
+		containerName = "OldHealthBarContainer",
+		checkboxName  = "OldHealthBarCheckbox",
+		helpName      = "OldHealthBarHelpButton",
+		label         = "old healthbar",
+		yPos          = startY,
+		stateKey      = "isOldHealthBarEnabled",
+		onEnable      = actions.applyOldHealthBar,
+		onDisable     = actions.restoreOldHealthBar,
+		helpText      = "For the 2013 and 2013 mobile GUIs only: their health bar becomes the 2011-2013 one (dark tray, green bar, HEALTH). The 2011 and 2012 GUIs always have that one (nothing before 2011 does). Untick for the 2013 GUIs' own bar."
+	})
+
+	createAddonRow({
 		containerName = "HealthESPContainer",
 		checkboxName  = "HealthESPCheckbox",
 		helpName      = "HealthESPHelpButton",
@@ -4265,17 +4347,6 @@ task.spawn(function()
 		helpText      = "Old Roblox Health ESP For Players Used to See Health Range"
 	})
 
-	createAddonRow({
-		containerName = "HideGameGuiContainer",
-		checkboxName  = "HideGameGuiCheckbox",
-		helpName      = "HideGameGuiHelpButton",
-		label         = "hide game GUI",
-		yPos          = startY + 7 * ROW_HEIGHT,
-		stateKey      = "isHideGameGuiEnabled",
-		onEnable      = actions.applyHideGameGui,
-		onDisable     = actions.restoreHideGameGui,
-		helpText      = "Hides the game's own GUI (TopbarPlus buttons, HUDs, shop buttons, menus). Bloxy Paradox, the retro top bar and every era GUI stay. Untick to show the game GUI again. Right Ctrl also switches it."
-	})
 
 	createAddonRow({
 		containerName = "RemoveLeaderboardContainer",
@@ -4290,15 +4361,29 @@ task.spawn(function()
 	})
 
 	createAddonRow({
-		containerName = "OldHealthBarContainer",
-		checkboxName  = "OldHealthBarCheckbox",
-		helpName      = "OldHealthBarHelpButton",
-		label         = "old healthbar",
+		containerName = "HideGameGuiContainer",
+		checkboxName  = "HideGameGuiCheckbox",
+		helpName      = "HideGameGuiHelpButton",
+		label         = "hide game GUI",
+		yPos          = startY + 7 * ROW_HEIGHT,
+		stateKey      = "isHideGameGuiEnabled",
+		onEnable      = actions.applyHideGameGui,
+		onDisable     = actions.restoreHideGameGui,
+		helpText      = "Hides the game's own GUI (TopbarPlus buttons, HUDs, shop buttons, menus). Bloxy Paradox, the retro top bar and every era GUI stay. Untick to show the game GUI again. Right Ctrl also switches it."
+	})
+
+	createCategory("BPCategoryControls", "controls & performance")
+
+	createAddonRow({
+		containerName = "HideMobileControlsContainer",
+		checkboxName  = "HideMobileControlsCheckbox",
+		helpName      = "HideMobileControlsHelpButton",
+		label         = "hide controls",
 		yPos          = startY,
-		stateKey      = "isOldHealthBarEnabled",
-		onEnable      = actions.applyOldHealthBar,
-		onDisable     = actions.restoreOldHealthBar,
-		helpText      = "For the 2013 and 2013 mobile GUIs only: their health bar becomes the 2011-2013 one (dark tray, green bar, HEALTH). The 2011 and 2012 GUIs always have that one (nothing before 2011 does). Untick for the 2013 GUIs' own bar."
+		stateKey      = "isHideMobileControlsEnabled",
+		onEnable      = actions.applyHideMobileControls,
+		onDisable     = actions.restoreHideMobileControls,
+		helpText      = "Hides the mobile joystick and jump button, but they still work: move and jump with your thumbs where they would be. Untick to see them again."
 	})
 
 	-- the FPS cap: its tick box, then a number box (the "?" after it); the label shows the frame rate now
@@ -4549,6 +4634,7 @@ task.spawn(function()
 	if state.is2008NightSkyEnabled then task.spawn(actions.apply2008NightSky) end
 	if state.isAllPlayersEnabled then task.spawn(actions.applyAllPlayers) end
 	if state.isFpsCapEnabled then task.spawn(actions.applyFpsCap) end
+	if state.isHideMobileControlsEnabled then task.spawn(actions.applyHideMobileControls) end
 	if state.is2013DynamicEnabled then task.spawn(actions.apply2013Dynamic) end
 	if state.is2015AudioEnabled then task.spawn(actions.apply2015Audio)
 	elseif state.is2016AudioEnabled then task.spawn(actions.apply2016Audio) end
