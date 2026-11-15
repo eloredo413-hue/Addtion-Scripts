@@ -73,6 +73,8 @@ task.spawn(function()
 		isAllPlayersEnabled     = config.isAllPlayersEnabled or false,
 		isFpsCapEnabled         = config.isFpsCapEnabled or false,
 		isHideMobileControlsEnabled = config.isHideMobileControlsEnabled or false,
+		isIWLegacyLightingEnabled = config.isIWLegacyLightingEnabled or false,
+		isChatBarEnabled        = config.isChatBarEnabled or false,
 		fpsCap                  = math.max(0, math.floor(tonumber(config.fpsCap) or 0)),
 	}
 
@@ -3466,6 +3468,76 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
+	-- 22. IW LEGACY LIGHTING (IW Legacy Lighting.lua in this repo)
+	-- The 2017 legacy lighting script (client side only): it keeps its own off switch,
+	-- getgenv().LegacyLightingStop, which puts the game's lighting back.
+	------------------------------------------------------------
+	do
+		local IW_LIGHTING_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/IW%20Legacy%20Lighting.lua"
+		local genv = (getgenv and getgenv()) or _G
+		local loading = false
+		local function stopIt()
+			local stop = genv.LegacyLightingStop
+			if type(stop) == "function" then pcall(stop) end
+		end
+		function actions.applyIWLegacyLighting()
+			if loading then return end
+			loading = true
+			task.spawn(function()
+				local ok, err = pcall(function()
+					loadstring(game:HttpGet(IW_LIGHTING_URL))()
+				end)
+				loading = false
+				if not ok then
+					warn("[iw Legacy Lighting] couldn't load: " .. tostring(err))
+					return
+				end
+				-- unticked while it was downloading
+				if not state.isIWLegacyLightingEnabled then stopIt() end
+			end)
+		end
+		function actions.restoreIWLegacyLighting()
+			stopIt()
+		end
+	end
+
+	------------------------------------------------------------
+	-- 23. CHAT BAR (Chat Bar.lua in this repo)
+	-- The normal 2013 GUI's chat button (on a touch screen) becomes the chat bar along the bottom it has on
+	-- a PC. Unticking gives the button back.
+	------------------------------------------------------------
+	do
+		local CHAT_BAR_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Chat%20Bar.lua"
+		local genv = (getgenv and getgenv()) or _G
+		local loading = false
+		local function turnOff()
+			local api = genv.BPChatBar
+			if api and type(api.Disable) == "function" then pcall(api.Disable) end
+		end
+		function actions.applyChatBar()
+			local api = genv.BPChatBar
+			if api and type(api.Enable) == "function" then pcall(api.Enable) return end
+			if loading then return end
+			loading = true
+			task.spawn(function()
+				local ok, err = pcall(function()
+					loadstring(game:HttpGet(CHAT_BAR_URL))()
+				end)
+				loading = false
+				if not ok then
+					warn("[Chat Bar] couldn't load: " .. tostring(err))
+					return
+				end
+				-- unticked while it was downloading
+				if not state.isChatBarEnabled then turnOff() end
+			end)
+		end
+		function actions.restoreChatBar()
+			turnOff()
+		end
+	end
+
+	------------------------------------------------------------
 	-- 21. HIDE MOBILE CONTROLS
 	-- The joystick and the jump button can't be seen but still work: each part of them gets a see-through
 	-- UIGradient (it hides what is drawn, and doesn't fight the controls' own fading in and out), and they
@@ -3913,6 +3985,8 @@ task.spawn(function()
 		lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
 		lbl.TextXAlignment = Enum.TextXAlignment.Left
 		lbl.Text = labelText
+		-- (a long label, like "iw legacy lighting", a little smaller so it stays clear of its box)
+		if #labelText > 15 then lbl.TextSize = isOption and 12 or 13 end
 		lbl.ZIndex = 97
 		lbl.Parent = cont
 
@@ -4126,7 +4200,21 @@ task.spawn(function()
 		stateKey      = "isLegacyLightingEnabled",
 		onEnable      = actions.applyLegacyLighting,
 		onDisable     = actions.restoreLegacyLighting,
+		exclusiveWith = { "isIWLegacyLightingEnabled" },
 		helpText      = "2017 OldGraphics lighting: Compatibility technology, no bloom, blur, sun rays, depth of field or atmosphere, and flat grey colors. Untick to put the original lighting back."
+	})
+
+	createAddonRow({
+		containerName = "IWLegacyLightingContainer",
+		checkboxName  = "IWLegacyLightingCheckbox",
+		helpName      = "IWLegacyLightingHelpButton",
+		label         = "iw legacy lighting",
+		yPos          = startY,
+		stateKey      = "isIWLegacyLightingEnabled",
+		onEnable      = actions.applyIWLegacyLighting,
+		onDisable     = actions.restoreIWLegacyLighting,
+		exclusiveWith = { "isLegacyLightingEnabled" },
+		helpText      = "The 2017 legacy lighting, only on your screen: brighter light with darker colors like the old Voxel look, the game's bloom / atmosphere / sun rays off, terrain darkened, no 3D clouds or grass blades. The game's time of day keeps going. Untick to put the game's lighting back."
 	})
 
 	createAddonRow({
@@ -4370,6 +4458,18 @@ task.spawn(function()
 		onEnable      = actions.applyHideGameGui,
 		onDisable     = actions.restoreHideGameGui,
 		helpText      = "Hides the game's own GUI (TopbarPlus buttons, HUDs, shop buttons, menus). Bloxy Paradox, the retro top bar and every era GUI stay. Untick to show the game GUI again. Right Ctrl also switches it."
+	})
+
+	createAddonRow({
+		containerName = "ChatBarContainer",
+		checkboxName  = "ChatBarCheckbox",
+		helpName      = "ChatBarHelpButton",
+		label         = "chatbar",
+		yPos          = startY,
+		stateKey      = "isChatBarEnabled",
+		onEnable      = actions.applyChatBar,
+		onDisable     = actions.restoreChatBar,
+		helpText      = "For the normal 2013 GUI on a phone or tablet: its Chat button goes and the chat bar it has on a PC is put along the bottom (\"To chat click here or press \"/\" key\"). Tap it to type. Not the 2013 mobile GUI. Untick for the button again."
 	})
 
 	createCategory("BPCategoryControls", "controls & performance")
@@ -4635,6 +4735,8 @@ task.spawn(function()
 	if state.isAllPlayersEnabled then task.spawn(actions.applyAllPlayers) end
 	if state.isFpsCapEnabled then task.spawn(actions.applyFpsCap) end
 	if state.isHideMobileControlsEnabled then task.spawn(actions.applyHideMobileControls) end
+	if state.isChatBarEnabled then task.spawn(actions.applyChatBar) end
+	if state.isIWLegacyLightingEnabled and not state.isLegacyLightingEnabled then task.spawn(actions.applyIWLegacyLighting) end
 	if state.is2013DynamicEnabled then task.spawn(actions.apply2013Dynamic) end
 	if state.is2015AudioEnabled then task.spawn(actions.apply2015Audio)
 	elseif state.is2016AudioEnabled then task.spawn(actions.apply2016Audio) end
