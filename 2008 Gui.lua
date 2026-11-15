@@ -1168,7 +1168,7 @@ HealthFrame.Name =
 	"ClassicHealthFrame"
 -- (Addtion-Scripts) The 2008 client's size (measured on a 2008 screenshot, as parts of the screen's height:
 -- 1.25% wide and 12.5% tall, "Health" right under it), floating on the right, lined up with the camera buttons
--- and Report (over their middle), its top 54% down the screen (below the player list, above Report). Placed
+-- and Report (over their middle), its top 52% down the screen (below the player list, above Report). Placed
 -- below, once the label is made, and again when the screen, the GUI's scale or the player list changes.
 HealthFrame.AnchorPoint =
 	Vector2.new(0.5, 0)
@@ -1226,12 +1226,12 @@ local function placeHealthBar()
 		local p, sz = palette.Position, palette.Size
 		middleX = p.X.Offset - sz.X.Offset * palette.AnchorPoint.X + sz.X.Offset / 2
 	end
-	-- down: a little below the middle of the screen's height (its top 54% down: under the player list, above
+	-- down: a little below the middle of the screen's height (its top 52% down: under the player list, above
 	-- the camera buttons and Report), and never up into the player list
 	local labelHeight = math.floor(h * 0.035 + 0.5)
 	local labelGap = math.floor(h * 0.01 + 0.5)
 	local listPos, listSize = PlayerList.Position, PlayerList.Size
-	local top = math.max(listPos.Y.Offset + listSize.Y.Offset + h * 0.012, h * 0.54)
+	local top = math.max(listPos.Y.Offset + listSize.Y.Offset + h * 0.012, h * 0.52)
 	-- (a very long player list on a short screen: "Health" still ends above Report's word)
 	if palette then
 		local p, sz = palette.Position, palette.Size
