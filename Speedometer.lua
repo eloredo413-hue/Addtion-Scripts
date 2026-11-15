@@ -17,8 +17,8 @@
 --   getgenv().Speedometer.Start("hideOnly") -- no speedometer at all (modern one hidden, none shown)
 --   getgenv().SpeedometerOnlyWithGameReadout = true   -- show it only when the game has a readout of its own
 --
--- (The loader runs it only for the 2010-2014 topbars: "show" for 2010-2014, "hideOnly" for 2005 and
--- 2006, and nothing for 2015 and later, so the modern speedometer is left alone there.)
+-- (The loader runs it only for the old topbars: "show" for 2010-2014 and 2015 early, "hideOnly" for 2005
+-- and 2006, and nothing for 2015 and later, so the modern speedometer is left alone there.)
 --========================================================
 
 local Players = game:GetService("Players")
