@@ -3495,12 +3495,14 @@ task.spawn(function()
 	------------------------------------------------------------
 	-- 22. IW LEGACY LIGHTING (IW Legacy Lighting.lua in this repo)
 	-- The 2017 legacy lighting script (client side only): it keeps its own off switch,
-	-- getgenv().LegacyLightingStop, which puts the game's lighting back.
+	-- getgenv().LegacyLightingStop, which puts the game back (lighting, effects, colours, terrain).
+	-- Downloaded once and kept: ticking it again starts at once.
 	------------------------------------------------------------
 	do
 		local IW_LIGHTING_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/IW%20Legacy%20Lighting.lua"
 		local genv = (getgenv and getgenv()) or _G
 		local loading = false
+		local source = nil
 		local function stopIt()
 			local stop = genv.LegacyLightingStop
 			if type(stop) == "function" then pcall(stop) end
@@ -3510,7 +3512,13 @@ task.spawn(function()
 			loading = true
 			task.spawn(function()
 				local ok, err = pcall(function()
-					loadstring(game:HttpGet(IW_LIGHTING_URL))()
+					source = source or game:HttpGet(IW_LIGHTING_URL)
+					local fn, compileErr = loadstring(source)
+					if not fn then
+						source = nil
+						error(compileErr, 0)
+					end
+					fn()
 				end)
 				loading = false
 				if not ok then
@@ -4240,7 +4248,7 @@ task.spawn(function()
 		onEnable      = actions.applyIWLegacyLighting,
 		onDisable     = actions.restoreIWLegacyLighting,
 		exclusiveWith = { "isLegacyLightingEnabled" },
-		helpText      = "The 2017 legacy lighting, only on your screen: brighter light with darker colors like the old Voxel look, the game's bloom / atmosphere / sun rays off, terrain darkened, no 3D clouds or grass blades. The game's time of day keeps going. Untick to put the game's lighting back."
+		helpText      = "The 2017 legacy lighting, only on your screen: brighter light with darker colors like the old Voxel look, the game's bloom / atmosphere / sun rays off, terrain darkened, no 3D clouds or grass blades. The game's time of day keeps going. Works with classic faces. Untick to put the game back as it was (lighting, effects, colors, terrain)."
 	})
 
 	createAddonRow({
@@ -4368,7 +4376,7 @@ task.spawn(function()
 		stateKey      = "isClassicFaceEnabled",
 		onEnable      = actions.applyClassicFace,
 		onDisable     = actions.restoreClassicFace,
-		helpText      = "Classic heads with 2D faces. Each player gets the face they really wear (their 2D face, their face item, or the classic face named like their dynamic head). Classic heads (Roundy, Blockhead...) keep their shape; only dynamic heads get a classic head on top. Untick to put every head back."
+		helpText      = "Classic heads with 2D faces. Each player gets the face they really wear (their 2D face, their face item, or the classic face named like their dynamic head). Classic heads (Roundy, Blockhead...) keep their shape; only dynamic heads get a classic head on top, in the head's skin color (it follows paint / skin tone changes). Untick to put every head back."
 	})
 
 	createAddonRow({

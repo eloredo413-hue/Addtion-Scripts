@@ -13,6 +13,9 @@
 --     of their shape when they have one (the 2026 classic-shape dynamic heads: Roundy, Blockhead, Trim,
 --     Barrel, Hex, ...; read from Roblox's head shape, the head item's name or its mesh), else the plain one
 --
+-- The classic head on a dynamic head has the head's skin colour and follows it when it changes (a game that
+-- paints you, a skin tone block). It works with iw legacy lighting (lit like the body).
+--
 -- Nothing of the player's own is deleted: their face decals and dynamic head are only hidden, so
 -- getgenv().ClassicFace.Stop() puts every head back as it was. It waits for each avatar to load, and
 -- follows changes (a new head, a new face) while it runs.
@@ -991,10 +994,20 @@ local function headKind(character, head, player)
 	return "dynamic", shape, seen
 end
 
+-- The skin colour the head has right now, so the classic head follows it: a game that paints you (a "touch to
+-- change your skin" block) sets the head's colour, not the body colours. Read through iw legacy lighting when it
+-- is on (it darkens every colour, and gives the game's own value back); the body colours only as a last resort.
 local function headSkinColor(character, head)
+	local original = Env.LegacyLightingOriginal
+	if type(original) == "function" then
+		local ok, color = pcall(original, head, "Color")
+		if ok and typeof(color) == "Color3" then return color end
+	end
+	local ok, color = pcall(function() return head.Color end)
+	if ok and typeof(color) == "Color3" then return color end
 	local bodyColors = character:FindFirstChildOfClass("BodyColors")
 	if bodyColors then return bodyColors.HeadColor3 end
-	return head.Color
+	return Color3.new(1, 1, 1)
 end
 
 local running = false
@@ -1079,7 +1092,8 @@ local function apply(player, character)
 		local fake = Instance.new("Part")
 		fake.Name = OUR_HEAD
 		fake.Size = Vector3.new(2, 1, 1)
-		fake.Color = headSkinColor(character, head)
+		st.skin = headSkinColor(character, head)
+		fake.Color = st.skin
 		fake.Material = Enum.Material.SmoothPlastic
 		fake.CanCollide = false
 		fake.CanTouch = false
@@ -1232,8 +1246,13 @@ function api.Start()
 			local head, fake = st.head, st.fake
 			if head and head.Parent and fake and fake.Parent then
 				if head.Transparency ~= 1 then head.Transparency = 1 end
+				-- written only when the head's colour changes (painted, new skin): comparing with fake.Color itself
+				-- fought iw legacy lighting, which darkens it, every frame
 				local color = headSkinColor(character, head)
-				if fake.Color ~= color then fake.Color = color end
+				if st.skin ~= color then
+					st.skin = color
+					fake.Color = color
+				end
 				if fake.LocalTransparencyModifier ~= head.LocalTransparencyModifier then
 					fake.LocalTransparencyModifier = head.LocalTransparencyModifier
 				end

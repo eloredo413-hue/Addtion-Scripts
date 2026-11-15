@@ -1,5 +1,5 @@
 -- (Addtion-Scripts) Hammer stuff 2's "iw legacy lighting" loads this file; unticking calls
--- getgenv().LegacyLightingStop(), which puts the game's lighting back.
+-- getgenv().LegacyLightingStop(), which puts the game back as it was: lighting, effects, colours and terrain.
 --[[
 	LEGACY 2017 LIGHTING  -  client side only
 	Only YOU see any of this: it never touches the server, so nobody else in the game sees it.
@@ -8,6 +8,18 @@
 	* The time of day is left to the game: morning, day, evening and night follow the game's own clock,
 	  so a day/night cycle keeps working. There is no time box any more.
 	* Everything you may want to change is in Settings below.
+
+	(Addtion-Scripts changes)
+	* Stopping it puts everything back: every darkened colour (parts, meshes, decals, clothes, terrain, sign
+	  text), the lighting, the game's own effects, unions, lit signs, clouds/highlights, redrawn meshes.
+	  It used to leave the colours darkened, the lighting changed and the game's effects off.
+	* Works with Classic Face: the classic head gets the same light as the body (the two scripts no longer
+	  fight over the head's colour every frame), and its face is lit like other decals.
+	* Loads faster: the characters first, then the map in timed slices (as much as fits in a few milliseconds
+	  a frame). The light only comes up once the map is done, so there is no washed-out white while it loads.
+	* Its own changes are recognised by their value (not by switching the watcher off and on), so they never
+	  set it off again: nothing gets darkened twice and the sun is never boosted twice, whatever the game does.
+	* getgenv().LegacyLightingOriginal(instance, property) gives the game's own (undarkened) value.
 ]]
 
 local Settings = {
@@ -42,6 +54,10 @@ local Settings = {
 	OldMaterials     = true,  -- built-in materials only: removes the game's custom (2022) materials, and switches to the
 	                          -- pre-2022 textures where the executor can write hidden properties
 	NoPBR            = false, -- remove SurfaceAppearance (2020 shiny PBR textures). A mesh that has no plain texture turns flat-coloured
+
+	-- (Addtion-Scripts) loading
+	SliceTime        = 0.008, -- seconds of work a frame while it goes through the map the first time
+	LightUpAfter     = 6,     -- the light comes up when the map is done, or after this many seconds at most
 }
 
 ----------------------------------------------------------------------------------------------------
@@ -60,29 +76,32 @@ while not player do
 	player = Players.LocalPlayer
 end
 
+local startedAt = os.clock()
 local stopped = false
-local conns, holders, created = {}, {}, {}
-local ownedSet = setmetatable({}, {__mode = "k"})
+local conns = {}
+local created = {}                                    -- instances this script made; stop() destroys them
+local ownedSet = setmetatable({}, { __mode = "k" })   -- of those, the ones the colour pass leaves alone
+local restores = {}                                   -- put something back; stop() runs them, last first
 
 local function track(c)
 	conns[#conns + 1] = c
 	return c
 end
 
-local function own(i)
+local function own(i) -- made by this script and left alone by the colour pass
 	created[#created + 1] = i
 	ownedSet[i] = true
 	return i
 end
 
--- Remembers which (instance, property) pairs were already darkened, across runs, so running the script
--- again never darkens anything twice.
-local divided = genv.__LegacyLightingDivided
-if type(divided) ~= "table" then
-	divided = setmetatable({}, {__mode = "k"})
-	genv.__LegacyLightingDivided = divided
+local function made(i) -- made by this script, but darkened like the game's own
+	created[#created + 1] = i
+	return i
 end
-local listening = setmetatable({}, {__mode = "k"})
+
+local function onStop(fn)
+	restores[#restores + 1] = fn
+end
 
 ----------------------------------------------------------------------------------------------------
 -- colour helpers
@@ -93,109 +112,84 @@ local function clamp01(c)
 	return Color3.new(math.clamp(c.R, 0, 1), math.clamp(c.G, 0, 1), math.clamp(c.B, 0, 1))
 end
 
-local function div(v, d)
-	if typeof(v) == "Color3" then
-		return clamp01(Color3.new(v.R / d, v.G / d, v.B / d))
-	elseif typeof(v) == "Vector3" then
-		return v / d
-	end
-	return v
-end
-
 local function mul(c, m)
 	return Color3.new(c.R * m, c.G * m, c.B * m)
 end
 
--- Watches inst[Prop]. apply() runs on every change and when run() is called. The watcher is dropped while
--- apply() writes, so our own write does not trigger it again.
-local function guarded(inst, Prop, apply)
-	local h = {}
-	holders[#holders + 1] = h
-	local run
-	local function connect()
-		h.conn = inst:GetPropertyChangedSignal(Prop):Connect(run)
+local function darken(v)
+	if typeof(v) == "Color3" then
+		return clamp01(Color3.new(v.R / divisor, v.G / divisor, v.B / divisor))
+	elseif typeof(v) == "Vector3" then
+		return v / divisor
 	end
-	run = function()
-		if h.conn then h.conn:Disconnect() end
-		pcall(apply)
-		connect()
-	end
-	h.silently = function(fn) -- change the property without triggering apply
-		if h.conn then h.conn:Disconnect() end
-		pcall(fn)
-		connect()
-	end
-	connect()
-	return h, run
+	return v
 end
 
--- Keeps inst[prop] at value, also when the game writes it again. restore = put the old value back when the
--- script is stopped or replaced.
-local restores = {}
+local function lighten(v) -- the other way round (for colours darkened by an older version of this script)
+	if typeof(v) == "Color3" then
+		return clamp01(mul(v, divisor))
+	elseif typeof(v) == "Vector3" then
+		return v * divisor
+	end
+	return v
+end
+
+local function read(inst, prop)
+	local ok, v = pcall(function() return inst[prop] end)
+	if ok then return v end
+	return nil
+end
+
+-- Keeps inst[prop] at value, also when the game writes it again (the game's last value is remembered).
+-- restore = put the game's value back when the script stops.
 local function hold(inst, prop, value, restore)
-	local ok, before = pcall(function() return inst[prop] end)
-	if not ok then return false end
-	local _, run = guarded(inst, prop, function()
-		if inst[prop] ~= value then inst[prop] = value end
-	end)
-	run()
+	local before = read(inst, prop)
+	if before == nil then return false end
+	local rec = { game = before }
+	local function apply()
+		if stopped then return end
+		local cur = read(inst, prop)
+		if cur ~= value then
+			rec.game = cur
+			pcall(function() inst[prop] = value end)
+		end
+	end
+	track(inst:GetPropertyChangedSignal(prop):Connect(apply))
+	apply()
 	if restore then
-		restores[#restores + 1] = function() inst[prop] = before end
+		onStop(function()
+			if read(inst, prop) == value then inst[prop] = rec.game end
+		end)
 	end
 	return true
 end
 
 ----------------------------------------------------------------------------------------------------
--- neon: emissive, so it keeps its colour, and gives off a light (not when worn/held by a character)
-----------------------------------------------------------------------------------------------------
-local NEON = Enum.Material.Neon
-local MAX_NEON_LIGHTS = 60
-local neonLightCount = 0
-local neonWatched = setmetatable({}, {__mode = "k"})
-
-local function isWorn(part)
-	local p = part.Parent
-	while p and p ~= workspace do
-		if p:FindFirstChildOfClass("Humanoid") then return true end
-		p = p.Parent
-	end
-	return false
-end
-
-local function refreshNeonLight(part)
-	if stopped then return end
-	local light = part:FindFirstChild("LegacyNeonLight")
-	if part.Material == NEON and part.Transparency < 0.9 and not isWorn(part) and part:IsDescendantOf(workspace) then
-		if not light then
-			if neonLightCount >= MAX_NEON_LIGHTS then return end
-			neonLightCount += 1
-			light = Instance.new("PointLight")
-			light.Name = "LegacyNeonLight"
-			light.Shadows = false
-			light.Brightness = Settings.NeonLight
-			light.Parent = part
-			light.Destroying:Connect(function() neonLightCount -= 1 end)
-		end
-		light.Color = part.Color
-		light.Range = math.clamp(math.max(part.Size.X, part.Size.Y, part.Size.Z) * 4, 8, 16)
-	elseif light then
-		light:Destroy()
-	end
-end
-
-local function watchNeon(part)
-	if neonWatched[part] then return end
-	neonWatched[part] = true
-	refreshNeonLight(part)
-	track(part.AncestryChanged:Connect(function() refreshNeonLight(part) end))
-	for _, prop in ipairs({"Color", "Transparency", "Size"}) do
-		track(part:GetPropertyChangedSignal(prop):Connect(function() refreshNeonLight(part) end))
-	end
-end
-
-----------------------------------------------------------------------------------------------------
 -- darkening colours (parts, meshes, decals, clothes, gui) - the lighting is boosted to compensate
 ----------------------------------------------------------------------------------------------------
+-- For each (instance, property) darkened: orig = the game's own value, last = what this script wrote (nil
+-- while it is left as the game has it). A change that reads back as `last` is this script's own; anything
+-- else is the game's, and is darkened once. Kept in getgenv so a new run knows what an old one left.
+local colorState = genv.__LegacyLightingColors
+if type(colorState) ~= "table" then
+	colorState = setmetatable({}, { __mode = "k" })
+	genv.__LegacyLightingColors = colorState
+end
+-- what the previous version of this script darkened (it never put colours back)
+local oldFlags = genv.__LegacyLightingDivided
+if type(oldFlags) ~= "table" then oldFlags = nil end
+
+local handledProp = setmetatable({}, { __mode = "k" }) -- instance -> { [prop] = true } in this run
+
+genv.LegacyLightingOriginal = function(inst, prop)
+	local recs = colorState[inst]
+	local rec = recs and recs[prop]
+	if rec and not stopped then return rec.orig end
+	return inst[prop]
+end
+
+local NEON = Enum.Material.Neon
+
 -- A part's colour is left undivided when it is emissive (Neon), or when it is a character Head drawn as a
 -- textured SpecialMesh: there Part.Color tints the skin AND VertexColor multiplies the whole result, so only
 -- one of the two may be divided. We keep Part.Color and divide VertexColor, which also darkens any opaque
@@ -209,74 +203,194 @@ local function colorExempt(part)
 	return false
 end
 
-local function SetProp(inst, Prop)
-	local l = listening[inst]
-	if not l then
-		l = {}
-		listening[inst] = l
+local function writeDark(inst, prop, rec)
+	rec.writing = true -- (games with immediate signals call the watcher during the write itself)
+	local ok = pcall(function() inst[prop] = darken(rec.orig) end)
+	rec.writing = false
+	if ok then rec.last = read(inst, prop) end -- read back: a part's colour is kept with 8 bits a channel
+end
+
+local function onColorChanged(inst, prop)
+	if stopped then return end
+	local recs = colorState[inst]
+	local rec = recs and recs[prop]
+	if not rec or rec.writing then return end
+	local cur = read(inst, prop)
+	if cur == nil or (rec.last ~= nil and cur == rec.last) then return end -- our own write coming back
+	rec.orig = cur
+	if rec.exempt then
+		rec.last = nil
+	else
+		pcall(writeDark, inst, prop, rec)
 	end
-	if l[Prop] then return end
-	l[Prop] = true
+end
 
-	local flags = divided[inst]
-	if not flags then
-		flags = {}
-		divided[inst] = flags
-	end
-	local already = flags[Prop]
-	flags[Prop] = true
+local refreshNeonLight, watchNeon -- (neon lights, below)
 
-	local isPartColor = Prop == "Color" and inst:IsA("BasePart")
-	local exempt = isPartColor and colorExempt(inst) or false
-
-	local h, run = guarded(inst, Prop, function()
-		if not exempt then
-			inst[Prop] = div(inst[Prop], divisor)
+-- the material or the head's mesh changed: neon / a textured head keep their colour, the rest is darkened
+local function recheck(part)
+	if stopped then return end
+	local recs = colorState[part]
+	local rec = recs and recs.Color
+	if rec then
+		local now = colorExempt(part)
+		if now ~= rec.exempt then
+			rec.exempt = now
+			if now then
+				if rec.last ~= nil and part.Color == rec.last then
+					rec.writing = true
+					pcall(function() part.Color = rec.orig end)
+					rec.writing = false
+				end
+				rec.last = nil
+			else
+				rec.orig = part.Color
+				pcall(writeDark, part, "Color", rec)
+			end
 		end
-	end)
+	end
+	if (Settings.NeonLight or 0) > 0 then
+		if part.Material == NEON then watchNeon(part) else refreshNeonLight(part) end
+	end
+end
+
+local function watchHeadMesh(head)
+	local function watchMesh(m)
+		if m:IsA("SpecialMesh") then
+			track(m:GetPropertyChangedSignal("TextureId"):Connect(function() recheck(head) end))
+			recheck(head)
+		end
+	end
+	for _, c in ipairs(head:GetChildren()) do watchMesh(c) end
+	track(head.ChildAdded:Connect(watchMesh))
+	track(head.ChildRemoved:Connect(function(c)
+		if c:IsA("SpecialMesh") then recheck(head) end
+	end))
+end
+
+local function SetProp(inst, prop)
+	local done = handledProp[inst]
+	if not done then
+		done = {}
+		handledProp[inst] = done
+	end
+	if done[prop] then return end
+	done[prop] = true
+
+	local cur = read(inst, prop)
+	if cur == nil then return end
+	local recs = colorState[inst]
+	if not recs then
+		recs = {}
+		colorState[inst] = recs
+	end
+	local isPartColor = prop == "Color" and inst:IsA("BasePart")
+	local exempt = isPartColor and colorExempt(inst) or false
+	local rec = recs[prop]
+	if rec and rec.last ~= nil and cur == rec.last then
+		-- still darkened by a run that was never stopped: kept as it is
+	else
+		local old = oldFlags and oldFlags[inst]
+		if old and old[prop] and not exempt then
+			rec = { orig = lighten(cur), last = cur } -- darkened by the previous version of this script
+		else
+			rec = { orig = cur, last = nil }
+		end
+		if old then old[prop] = nil end
+		recs[prop] = rec
+	end
+	rec.exempt = exempt
+	if rec.exempt then
+		if rec.last ~= nil then
+			rec.writing = true
+			pcall(function() inst[prop] = rec.orig end)
+			rec.writing = false
+			rec.last = nil
+		end
+	elseif rec.last == nil then
+		pcall(writeDark, inst, prop, rec)
+	end
 
 	if isPartColor then
-		local function recheck()
-			local now = colorExempt(inst)
-			if now ~= exempt then
-				exempt = now
-				h.silently(function()
-					if now then
-						inst.Color = clamp01(mul(inst.Color, divisor))
-					else
-						inst.Color = div(inst.Color, divisor)
-					end
+		-- one watcher for the colour and the material
+		track(inst.Changed:Connect(function(changed)
+			if changed == "Color" then
+				onColorChanged(inst, "Color")
+			elseif changed == "Material" then
+				recheck(inst)
+			end
+		end))
+		if inst.Name == "Head" then watchHeadMesh(inst) end
+	else
+		track(inst:GetPropertyChangedSignal(prop):Connect(function() onColorChanged(inst, prop) end))
+	end
+end
+
+local function restoreColors()
+	for inst, recs in pairs(colorState) do
+		for prop, rec in pairs(recs) do
+			if rec.last ~= nil then
+				pcall(function()
+					if inst[prop] == rec.last then inst[prop] = rec.orig end
 				end)
 			end
-			if (Settings.NeonLight or 0) > 0 then
-				if inst.Material == NEON then watchNeon(inst) else refreshNeonLight(inst) end
-			end
 		end
-		-- keep the colour right if the material or the head mesh/texture changes later
-		track(inst:GetPropertyChangedSignal("Material"):Connect(recheck))
-		if inst.Name == "Head" then
-			local function watchMesh(m)
-				if m:IsA("SpecialMesh") then
-					track(m:GetPropertyChangedSignal("TextureId"):Connect(recheck))
-					recheck()
-				end
-			end
-			for _, c in ipairs(inst:GetChildren()) do watchMesh(c) end
-			track(inst.ChildAdded:Connect(watchMesh))
-			track(inst.ChildRemoved:Connect(function(c)
-				if c:IsA("SpecialMesh") then recheck() end
-			end))
-		end
+		colorState[inst] = nil
 	end
+end
 
-	if not already then run() end
+----------------------------------------------------------------------------------------------------
+-- neon: emissive, so it keeps its colour, and gives off a light (not when worn/held by a character)
+----------------------------------------------------------------------------------------------------
+local MAX_NEON_LIGHTS = 60
+local neonLightCount = 0
+local neonWatched = setmetatable({}, { __mode = "k" })
+
+local function isWorn(part)
+	local p = part.Parent
+	while p and p ~= workspace do
+		if p:FindFirstChildOfClass("Humanoid") then return true end
+		p = p.Parent
+	end
+	return false
+end
+
+refreshNeonLight = function(part)
+	if stopped then return end
+	local light = part:FindFirstChild("LegacyNeonLight")
+	if part.Material == NEON and part.Transparency < 0.9 and not isWorn(part) and part:IsDescendantOf(workspace) then
+		if not light then
+			if neonLightCount >= MAX_NEON_LIGHTS then return end
+			neonLightCount += 1
+			light = own(Instance.new("PointLight"))
+			light.Name = "LegacyNeonLight"
+			light.Shadows = false
+			light.Brightness = Settings.NeonLight
+			light.Parent = part
+			light.Destroying:Connect(function() neonLightCount -= 1 end)
+		end
+		light.Color = part.Color
+		light.Range = math.clamp(math.max(part.Size.X, part.Size.Y, part.Size.Z) * 4, 8, 16)
+	elseif light then
+		light:Destroy()
+	end
+end
+
+watchNeon = function(part)
+	if neonWatched[part] then return end
+	neonWatched[part] = true
+	refreshNeonLight(part)
+	track(part.AncestryChanged:Connect(function() refreshNeonLight(part) end))
+	for _, prop in ipairs({ "Color", "Transparency", "Size" }) do
+		track(part:GetPropertyChangedSignal(prop):Connect(function() refreshNeonLight(part) end))
+	end
 end
 
 ----------------------------------------------------------------------------------------------------
 -- studs: only plain block parts outside characters (a Top-face texture gets stretched over a whole mesh,
 -- which showed up as skin-coloured patches on character limbs)
 ----------------------------------------------------------------------------------------------------
-local FACES = {"Back", "Bottom", "Front", "Left", "Right", "Top"}
+local FACES = { "Back", "Bottom", "Front", "Left", "Right", "Top" }
 
 local function studsAllowed(part)
 	if part:IsA("MeshPart") then return false end
@@ -286,16 +400,24 @@ local function studsAllowed(part)
 	return true
 end
 
+local function studTextures(part)
+	local list = {}
+	for _, t in ipairs(part:GetChildren()) do
+		if t:IsA("Texture") and ownedSet[t] then list[#list + 1] = t end
+	end
+	return list
+end
+
 local function addStuds(part)
 	if not Settings.LegacyStuds then return end
 	if not (part:IsA("Part") or part:IsA("WedgePart")) then return end
 	if not studsAllowed(part) then return end
-	local made = false
+	local madeAny = false
 	for _, face in ipairs(FACES) do
 		if part[face .. "Surface"] == Enum.SurfaceType.Studs then
 			local name = "LegacyStuds" .. face
 			if not part:FindFirstChild(name) then
-				local t = Instance.new("Texture")
+				local t = own(Instance.new("Texture"))
 				t.Name = name
 				t.Texture = "rbxassetid://13225057574"
 				t.StudsPerTileU = 2
@@ -304,23 +426,17 @@ local function addStuds(part)
 				t.Transparency = 0
 				t.Color3 = mul(part.Color, 2.5)
 				t.Parent = part
-				made = true
+				madeAny = true
 			end
 		end
 	end
-	if made then
+	if madeAny then
 		track(part:GetPropertyChangedSignal("Color"):Connect(function()
-			for _, t in ipairs(part:GetChildren()) do
-				if t:IsA("Texture") and t.Name:sub(1, 11) == "LegacyStuds" then
-					t.Color3 = mul(part.Color, 2.5)
-				end
-			end
+			for _, t in ipairs(studTextures(part)) do t.Color3 = mul(part.Color, 2.5) end
 		end))
 		track(part.ChildAdded:Connect(function(child)
 			if child:IsA("DataModelMesh") then
-				for _, t in ipairs(part:GetChildren()) do
-					if t:IsA("Texture") and t.Name:sub(1, 11) == "LegacyStuds" then t.Transparency = 1 end
-				end
+				for _, t in ipairs(studTextures(part)) do t.Transparency = 1 end
 			end
 		end))
 	end
@@ -331,28 +447,27 @@ end
 -- darken their colours the same way.
 ----------------------------------------------------------------------------------------------------
 local GUI_PROPS = {
-	{"GuiObject", {"BackgroundColor3", "BorderColor3"}},
-	{"TextLabel", {"TextColor3", "TextStrokeColor3"}},
-	{"TextButton", {"TextColor3", "TextStrokeColor3"}},
-	{"TextBox", {"TextColor3", "TextStrokeColor3"}},
-	{"ImageLabel", {"ImageColor3"}},
-	{"ImageButton", {"ImageColor3"}},
-	{"ScrollingFrame", {"ScrollBarImageColor3"}},
-	{"UIStroke", {"Color"}},
+	{ "GuiObject", { "BackgroundColor3", "BorderColor3" } },
+	{ "TextLabel", { "TextColor3", "TextStrokeColor3" } },
+	{ "TextButton", { "TextColor3", "TextStrokeColor3" } },
+	{ "TextBox", { "TextColor3", "TextStrokeColor3" } },
+	{ "ImageLabel", { "ImageColor3" } },
+	{ "ImageButton", { "ImageColor3" } },
+	{ "ScrollingFrame", { "ScrollBarImageColor3" } },
+	{ "UIStroke", { "Color" } },
 }
-local sgWatched = setmetatable({}, {__mode = "k"})
+local sgWatched = setmetatable({}, { __mode = "k" })
 
 local function lightSurfaceGui(v)
 	if v:IsA("SurfaceGui") then
 		if not sgWatched[v] then
 			sgWatched[v] = true
-			v.LightInfluence = 1
-			track(v:GetPropertyChangedSignal("LightInfluence"):Connect(function()
-				if v.LightInfluence ~= 1 then v.LightInfluence = 1 end
-			end))
+			hold(v, "LightInfluence", 1, true)
 		end
 		return
 	end
+	-- (the class first: looking up the ancestors of everything in the map was the slowest part of loading)
+	if not (v:IsA("GuiObject") or v:IsA("UIStroke")) then return end
 	if not v:FindFirstAncestorWhichIsA("SurfaceGui") then return end
 	for _, entry in ipairs(GUI_PROPS) do
 		if v:IsA(entry[1]) then
@@ -386,7 +501,7 @@ local function convertCharacterMesh(cm)
 		if not limb or not cm.Parent or stopped then return end
 		local sm = limb:FindFirstChild("LegacyCharacterMesh")
 		local fresh = sm == nil
-		if fresh then sm = Instance.new("SpecialMesh") end
+		if fresh then sm = made(Instance.new("SpecialMesh")) end
 		sm.Name = "LegacyCharacterMesh"
 		sm.MeshType = Enum.MeshType.FileMesh
 		sm.MeshId = "rbxassetid://" .. cm.MeshId
@@ -408,7 +523,7 @@ end
 -- redrawn part fully invisible later, the stand-in stays visible.
 ----------------------------------------------------------------------------------------------------
 local MESH_PROXY = "LegacyMeshProxy"
-local meshFix = setmetatable({}, {__mode = "k"})
+local meshFix = setmetatable({}, { __mode = "k" })
 local meshFixCount = 0
 
 local function meshScale(part)
@@ -439,7 +554,7 @@ local function fixTexturedMesh(part)
 	local scale = meshScale(part)
 	if not scale then return end
 
-	local proxy = Instance.new("Part")
+	local proxy = own(Instance.new("Part"))
 	proxy.Name = MESH_PROXY
 	proxy.Anchored = false
 	proxy.CanCollide = false
@@ -466,20 +581,23 @@ local function fixTexturedMesh(part)
 	weld.Part1 = proxy
 	weld.Parent = proxy
 
-	local rec = {proxy = proxy, transparency = part.Transparency}
+	local rec = { proxy = proxy, transparency = part.Transparency }
 	meshFix[part] = rec
 	meshFixCount += 1
 	proxy.Destroying:Connect(function() meshFixCount -= 1 end)
 	proxy.Parent = part -- the colour pass darkens the SpecialMesh's VertexColor when it appears
 
 	-- hide the original; if the game changes its transparency, pass that on to the stand-in
-	local _, hide = guarded(part, "Transparency", function()
-		if part.Transparency < 1 then
-			rec.transparency = part.Transparency
-			proxy.Transparency = rec.transparency
+	local function hide()
+		if stopped then return end
+		local t = part.Transparency
+		if t ~= 1 then
+			rec.transparency = t
+			proxy.Transparency = t
+			part.Transparency = 1
 		end
-		part.Transparency = 1
-	end)
+	end
+	track(part:GetPropertyChangedSignal("Transparency"):Connect(hide))
 	hide()
 
 	track(part:GetPropertyChangedSignal("Color"):Connect(function() proxy.Color = part.Color end))
@@ -503,7 +621,6 @@ local unionFixCount = 0
 -- mostly white washes out. This adds up how pale the map's floors are (each part's real colour, weighted by
 -- its footprint) so the sun can be turned down for pale maps once the first scan is done.
 local tallyWeight, tallyLum, tallyDone = 0, 0, false
-local setAutoSun -- set by setupLighting
 
 local function tallyBrightness(part)
 	if tallyDone or part.Transparency > 0.5 or colorExempt(part) then return end
@@ -511,18 +628,21 @@ local function tallyBrightness(part)
 	local size = part.Size
 	local weight = math.min(size.X * size.Z, 10000)
 	if weight < 4 then return end
-	local c = part.Color -- already darkened, so multiply back to the real colour
-	local lum = math.min((0.3 * c.R + 0.59 * c.G + 0.11 * c.B) * divisor, 1)
+	local recs = colorState[part]
+	local c = (recs and recs.Color and recs.Color.orig) or part.Color -- the game's own colour
+	local lum = math.min(0.3 * c.R + 0.59 * c.G + 0.11 * c.B, 1)
 	tallyWeight += weight
 	tallyLum += lum * weight
 end
 local cloudsOff, highlightsOff = 0, 0
 local pbrRemoved = {}
+local handled = setmetatable({}, { __mode = "k" }) -- everything handled in this run (once each)
 
 local function handle(v)
-	if v.Name:sub(1, 11) == "LegacyStuds" or v.Name == MESH_PROXY then return end
+	if handled[v] or ownedSet[v] then return end
+	handled[v] = true
 	if v:IsA("BasePart") then
-		if v:IsA("Terrain") then return end
+		if v:IsA("Terrain") or v.Name == MESH_PROXY then return end
 		SetProp(v, "Color")
 		if Settings.AutoBrightness then pcall(tallyBrightness, v) end
 		addStuds(v)
@@ -540,42 +660,67 @@ local function handle(v)
 				if not v.UsePartColor then
 					v.UsePartColor = true
 					unionFixCount += 1
+					onStop(function()
+						if v.UsePartColor then v.UsePartColor = false end
+					end)
 				end
 			end)
 		end
-	elseif v:IsA("SpecialMesh") then
+		return
+	end
+	local class = v.ClassName
+	if class == "SpecialMesh" then
 		SetProp(v, "VertexColor")
-	elseif v:IsA("Decal") then -- Texture is a Decal too
+	elseif class == "Decal" or class == "Texture" then
+		if string.sub(v.Name, 1, 11) == "LegacyStuds" then return end -- (left by an older run)
 		SetProp(v, "Color3")
-	elseif v:IsA("Shirt") or v:IsA("Pants") then
+	elseif class == "Shirt" or class == "Pants" then
 		SetProp(v, "Color3")
-	elseif v:IsA("SurfaceAppearance") then
+	elseif class == "SurfaceAppearance" then
 		if Settings.NoPBR then
 			local part = v.Parent
 			task.defer(function() -- not while Roblox is still adding it
 				if stopped or v.Parent ~= part then return end
-				pbrRemoved[#pbrRemoved + 1] = {v, part}
+				pbrRemoved[#pbrRemoved + 1] = { v, part }
 				v.Parent = nil
-				if part then pcall(handle, part) end -- its plain texture shows now, so it may need redrawing
+				-- its plain texture shows now, so it may need redrawing
+				if part and part:IsA("MeshPart") then pcall(fixTexturedMesh, part) end
 			end)
 		else
 			SetProp(v, "Color")
 		end
-	elseif v:IsA("Highlight") then
+	elseif class == "Highlight" then
 		if Settings.NoHighlights and hold(v, "Enabled", false, true) then highlightsOff += 1 end
-	elseif v:IsA("Clouds") then
+	elseif class == "Clouds" then
 		if Settings.NoClouds and hold(v, "Enabled", false, true) then cloudsOff += 1 end
-	elseif v:IsA("CharacterMesh") then
+	elseif class == "CharacterMesh" then
 		convertCharacterMesh(v)
+	elseif Settings.LitSurfaceGuis then
+		lightSurfaceGui(v)
 	end
-	if Settings.LitSurfaceGuis then lightSurfaceGui(v) end
 end
 
 ----------------------------------------------------------------------------------------------------
 -- lighting + post effects
 ----------------------------------------------------------------------------------------------------
+-- the game's lighting as it was, put back by stop() wherever this script's value is still there
+local SNAPSHOT_PROPS = {
+	"Brightness", "Ambient", "OutdoorAmbient", "ColorShift_Top", "ColorShift_Bottom", "GlobalShadows",
+	"GeographicLatitude", "FogEnd", "FogStart", "FogColor",
+}
+local snapshot = {}
+for _, prop in ipairs(SNAPSHOT_PROPS) do
+	snapshot[prop] = read(Lighting, prop)
+end
+
 local function setLighting(prop, value)
 	pcall(function() Lighting[prop] = value end)
+	local ours = read(Lighting, prop)
+	if ours ~= nil and snapshot[prop] ~= nil and prop ~= "Brightness" and prop ~= "Ambient" and prop ~= "OutdoorAmbient" then
+		onStop(function()
+			if read(Lighting, prop) == ours then Lighting[prop] = snapshot[prop] end
+		end)
+	end
 end
 
 -- LIGHTING MODE
@@ -588,9 +733,7 @@ local okEnum, StyleEnum = pcall(function() return Enum.LightingStyle end)
 if not okEnum then StyleEnum = nil end
 
 local function readLighting(prop)
-	local ok, v = pcall(function() return Lighting[prop] end)
-	if ok then return v end
-	return nil
+	return read(Lighting, prop)
 end
 
 -- returns true when the property ends up with that value
@@ -623,6 +766,13 @@ local function readTechnology()
 	return nil
 end
 
+local function writeTechnology(value)
+	pcall(function() Lighting.Technology = value end)
+	if readTechnology() ~= value and sethiddenproperty then
+		pcall(function() sethiddenproperty(Lighting, "Technology", value) end)
+	end
+end
+
 local function isFutureTechnology()
 	local ok, future = pcall(function() return Enum.Technology.Future end)
 	return ok and readTechnology() == future
@@ -634,12 +784,34 @@ local function forceVoxelTechnology()
 	local before = readTechnology()
 	if before == nil then return "could not be read" end
 	if before == voxel then return "already Voxel" end
-	pcall(function() Lighting.Technology = voxel end)
-	if readTechnology() ~= voxel and sethiddenproperty then
-		pcall(function() sethiddenproperty(Lighting, "Technology", voxel) end)
+	writeTechnology(voxel)
+	if readTechnology() == voxel then
+		onStop(function()
+			if readTechnology() == voxel then writeTechnology(before) end
+		end)
+		return "switched " .. tostring(before) .. " -> Voxel"
 	end
-	if readTechnology() == voxel then return "switched " .. tostring(before) .. " -> Voxel" end
 	return "is " .. tostring(before) .. " and the executor refused to change it"
+end
+
+-- THE BOOST: the sun (Brightness) and the shade light (Ambient, OutdoorAmbient) are made stronger to make up
+-- for the darkened colours. The game's own value is remembered and the boosted one written from it, so a
+-- game that sets its lighting again (a day/night cycle) gets boosted once, never on top of the last boost.
+-- It only comes up once the map has been darkened (see the end of this file).
+local boostActive = false
+local boostFactor = { Brightness = 1, Ambient = 1, OutdoorAmbient = 1 }
+local boostRec = {}
+local setAutoSun, startBoost, useBoost -- set by setupLighting
+
+local function applyBoost(prop)
+	local b = boostRec[prop]
+	if not b or stopped then return end
+	local f = boostActive and boostFactor[prop] or 1
+	local v = (prop == "Brightness") and b.orig * f or mul(b.orig, f)
+	b.writing = true
+	pcall(function() Lighting[prop] = v end)
+	b.writing = false
+	b.last = readLighting(prop)
 end
 
 local function setupLighting()
@@ -648,55 +820,69 @@ local function setupLighting()
 	setLighting("Ambient", flat)
 	setLighting("ColorShift_Top", Color3.new())
 	setLighting("ColorShift_Bottom", Color3.new())
-	hold(Lighting, "EnvironmentDiffuseScale", 0)  -- 2019+: kept at 0 even if the game writes it again
-	hold(Lighting, "EnvironmentSpecularScale", 0)
+	hold(Lighting, "EnvironmentDiffuseScale", 0, true)  -- 2019+: kept at 0 even if the game writes it again
+	hold(Lighting, "EnvironmentSpecularScale", 0, true)
 	setLighting("GlobalShadows", false)
 	setLighting("OutdoorAmbient", flat)
 	-- ClockTime is deliberately not touched: the game's own time of day (and its day/night cycle) stays in charge
 	setLighting("GeographicLatitude", 41.733)
-	hold(Lighting, "ExposureCompensation", 0)
+	hold(Lighting, "ExposureCompensation", 0, true)
 	setLighting("FogEnd", 100000)
 	setLighting("FogStart", 0)
 	setLighting("FogColor", Color3.fromRGB(192, 192, 192))
 
-	-- brighter light, darker colours
-	local intensity = Settings.LegacyIntensity
-	local sunBoost = intensity * (Settings.SunBoost or 2.1)
-	local ambientBoost = intensity * (Settings.AmbientBoost or 1.2)
-	local hSun, runBrightness = guarded(Lighting, "Brightness", function()
-		Lighting.Brightness = Lighting.Brightness * sunBoost
-	end)
-	runBrightness()
-	local hAmbient = {}
-	for _, prop in ipairs({"Ambient", "OutdoorAmbient"}) do
-		local h, runAmbient = guarded(Lighting, prop, function()
-			Lighting[prop] = mul(Lighting[prop], ambientBoost)
-		end)
-		hAmbient[prop] = h
-		runAmbient()
-	end
-
-	-- swap to other boost values after the first ones were applied. The sun actually used is the chosen
-	-- boost times the AutoBrightness factor, but never weaker than LegacyIntensity itself.
-	local baseSun, baseAmbient, autoFactor = sunBoost, ambientBoost, 1
-	local function refreshBoost()
-		local newSun = math.max(baseSun * autoFactor, math.min(baseSun, intensity))
-		local newAmbient = baseAmbient
-		local ks, ka = newSun / sunBoost, newAmbient / ambientBoost
-		sunBoost, ambientBoost = newSun, newAmbient
-		hSun.silently(function() Lighting.Brightness = Lighting.Brightness * ks end)
-		for prop, h in pairs(hAmbient) do
-			h.silently(function() Lighting[prop] = mul(Lighting[prop], ka) end)
+	-- the boost (written from the values above, or from what the game writes later)
+	for prop in pairs(boostFactor) do
+		local now = readLighting(prop)
+		if now ~= nil then
+			local b = { orig = now, last = now, gameWrote = false }
+			boostRec[prop] = b
+			track(Lighting:GetPropertyChangedSignal(prop):Connect(function()
+				if stopped or b.writing then return end
+				local cur = readLighting(prop)
+				if cur == nil or cur == b.last then return end -- our own write coming back
+				b.orig = cur
+				b.gameWrote = true
+				applyBoost(prop)
+			end))
+			onStop(function()
+				if readLighting(prop) == b.last then
+					local back = b.gameWrote and b.orig or snapshot[prop]
+					if back ~= nil then Lighting[prop] = back end
+				end
+			end)
 		end
 	end
-	local function useBoost(newSun, newAmbient)
+
+	local intensity = Settings.LegacyIntensity
+	local baseSun = intensity * (Settings.SunBoost or 2.1)
+	local baseAmbient = intensity * (Settings.AmbientBoost or 1.2)
+	local autoFactor = 1
+	-- the sun actually used is the chosen boost times the AutoBrightness factor, but never weaker than
+	-- LegacyIntensity itself
+	local function refreshBoost()
+		local sun = math.max(baseSun * autoFactor, math.min(baseSun, intensity))
+		boostFactor.Brightness = sun
+		boostFactor.Ambient = baseAmbient
+		boostFactor.OutdoorAmbient = baseAmbient
+		if boostActive then
+			for prop in pairs(boostRec) do applyBoost(prop) end
+		end
+		return sun / intensity -- the SunBoost value in use
+	end
+	refreshBoost()
+	useBoost = function(newSun, newAmbient)
 		baseSun, baseAmbient = newSun, newAmbient
 		refreshBoost()
 	end
 	setAutoSun = function(factor)
 		autoFactor = factor
-		refreshBoost()
-		return sunBoost / intensity -- the SunBoost value now in use
+		return refreshBoost()
+	end
+	startBoost = function()
+		if boostActive or stopped then return end
+		boostActive = true
+		for prop in pairs(boostRec) do applyBoost(prop) end
 	end
 
 	-- lighting mode (see LIGHTING MODE above). On the side, because it has to wait a few frames.
@@ -708,6 +894,8 @@ local function setupLighting()
 
 		local accepted = false
 		if Settings.SoftLighting and StyleEnum then
+			local styleBefore = readLighting("LightingStyle")
+			local qualityBefore = readLighting("PrioritizeLightingQuality")
 			writeLighting("LightingStyle", StyleEnum.Soft)
 			-- A game can READ Soft / off and still RENDER Future: Jailbreak does, its old Technology setting stays in
 			-- charge until one of the new properties really changes. Writing the value a property already has changes
@@ -717,7 +905,7 @@ local function setupLighting()
 			local quality = writeLighting("PrioritizeLightingQuality", false)
 			if stopped then return end
 			accepted = flipped and quality
-			for _, prop in ipairs({"LightingStyle", "PrioritizeLightingQuality"}) do
+			for _, prop in ipairs({ "LightingStyle", "PrioritizeLightingQuality" }) do
 				track(Lighting:GetPropertyChangedSignal(prop):Connect(function() -- the game switched it back
 					if not stopped and isWashedMode() then
 						writeLighting("LightingStyle", StyleEnum.Soft)
@@ -725,6 +913,14 @@ local function setupLighting()
 					end
 				end))
 			end
+			onStop(function()
+				if styleBefore ~= nil and readLighting("LightingStyle") == StyleEnum.Soft then
+					writeLighting("LightingStyle", styleBefore)
+				end
+				if qualityBefore ~= nil and readLighting("PrioritizeLightingQuality") == false then
+					writeLighting("PrioritizeLightingQuality", qualityBefore)
+				end
+			end)
 			report[#report + 1] = "soft lighting " .. (accepted and "applied" or "refused by the executor")
 		end
 
@@ -736,18 +932,26 @@ local function setupLighting()
 	end)
 end
 
+local strippedOnce = setmetatable({}, { __mode = "k" })
+
 local function stripEffect(e)
 	if ownedSet[e] then return end
 	pcall(function()
 		if e:IsA("PostEffect") then -- bloom, sunrays, depth of field, blur, colour correction/grading
-			e.Enabled = false
 			if e:IsA("BloomEffect") or e:IsA("SunRaysEffect") or e:IsA("DepthOfFieldEffect") then
-				hold(e, "Enabled", false) -- stays off even if the game switches it back on
+				hold(e, "Enabled", false, true) -- stays off even if the game switches it back on
+			elseif not strippedOnce[e] and e.Enabled then
+				-- switched off once (the game may use it for a moment, e.g. a red flash when hurt)
+				strippedOnce[e] = true
+				e.Enabled = false
+				onStop(function()
+					if not e.Enabled then e.Enabled = true end
+				end)
 			end
 		elseif e:IsA("Atmosphere") then -- 2020: haze and sun glare. Kept at zero even if the game tweens it
-			hold(e, "Density", 0)
-			hold(e, "Haze", 0)
-			hold(e, "Glare", 0)
+			hold(e, "Density", 0, true)
+			hold(e, "Haze", 0, true)
+			hold(e, "Glare", 0, true)
 		end
 	end)
 end
@@ -791,7 +995,7 @@ end
 -- brightness boost (pale ground, glowing grass, white sand). Terrain has one colour per material; divide
 -- those the same way. The grass blades use the Grass material colour, so they follow.
 -- There is no change event for these colours, so they are checked every 2 seconds: if the game set a new
--- colour (or Roblox reset them), the new colour is darkened again.
+-- colour (or Roblox reset them), the new colour is darkened again. Stopping puts the game's colours back.
 ----------------------------------------------------------------------------------------------------
 local function sameColor(a, b)
 	return math.abs(a.R - b.R) < 0.012 and math.abs(a.G - b.G) < 0.012 and math.abs(a.B - b.B) < 0.012
@@ -802,12 +1006,15 @@ local function startTerrain()
 	local terrain = workspace:FindFirstChildOfClass("Terrain")
 	if not terrain then return end
 
-	-- remembers the colours this script wrote, across runs, so running it again never darkens terrain twice
-	local state = genv.__LegacyLightingTerrain
+	-- material name -> { orig = the game's colour, last = ours }, kept in getgenv like the colours above
+	local state = genv.__LegacyLightingTerrainColors
 	if type(state) ~= "table" or state.terrain ~= terrain then
-		state = {terrain = terrain, set = {}}
-		genv.__LegacyLightingTerrain = state
+		state = { terrain = terrain, mats = {} }
+		genv.__LegacyLightingTerrainColors = state
 	end
+	-- what the previous version of this script darkened (it never put terrain back)
+	local old = genv.__LegacyLightingTerrain
+	if type(old) ~= "table" or old.terrain ~= terrain or type(old.set) ~= "table" then old = nil end
 
 	local materials = {}
 	for _, m in ipairs(Enum.Material:GetEnumItems()) do
@@ -820,11 +1027,20 @@ local function startTerrain()
 		local changed = 0
 		for _, m in ipairs(materials) do
 			local cur = terrain:GetMaterialColor(m)
-			local ours = state.set[m.Name]
-			if not (ours and sameColor(cur, ours)) then
-				pcall(function() terrain:SetMaterialColor(m, div(cur, divisor)) end)
-				state.set[m.Name] = terrain:GetMaterialColor(m)
-				changed += 1
+			local rec = state.mats[m.Name]
+			if not (rec and rec.last == cur) then
+				local prev = old and old.set[m.Name]
+				if not rec and prev and sameColor(cur, prev) then
+					state.mats[m.Name] = { orig = lighten(cur), last = cur }
+					old.set[m.Name] = nil
+				else
+					rec = rec or {}
+					rec.orig = cur
+					pcall(function() terrain:SetMaterialColor(m, darken(cur)) end)
+					rec.last = terrain:GetMaterialColor(m)
+					state.mats[m.Name] = rec
+					changed += 1
+				end
 			end
 		end
 		return changed
@@ -837,6 +1053,15 @@ local function startTerrain()
 			task.wait(2)
 			if stopped then break end
 			pcall(apply)
+		end
+	end)
+	onStop(function()
+		for name, rec in pairs(state.mats) do
+			pcall(function()
+				local m = Enum.Material[name]
+				if terrain:GetMaterialColor(m) == rec.last then terrain:SetMaterialColor(m, rec.orig) end
+			end)
+			state.mats[name] = nil
 		end
 	end)
 end
@@ -865,10 +1090,10 @@ local function switchHidden(inst, prop, value, label)
 	end
 	if readHidden(inst, prop) == value then
 		extraNotes[#extraNotes + 1] = label
-		restores[#restores + 1] = function()
+		onStop(function()
 			pcall(function() inst[prop] = not value end)
 			if readHidden(inst, prop) == value and sethiddenproperty then sethiddenproperty(inst, prop, not value) end
-		end
+		end)
 	else
 		extraNotes[#extraNotes + 1] = label .. " REFUSED by the executor"
 	end
@@ -891,7 +1116,7 @@ local function startLegacyExtras()
 					if name ~= "" then
 						ms:SetBaseMaterialOverride(m, "")
 						cleared += 1
-						restores[#restores + 1] = function() ms:SetBaseMaterialOverride(m, name) end
+						onStop(function() ms:SetBaseMaterialOverride(m, name) end)
 					end
 				end)
 			end
@@ -904,24 +1129,18 @@ end
 -- start
 ----------------------------------------------------------------------------------------------------
 local function stop()
+	if stopped then return end
 	stopped = true
 	for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
-	for _, h in ipairs(holders) do
-		if h.conn then pcall(function() h.conn:Disconnect() end) end
-	end
-	for _, i in ipairs(created) do pcall(function() i:Destroy() end) end
-	for _, fn in ipairs(restores) do pcall(fn) end -- clouds, highlights, grass blades ... back to how the game had them
+	restoreColors()
+	for i = #restores, 1, -1 do pcall(restores[i]) end -- lighting, effects, terrain, unions, signs, extras
 	for _, r in ipairs(pbrRemoved) do pcall(function() r[1].Parent = r[2] end) end
 	for part, rec in pairs(meshFix) do -- show the original meshes again
 		pcall(function() part.Transparency = rec.transparency end)
-		pcall(function() rec.proxy:Destroy() end)
 	end
-	for _, d in ipairs(workspace:GetDescendants()) do
-		if d.Name == "LegacyNeonLight" or d.Name == MESH_PROXY or d.Name:sub(1, 11) == "LegacyStuds" then
-			pcall(function() d:Destroy() end)
-		end
-	end
+	for _, i in ipairs(created) do pcall(function() i:Destroy() end) end
 	if genv.LegacyLightingStop == stop then genv.LegacyLightingStop = nil end
+	print("[LegacyLighting] stopped: the game's lighting, effects and colours are back")
 end
 genv.LegacyLightingStop = stop
 
@@ -931,23 +1150,58 @@ startTerrain()
 pcall(startLegacyExtras)
 
 track(workspace.DescendantAdded:Connect(function(v) pcall(handle, v) end))
-task.spawn(function() -- big maps: work through the existing parts in chunks so the game does not freeze
-	local n = 0
-	for _, v in ipairs(workspace:GetDescendants()) do
-		if stopped then return end
-		pcall(handle, v)
-		n += 1
-		if n % 300 == 0 then task.wait() end
-	end
-	print("[LegacyLighting] textured meshes redrawn so they darken too: " .. meshFixCount .. " | unions switched to their darkened colour: " .. unionFixCount)
-	if Settings.AutoBrightness and tallyWeight > 0 and setAutoSun and not stopped then
+
+local function lightUp()
+	if stopped or not startBoost then return end
+	if Settings.AutoBrightness and not tallyDone and tallyWeight > 0 and setAutoSun then
 		tallyDone = true
 		local mean = tallyLum / tallyWeight -- 0 = black map, 1 = white map
 		local factor = 1 - math.clamp((mean - 0.45) / 0.35, 0, 1) * 0.45
 		local okAuto, used = pcall(setAutoSun, factor)
 		print(string.format("[LegacyLighting] auto brightness: map paleness %.2f -> SunBoost in use %s", mean, okAuto and string.format("%.2f", used) or "unchanged (failed)"))
 	end
-	local extras = {"clouds hidden: " .. cloudsOff, "highlights hidden: " .. highlightsOff, "PBR textures removed: " .. #pbrRemoved}
+	startBoost()
+end
+task.delay(Settings.LightUpAfter or 6, lightUp) -- (a huge map: the light comes up anyway)
+
+task.spawn(function()
+	-- The first pass, in slices of a few milliseconds a frame so the game keeps running: the characters
+	-- first (you see yourself right away), then the rest of the map one top-level object at a time.
+	local slice = Settings.SliceTime or 0.008
+	local deadline = os.clock() + slice
+	local count = 0
+	local function visit(v)
+		pcall(handle, v)
+		count += 1
+		if os.clock() > deadline then
+			task.wait()
+			deadline = os.clock() + slice
+		end
+	end
+	local function visitTree(root)
+		visit(root)
+		for _, v in ipairs(root:GetDescendants()) do
+			if stopped then return end
+			visit(v)
+		end
+	end
+	local first = {}
+	for _, p in ipairs(Players:GetPlayers()) do
+		local character = p.Character
+		if character and character:IsDescendantOf(workspace) then
+			first[character] = true
+			visitTree(character)
+		end
+	end
+	for _, child in ipairs(workspace:GetChildren()) do
+		if stopped then return end
+		if not first[child] then visitTree(child) end
+	end
+	if stopped then return end
+	print(string.format("[LegacyLighting] map done in %.1f s (%d objects) | textured meshes redrawn so they darken too: %d | unions switched to their darkened colour: %d",
+		os.clock() - startedAt, count, meshFixCount, unionFixCount))
+	lightUp()
+	local extras = { "clouds hidden: " .. cloudsOff, "highlights hidden: " .. highlightsOff, "PBR textures removed: " .. #pbrRemoved }
 	for _, note in ipairs(extraNotes) do extras[#extras + 1] = note end
 	print("[LegacyLighting] 2019+ extras: " .. table.concat(extras, " | "))
 end)
@@ -957,12 +1211,15 @@ if Settings.LitSurfaceGuis then
 		local pg = player:WaitForChild("PlayerGui", 10)
 		if not pg or stopped then return end
 		track(pg.DescendantAdded:Connect(function(v) pcall(lightSurfaceGui, v) end))
-		local n = 0
+		local slice = Settings.SliceTime or 0.008
+		local deadline = os.clock() + slice
 		for _, v in ipairs(pg:GetDescendants()) do
 			if stopped then return end
 			pcall(lightSurfaceGui, v)
-			n += 1
-			if n % 300 == 0 then task.wait() end
+			if os.clock() > deadline then
+				task.wait()
+				deadline = os.clock() + slice
+			end
 		end
 	end)
 end
