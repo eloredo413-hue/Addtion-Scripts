@@ -1,5 +1,6 @@
 -- [[ PHYSICS + CAMERA WIZARD STEP — with None option ]]
--- (Addtion-Scripts copy: the "Old" physics climbs like the 2006 physics: walk into a small part and the
+-- (Addtion-Scripts copy: the "Old" physics does not sink the player into the ground on landing (it copies
+--  2010-2013, which had none; the 2006 physics does it). It climbs like the 2006 physics: walk into a small part and the
 --  character climbs it in the real Climbing state, and lets go when you stop moving or jump.
 --  R15 avatars work too: the hip height moves around the avatar's own (an R15 body stands on it; R6 legs
 --  hold an R6 body up at 0, which sank an R15 one into the floor), and the climbing check is measured
@@ -241,65 +242,21 @@ local function setupCharacter(char)
 		end
 	end))
 
-	local rayDown = Vector3.new(0, -5000, 0)
-	local stepRate = 20 / 3
-	local decayRate = 0.925
-
-	local function moveTowards(value, goal, rate)
-		if value < goal then return math.min(goal, value + rate)
-		elseif value > goal then return math.max(goal, value - rate)
-		else return goal end
-	end
-
-	local function getFloorLevel()
-		local origin = rootPart.Position
-		local ray = Ray.new(origin, rayDown)
-		local _, position = Workspace:FindPartOnRay(ray, char)
-		if not position then return origin.Y, 0 end
-		return position.Y, math.clamp(math.abs(position.Y - origin.Y), -1, 1)
-	end
-
-	-- true while the 2006 climbing below is at work (set there, read here a frame later)
+	-- true while the 2006 climbing below is at work (set there)
 	local climbActive = false
 
-	local lastLevel = getFloorLevel()
+	-- No sinking into the ground on landing any more: the Old physics copies 2010-2013, which had none (the 2006
+	-- physics has it). The hip height is only kept at the body's own (R6: 0; R15: its own, followed if Roblox
+	-- changes it), as before.
 	local hipRenderName = "RetroHipHeight_" .. tostring(math.random(10000, 99999))
 	table.insert(RenderNames, hipRenderName)
 
-	RunService:BindToRenderStep(hipRenderName, 390, function(dt)
+	RunService:BindToRenderStep(hipRenderName, 390, function()
 		if destroyed or not char.Parent or humanoid.Health <= 0 then
 			pcall(function() RunService:UnbindFromRenderStep(hipRenderName) end)
 			return
 		end
-		dt = math.min(0.1, dt)
-		if humanoid.SeatPart then
-			hipOffset = 0
-			applyHip()
-			lastLevel = getFloorLevel()
-			return
-		end
-		-- The 2006 physics keeps the hip height at 0 (R15: its own) while climbing; floating up with the
-		-- climb kick would lift the feet-level search above the part being climbed.
-		if climbActive then
-			hipOffset = 0
-			applyHip()
-			lastLevel = getFloorLevel()
-			return
-		end
-		local level, dist = getFloorLevel()
-		local yVelocity = rootPart.AssemblyLinearVelocity.Y
-		if math.abs(yVelocity) > 8 then
-			hipOffset = moveTowards(hipOffset, math.sign(yVelocity), stepRate * dt)
-		elseif lastLevel ~= level then
-			hipOffset = math.sign(lastLevel - level) * math.clamp(dist - 3, 0, 1)
-			lastLevel = level
-		else
-			hipOffset = hipOffset * (decayRate ^ (dt * 60))
-		end
-		-- R15: the hip height stays the avatar's own. Roblox's R15 Animate plays the animations faster the
-		-- lower the hip height is (it takes it for a smaller body), so lowering it in the air made the
-		-- animations run twice as fast after a jump.
-		if isR15 then hipOffset = 0 end
+		hipOffset = 0
 		applyHip()
 	end)
 
