@@ -1367,7 +1367,7 @@ RightPadding.Parent = RightButtonContainer
 local CameraControls = Instance.new("Frame")
 CameraControls.Name = "CameraControls"
 CameraControls.AnchorPoint = Vector2.new(1, 0)
-CameraControls.Position = UDim2.new(1, -110, 0, 0)
+CameraControls.Position = UDim2.new(1, -106, 0, 0)
 CameraControls.Size = UDim2.new(0, 150, 1, 0)
 CameraControls.BackgroundTransparency = 1
 CameraControls.ZIndex = 6
@@ -1376,10 +1376,16 @@ do
 	local layout = Instance.new("UIListLayout")
 	layout.FillDirection = Enum.FillDirection.Horizontal
 	layout.HorizontalAlignment = Enum.HorizontalAlignment.Right
-	layout.VerticalAlignment = Enum.VerticalAlignment.Center
+	-- (Addtion-Scripts) as in the 2011 client: close together, "Record" and the screenshot circle in the
+	-- middle of the bar like REPORT, and the camera circles' bottom row beside them (their top row above the
+	-- bar)
+	layout.VerticalAlignment = Enum.VerticalAlignment.Bottom
 	layout.SortOrder = Enum.SortOrder.LayoutOrder
-	layout.Padding = UDim.new(0, 5)
+	layout.Padding = UDim.new(0, 2)
 	layout.Parent = CameraControls
+	local padding = Instance.new("UIPadding")
+	padding.PaddingBottom = UDim.new(0, 9) -- ((42 - 24) / 2: "Record" in the middle of the 42 high bar)
+	padding.Parent = CameraControls
 end
 
 -- "Record": its own two pictures only ("Record", and "Stop" while recording), no others swapped in
@@ -1420,8 +1426,9 @@ ScreenshotBtn.ScaleType = Enum.ScaleType.Fit
 local CameraPanel = Instance.new("Frame")
 CameraPanel.Name = "CameraPanel"
 CameraPanel.LayoutOrder = 3
-local CAMERA_BUTTON = 19
-CameraPanel.Size = UDim2.new(0, CAMERA_BUTTON * 2 + 2, 0, CAMERA_BUTTON * 2 + 2)
+local CAMERA_BUTTON = 21
+local CAMERA_GAP = 1 -- (the circles all but touch, as in the 2011 client)
+CameraPanel.Size = UDim2.new(0, CAMERA_BUTTON * 2 + CAMERA_GAP, 0, CAMERA_BUTTON * 2 + CAMERA_GAP)
 CameraPanel.BackgroundTransparency = 1
 CameraPanel.ZIndex = 7
 CameraPanel.Parent = CameraControls
@@ -1429,7 +1436,7 @@ CameraPanel.Parent = CameraControls
 local function cameraButton(name, x, y, normal, ovr, dn, fallback, rotation)
 	local btn = Instance.new("ImageButton")
 	btn.Name = name
-	btn.Position = UDim2.new(0, x * (CAMERA_BUTTON + 2), 0, y * (CAMERA_BUTTON + 2))
+	btn.Position = UDim2.new(0, x * (CAMERA_BUTTON + CAMERA_GAP), 0, y * (CAMERA_BUTTON + CAMERA_GAP))
 	btn.Size = UDim2.new(0, CAMERA_BUTTON, 0, CAMERA_BUTTON)
 	btn.BackgroundTransparency = 1
 	btn.ScaleType = Enum.ScaleType.Fit
@@ -1889,7 +1896,7 @@ BackpackLayout.FillDirection = Enum.FillDirection.Horizontal
 BackpackLayout.SortOrder = Enum.SortOrder.LayoutOrder
 BackpackLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 BackpackLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-BackpackLayout.Padding = UDim.new(0, 2)
+BackpackLayout.Padding = UDim.new(0, 4)
 BackpackLayout.Parent = BackpackGui
 
 local itemSlots = {}
@@ -1931,10 +1938,21 @@ for i = 1, 10 do
 	slot.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 	slot.BackgroundTransparency = 0.25
 	slot.BorderColor3 = Color3.fromRGB(95, 95, 95)
-	slot.BorderSizePixel = 1
+	-- (Addtion-Scripts) each slot its own box with slightly rounded corners: the border is a UIStroke (a
+	-- frame's own border doesn't follow a UICorner)
+	slot.BorderSizePixel = 0
 	slot.LayoutOrder = i
 	slot.ZIndex = 8
 	slot.Visible = false
+	local slotCorner = Instance.new("UICorner")
+	slotCorner.CornerRadius = UDim.new(0, 6)
+	slotCorner.Parent = slot
+	local slotBorder = Instance.new("UIStroke")
+	slotBorder.Name = "SlotBorder"
+	slotBorder.Color = Color3.fromRGB(95, 95, 95)
+	slotBorder.Thickness = 1
+	slotBorder.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	slotBorder.Parent = slot
 
 	local selectionFrame = Instance.new("Frame")
 	selectionFrame.Name = "SelectionFrame"
@@ -1942,6 +1960,9 @@ for i = 1, 10 do
 	selectionFrame.BackgroundTransparency = 1
 	selectionFrame.ZIndex = 12
 	selectionFrame.Parent = slot
+	local selectionCorner = Instance.new("UICorner")
+	selectionCorner.CornerRadius = UDim.new(0, 6)
+	selectionCorner.Parent = selectionFrame
 
 	local stroke = Instance.new("UIStroke")
 	stroke.Name = "SelectionStroke"

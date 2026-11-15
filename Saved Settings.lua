@@ -130,6 +130,7 @@ local HAMMER_BOXES = {
 	OldHealthBarCheckbox = "isOldHealthBarEnabled",
 	NightSky2008Checkbox = "is2008NightSkyEnabled",
 	AllPlayersCheckbox = "isAllPlayersEnabled",
+	Screen43Checkbox = "isScreen43Enabled",
 }
 local OLD_DECAL_BUTTON, OLD_DECAL_KEY = "BPOldDecalButton", "isOldDecalEnabled"
 
@@ -919,7 +920,12 @@ local function loadSettings(name)
 		end
 		local decal = findIn(hammerPanel, OLD_DECAL_BUTTON)
 		if decal and oldDecalIsOn(decal) ~= wanted(OLD_DECAL_KEY) then pressBox(decal, "OldDecalRendering") end
-		-- 4. the files once more, exactly as loaded (the presses wrote their own copies on the way)
+		-- 4. Hammer stuff 2's FPS cap (a number box, not a tick box)
+		local genv = (getgenv and getgenv()) or _G
+		if type(genv.BPHammer2SetFpsCap) == "function" then
+			pcall(genv.BPHammer2SetFpsCap, tonumber(config.fpsCap) or 0)
+		end
+		-- 5. the files once more, exactly as loaded (the presses wrote their own copies on the way)
 		task.wait(0.3)
 		putFilesBack(files)
 	end)
