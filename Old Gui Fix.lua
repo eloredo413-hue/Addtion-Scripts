@@ -12,6 +12,12 @@
 -- The menu's windows are made inside the GUI's "ControlFrame" (the menu's own code puts them there), so
 -- they are looked for there. The GUI is told by what is in it (the old menu), not only by the topbar
 -- picked: the topbar's name isn't always there to read.
+-- The menu's dark shade covers the whole screen (it stopped at the phone's safe area: a strip at the bottom
+-- and the sides was left bright).
+-- 2012's zoom and tilt buttons (bottom right) work: nothing connected them. Pressed, they show the
+-- November 2012 client's pictures.
+-- 2012's health bar (Bloxy's) sits next to the Backpack button, on its row, as in the 2012 client (on a phone
+-- the GUI is inside the safe area and the health bar isn't, so it was lower and apart from it).
 -- On a phone it also tells the safe chat to show at the same size for the GUIs before 2014 and 2013 mobile
 -- (getgenv().BPSafeChatScale, read by Better SafeChat.lua).
 -- 2013 mobile keeps its menu's size. 2014 (which has the same menu) is left to its own fixes.
@@ -22,6 +28,8 @@ Env.BPOldGuiFixLoaded = true
 
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 local PC_SCALE = 0.7  -- the menu's size on a phone (the same as the safe chat's)
 local MENU_HEIGHT = 430 -- the 2012 / 2013 settings window's height (it should fit on the screen)
@@ -343,6 +351,236 @@ local function fitBackpack(gui)
 end
 
 --========================================================
+-- THE MENU'S SHADE OVER THE WHOLE SCREEN
+--========================================================
+-- The GUI is laid out inside the phone's safe area, and the menu's dark shield (a full-size window) with it:
+-- a strip at the bottom and the sides stayed bright. The shade is drawn by a frame far bigger than the screen
+-- just under the window (the window itself still takes the taps), and the GUI may draw outside the safe area.
+local shades = setmetatable({}, { __mode = "k" })
+local function shadeWholeScreen(window, gui)
+	if shades[window] then return end
+	local shade = Instance.new("Frame")
+	shade.Name = window.Name .. "BPShade"
+	shade.BorderSizePixel = 0
+	shade.Active = false
+	shade.Position = UDim2.new(0, -2000, 0, -2000)
+	shade.Size = UDim2.new(1, 4000, 1, 4000)
+	shade.BackgroundColor3 = window.BackgroundColor3
+	shade.BackgroundTransparency = 1
+	shade.Visible = false
+	shades[window] = shade -- (before it goes in: going in tells this script again that the GUI changed)
+	shade.Parent = gui
+	pcall(function() gui.ClipToDeviceSafeArea = false end)
+
+	local function look()
+		if window.BackgroundTransparency < 1 then
+			shade.BackgroundColor3 = window.BackgroundColor3
+			shade.BackgroundTransparency = window.BackgroundTransparency
+			window.BackgroundTransparency = 1
+		end
+	end
+	local function update()
+		shade.ZIndex = math.max(1, window.ZIndex - 1)
+		shade.Visible = window.Visible and window:IsDescendantOf(gui)
+	end
+	look()
+	update()
+	window:GetPropertyChangedSignal("BackgroundTransparency"):Connect(look)
+	window:GetPropertyChangedSignal("Visible"):Connect(update)
+	window:GetPropertyChangedSignal("ZIndex"):Connect(update)
+	window.AncestryChanged:Connect(function()
+		if window:IsDescendantOf(game) then update() else shade:Destroy() end
+	end)
+end
+
+--========================================================
+-- 2012'S ZOOM AND TILT BUTTONS
+--========================================================
+-- ControlFrame.ZoomControls: ScrollUp / ScrollDown (tilt the camera up / down) and ZoomIn / ZoomOut. Pressed
+-- (and under the mouse on a PC) they show the November 14, 2012 client's pictures.
+local TEXTURES_2012 = "https://archive.roblonium.com/Client/Windows/RobloxApp/2012/11.2012/"
+	.. "November%2014%20%280.79.0.712%29/version-dae27a273ec947e2/content/textures/"
+local ZOOM_BUTTONS = {
+	ScrollUp = "CameraTiltUp_ovr.png", ScrollDown = "CameraTiltDown_ovr.png",
+	ZoomIn = "CameraZoomIn_ovr.png", ZoomOut = "CameraZoomOut_ovr.png",
+}
+local ZOOM_STEP = 0.75        -- each zoom press: 3/4 of the distance (or 4/3)
+local TILT_STEP = math.rad(10) -- each tilt press
+local TILT_LIMIT = math.rad(80)
+
+local texture2012Cache = {}
+local function texture2012(file)
+	if texture2012Cache[file] ~= nil then return texture2012Cache[file] or nil end
+	local result = false
+	pcall(function()
+		local asset = getcustomasset or getsynasset
+		if type(asset) ~= "function" or type(writefile) ~= "function" or type(isfile) ~= "function" then return end
+		local path = "BPOld2012_" .. file
+		if not isfile(path) then
+			local bytes = game:HttpGet(TEXTURES_2012 .. file)
+			-- (a PNG: the archive's "not found" page is HTML)
+			if type(bytes) ~= "string" or #bytes < 64 or bytes:sub(2, 4) ~= "PNG" then return end
+			writefile(path, bytes)
+		end
+		local id = asset(path)
+		if type(id) == "string" and id ~= "" then result = id end
+	end)
+	texture2012Cache[file] = result
+	return result or nil
+end
+
+local function zoomCamera(factor)
+	local camera = workspace.CurrentCamera
+	local player = Players.LocalPlayer
+	if not (camera and player) then return end
+	local minZoom, maxZoom = player.CameraMinZoomDistance, player.CameraMaxZoomDistance
+	local distance = (camera.CFrame.Position - camera.Focus.Position).Magnitude
+	local want = math.clamp(distance * factor, minZoom, maxZoom)
+	if math.abs(want - distance) < 0.05 then return end
+	-- the camera goes to that distance (held there a moment), then the game's own limits come back
+	player.CameraMinZoomDistance = want
+	player.CameraMaxZoomDistance = want
+	task.spawn(function()
+		RunService.RenderStepped:Wait()
+		RunService.RenderStepped:Wait()
+		player.CameraMaxZoomDistance = maxZoom
+		player.CameraMinZoomDistance = minZoom
+	end)
+end
+
+local function tiltCamera(angle)
+	local camera = workspace.CurrentCamera
+	if not camera then return end
+	local focus = camera.Focus.Position
+	local cframe = camera.CFrame
+	local distance = (cframe.Position - focus).Magnitude
+	local look = cframe.LookVector
+	local flat = Vector3.new(look.X, 0, look.Z)
+	if flat.Magnitude < 1e-3 or distance < 1e-3 then return end
+	flat = flat.Unit
+	local pitch = math.asin(math.clamp(look.Y, -1, 1))
+	local newPitch = math.clamp(pitch + angle, -TILT_LIMIT, TILT_LIMIT)
+	local newLook = flat * math.cos(newPitch) + Vector3.new(0, math.sin(newPitch), 0)
+	camera.CFrame = CFrame.lookAt(focus - newLook * distance, focus)
+end
+
+local ZOOM_ACTIONS = {
+	ZoomIn = function() zoomCamera(ZOOM_STEP) end,
+	ZoomOut = function() zoomCamera(1 / ZOOM_STEP) end,
+	ScrollUp = function() tiltCamera(TILT_STEP) end,    -- look up
+	ScrollDown = function() tiltCamera(-TILT_STEP) end, -- look down
+}
+
+local zoomHooked = setmetatable({}, { __mode = "k" })
+local function hookZoomButtons(gui)
+	local controls = gui:FindFirstChild("ControlFrame")
+	local zoom = controls and controls:FindFirstChild("ZoomControls")
+	-- (2013's are hidden: only shown ones, looked at again every few seconds)
+	if not (zoom and zoom:IsA("GuiObject") and zoom.Visible) then return 0 end
+	local count = 0
+	for name, file in pairs(ZOOM_BUTTONS) do
+		local button = zoom:FindFirstChild(name)
+		if button and button:IsA("GuiButton") and not zoomHooked[button] then
+			zoomHooked[button] = true
+			count = count + 1
+			local action = ZOOM_ACTIONS[name]
+			local ok = pcall(function()
+				button.Activated:Connect(function() pcall(action) end)
+			end)
+			if not ok then button.MouseButton1Click:Connect(function() pcall(action) end) end
+			task.spawn(function()
+				local pressed = texture2012(file)
+				if pressed and button:IsA("ImageButton") then
+					button.PressedImage = pressed
+					if UserInputService.MouseEnabled then button.HoverImage = pressed end
+				end
+			end)
+		end
+	end
+	return count
+end
+
+--========================================================
+-- 2012'S HEALTH BAR NEXT TO THE BACKPACK BUTTON
+--========================================================
+-- Bloxy's health bar (CustomHealthGui.HealthFrame, at the bottom middle of the whole screen) goes just right
+-- of 2012's Backpack button (bottom middle, left of where the health bar was), bottoms lined up, as in the
+-- 2012 client. 2013's Backpack button is a tab above the hotbar: there the health bar is left alone.
+local healthPlaced = setmetatable({}, { __mode = "k" }) -- the health bar -> where Bloxy put it
+local HEALTH_GAP = 3
+
+local function healthFrame()
+	local holders = { CoreGui }
+	pcall(function()
+		local playerGui = Players.LocalPlayer and Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
+		if playerGui then table.insert(holders, playerGui) end
+	end)
+	for _, holder in ipairs(holders) do
+		local healthGui = holder:FindFirstChild("CustomHealthGui")
+		local frame = healthGui and healthGui:FindFirstChild("HealthFrame")
+		if frame and frame:IsA("GuiObject") then return frame end
+	end
+	return nil
+end
+
+-- 2012's Backpack button: shown, at the bottom of the GUI
+local function bottomBackpackButton(gui)
+	local controls = gui and gui:FindFirstChild("ControlFrame")
+	local button = controls and controls:FindFirstChild("BackpackButton")
+	if not (button and button:IsA("GuiObject") and button.Visible) then return nil end
+	local bottom = button.AbsolutePosition.Y + button.AbsoluteSize.Y
+	local guiBottom = gui.AbsolutePosition.Y + gui.AbsoluteSize.Y
+	if guiBottom - bottom > 40 or button.AbsoluteSize.X < 10 then return nil end
+	return button
+end
+
+local function placeHealth(gui)
+	local frame = healthFrame()
+	if not frame then return end
+	local button = bottomBackpackButton(gui)
+	local state = healthPlaced[frame]
+	if not button then
+		-- (not 2012's: back where Bloxy put it)
+		if state and frame.Position == state.ours then frame.Position = state.original end
+		return
+	end
+	if not state then
+		state = { original = frame.Position }
+		healthPlaced[frame] = state
+	elseif frame.Position ~= state.ours then
+		state.original = frame.Position -- (Bloxy moved it itself)
+	end
+	local holder = frame.Parent
+	if not (holder and holder:IsA("GuiBase2d")) then return end
+	local x = button.AbsolutePosition.X + button.AbsoluteSize.X + HEALTH_GAP
+	local y = button.AbsolutePosition.Y + button.AbsoluteSize.Y - frame.AbsoluteSize.Y
+	local want = UDim2.new(0, math.floor(x - holder.AbsolutePosition.X + 0.5), 0,
+		math.floor(y - holder.AbsolutePosition.Y + 0.5))
+	if frame.Position ~= want then
+		state.ours = want
+		frame.Position = want
+	end
+	if not state.said then
+		state.said = true
+		print("[Old Gui Fix] the health bar is next to the Backpack button")
+	end
+end
+
+local healthWatched = setmetatable({}, { __mode = "k" })
+local function watchHealth(gui)
+	local controls = gui:FindFirstChild("ControlFrame")
+	local button = controls and controls:FindFirstChild("BackpackButton")
+	if button and button:IsA("GuiObject") and not healthWatched[button] then
+		healthWatched[button] = true
+		local function soon() task.defer(function() pcall(placeHealth, gui) end) end
+		button:GetPropertyChangedSignal("AbsolutePosition"):Connect(soon)
+		button:GetPropertyChangedSignal("AbsoluteSize"):Connect(soon)
+		button:GetPropertyChangedSignal("Visible"):Connect(soon)
+	end
+	pcall(placeHealth, gui)
+end
+
+--========================================================
 -- APPLYING IT
 --========================================================
 local said = {}
@@ -357,6 +595,7 @@ local function fixGui(gui)
 	for _, window in ipairs(windows) do
 		raiseWindow(window)
 		pcall(fitWindow, window, scale)
+		pcall(shadeWholeScreen, window, gui)
 	end
 
 	-- (the hotbar and the corner buttons keep their own size: only the menu is zoomed down)
@@ -377,6 +616,15 @@ local function fixGui(gui)
 
 	-- the backpack window above the hotbar
 	pcall(fitBackpack, gui)
+
+	-- 2012's zoom and tilt buttons
+	local ok, hooked = pcall(hookZoomButtons, gui)
+	if ok and hooked and hooked > 0 then
+		print("[Old Gui Fix] the zoom and tilt buttons work (" .. hooked .. ")")
+	end
+
+	-- 2012's health bar next to the Backpack button
+	watchHealth(gui)
 
 	local key = tostring(gui) .. "|" .. #windows .. "|" .. tostring(scale)
 	if not said[key] then
@@ -404,7 +652,7 @@ local function watchGui(gui)
 		if controls and not hooked[controls] then
 			hooked[controls] = true
 			controls.ChildAdded:Connect(function(child)
-				if MENU_WINDOWS[child.Name] or child.Name == "BackpackButton" then soon() end
+				if MENU_WINDOWS[child.Name] or child.Name == "BackpackButton" or child.Name == "ZoomControls" then soon() end
 			end)
 		end
 	end
