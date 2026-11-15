@@ -1169,7 +1169,7 @@ HealthFrame.Name =
 -- (Addtion-Scripts) As in the 2008 client: a short bar on the right just under the player list (its top a
 -- little below the list's bottom, under the list's right part). In the GUI's own units, so it is scaled with
 -- the rest of it (on a phone the whole GUI is shown smaller) and stays under the list whatever its size.
-local HEALTH_WIDTH, HEALTH_HEIGHT, HEALTH_GAP = 12, 60, 12
+local HEALTH_WIDTH, HEALTH_HEIGHT, HEALTH_GAP = 6, 60, 12
 HealthFrame.AnchorPoint =
 	Vector2.new(1, 0)
 HealthFrame.Size =
