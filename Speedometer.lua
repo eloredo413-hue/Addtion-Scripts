@@ -3,8 +3,8 @@
 -- The blue-bar speedometer of the old car HUD, taken out of the Addtion-Scripts loader as it is,
 -- with the few lines it needs to run on its own. Run it once; it keeps working while you play.
 --
---   * A solid blue bar and "Speed: 46" under it, at the same place on the screen (a screen GUI; it goes up
---     only to stay clear of 2015 early's inventory hotbar and arrow on a phone),
+--   * A solid blue bar and "Speed: 46" under it, always at the same place on the screen (a screen GUI,
+--     a little higher than the original so it doesn't cover 2015 early's inventory arrow on a phone),
 --     while you sit in a car. The bar grows with the speed, easing smoothly, and stops at 300 pixels
 --     so it fits a phone screen.
 --   * It switches off the modern speedometer: Roblox's own vehicle display (the "Speed 0" with the
@@ -314,61 +314,6 @@ local function startSpeedometer(mode)
         return math.clamp(speed * PIXELS_PER_SPEED, MIN_BAR, math.max(MIN_BAR, maxBar))
     end
 
-    -- What it keeps clear of: the inventory's hotbar and the arrow button above it (2015 early's backpack,
-    -- at the bottom in the middle). On a phone they reach up to where the speedometer sits, so it goes up
-    -- just enough to stay above them (a few pixels between); with nothing in the way it stays where it is.
-    local GuiService = game:GetService("GuiService")
-    local CLEAR_GAP = 6
-    local SPEEDO_HEIGHT = BAR_HEIGHT + 2 + 14   -- the bar and the "Speed:" line under it
-    local function findKeepClear()
-        local list = {}
-        for _, root in ipairs({ CoreGui, pg }) do
-            local legacy = root:FindFirstChild("NewRobloxGui")
-            local backpack = legacy and legacy:FindFirstChild("Backpack")
-            if backpack then
-                for _, name in ipairs({ "Hotbar", "Arrow" }) do
-                    local part = backpack:FindFirstChild(name)
-                    if part and part:IsA("GuiObject") then
-                        table.insert(list, { part = part, gui = legacy })
-                    end
-                end
-            end
-        end
-        return list
-    end
-    -- the top of it on the screen, the way the speedometer's GUI counts (that one ignores the top bar inset)
-    local function topOnScreen(entry)
-        local inset = 0
-        if not entry.gui.IgnoreGuiInset then
-            local ok, topLeft = pcall(function() return GuiService:GetGuiInset() end)
-            if ok and topLeft then inset = topLeft.Y end
-        end
-        return entry.part.AbsolutePosition.Y + inset
-    end
-    local function placeClear(shown)
-        if shown.clock >= shown.nextClearScan then
-            shown.nextClearScan = shown.clock + 1
-            shown.keepClear = findKeepClear()
-        end
-        local screenHeight = shown.gui.AbsoluteSize.Y
-        if screenHeight <= 0 then return end
-        local top = screenHeight * 0.55   -- its place: a little below the middle
-        for _, entry in ipairs(shown.keepClear) do
-            -- (only below the middle: the arrow goes up to the top of the inventory while it is open)
-            if entry.part.Parent and isOnScreen(entry.part) then
-                local partTop = topOnScreen(entry)
-                if partTop > screenHeight * 0.5 then
-                    top = math.min(top, partTop - CLEAR_GAP - SPEEDO_HEIGHT)
-                end
-            end
-        end
-        top = math.floor(math.max(top, screenHeight * 0.3) + 0.5)
-        if shown.top ~= top then
-            shown.top = top
-            shown.holder.Position = UDim2.new(0.5, 0, 0, top)
-        end
-    end
-
     local function frame(dt)
         local shown = display
         if not shown then return end
@@ -411,7 +356,6 @@ local function startSpeedometer(mode)
             shown.justShown = on
         end
         if not on then return end
-        pcall(placeClear, shown)
 
         -- the game's number if it has one, else the car's speed
         local speed = physical
@@ -450,7 +394,8 @@ local function startSpeedometer(mode)
         local holder = Instance.new("Frame")
         holder.Name = "Holder"
         holder.AnchorPoint = Vector2.new(0.5, 0)
-        holder.Position = UDim2.new(0.5, 0, 0.55, 0)
+        holder.Position = UDim2.new(0.5, 0, 0.48, 0) -- (Addtion-Scripts) a little higher than the original's 0.55: on a phone it
+        -- covered 2015 early's inventory arrow
         holder.Size = UDim2.new(1, 0, 0, 32) -- (the whole width: the bar can stretch across)
         holder.BackgroundTransparency = 1
         holder.BorderSizePixel = 0
@@ -485,8 +430,7 @@ local function startSpeedometer(mode)
             if hider and hider.Keep then hider.Keep(gui) end
         end)
 
-        local shown = { gui = gui, holder = holder, bar = bar, label = label, seat = seat, clock = 0, nextCheck = 0, nextMeterScan = 0,
-                        nextClearScan = 0, keepClear = {}, top = nil,
+        local shown = { gui = gui, bar = bar, label = label, seat = seat, clock = 0, nextCheck = 0, nextMeterScan = 0,
                         readout = nil, width = 0, shownNumber = nil, justShown = false }
         shown.beat = RunService.RenderStepped:Connect(frame)
         display = shown

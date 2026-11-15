@@ -75,6 +75,7 @@ task.spawn(function()
 		isHideMobileControlsEnabled = config.isHideMobileControlsEnabled or false,
 		isIWLegacyLightingEnabled = config.isIWLegacyLightingEnabled or false,
 		isChatBarEnabled        = config.isChatBarEnabled or false,
+		isPre2018CameraEnabled  = config.isPre2018CameraEnabled or false,
 		fpsCap                  = math.max(0, math.floor(tonumber(config.fpsCap) or 0)),
 	}
 
@@ -3572,6 +3573,53 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
+	-- 24. PRE-2018 CAMERA (Pre-2018 Camera.lua in this repo)
+	-- The zoom from before the 2018 camera update: no gliding (the camera jumps to the new distance) and the
+	-- old step for each wheel click. It changes Roblox's own camera scripts (PlayerModule), so it waits for
+	-- your character (the camera scripts are running by then). Downloaded once and kept; unticking calls its
+	-- getgenv().LegacyZoomStop, which gives the camera back.
+	------------------------------------------------------------
+	do
+		local CAMERA_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Pre-2018%20Camera.lua"
+		local genv = (getgenv and getgenv()) or _G
+		local loading = false
+		local source = nil
+		local function stopIt()
+			local stop = genv.LegacyZoomStop
+			if type(stop) == "function" then pcall(stop) end
+		end
+		function actions.applyPre2018Camera()
+			if loading then return end
+			loading = true
+			task.spawn(function()
+				-- the camera scripts are there once you have a character
+				local t0 = os.clock()
+				while not player.Character and os.clock() - t0 < 15 do task.wait(0.25) end
+				task.wait(0.5)
+				local ok, err = pcall(function()
+					source = source or game:HttpGet(CAMERA_URL)
+					local fn, compileErr = loadstring(source)
+					if not fn then
+						source = nil
+						error(compileErr, 0)
+					end
+					if state.isPre2018CameraEnabled then fn() end
+				end)
+				loading = false
+				if not ok then
+					warn("[pre-2018 camera] couldn't load: " .. tostring(err))
+					return
+				end
+				-- unticked while it was downloading
+				if not state.isPre2018CameraEnabled then stopIt() end
+			end)
+		end
+		function actions.restorePre2018Camera()
+			stopIt()
+		end
+	end
+
+	------------------------------------------------------------
 	-- 21. HIDE MOBILE CONTROLS
 	-- The joystick and the jump button can't be seen but still work: each part of them gets a see-through
 	-- UIGradient (it hides what is drawn, and doesn't fight the controls' own fading in and out), and they
@@ -4520,6 +4568,18 @@ task.spawn(function()
 		helpText      = "Hides the mobile joystick and jump button, but they still work: move and jump with your thumbs where they would be. Untick to see them again."
 	})
 
+	createAddonRow({
+		containerName = "Pre2018CameraContainer",
+		checkboxName  = "Pre2018CameraCheckbox",
+		helpName      = "Pre2018CameraHelpButton",
+		label         = "pre-2018 camera",
+		yPos          = startY,
+		stateKey      = "isPre2018CameraEnabled",
+		onEnable      = actions.applyPre2018Camera,
+		onDisable     = actions.restorePre2018Camera,
+		helpText      = "The camera zoom from before the 2018 camera update: no gliding, the camera jumps straight to the new distance (and back when a wall is no longer in the way), with the old step for each scroll click. Works with Roblox's own camera, not a game's custom one. Untick for the normal zoom."
+	})
+
 	-- the FPS cap: its tick box, then a number box (the "?" after it); the label shows the frame rate now
 	createAddonRow({
 		containerName = "FpsCapContainer",
@@ -4770,6 +4830,7 @@ task.spawn(function()
 	if state.isFpsCapEnabled then task.spawn(actions.applyFpsCap) end
 	if state.isHideMobileControlsEnabled then task.spawn(actions.applyHideMobileControls) end
 	if state.isChatBarEnabled then task.spawn(actions.applyChatBar) end
+	if state.isPre2018CameraEnabled then task.spawn(actions.applyPre2018Camera) end
 	if state.isIWLegacyLightingEnabled and not state.isLegacyLightingEnabled then task.spawn(actions.applyIWLegacyLighting) end
 	if state.is2013DynamicEnabled then task.spawn(actions.apply2013Dynamic) end
 	if state.is2015AudioEnabled then task.spawn(actions.apply2015Audio)

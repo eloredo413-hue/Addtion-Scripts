@@ -16,7 +16,8 @@
 	* Works with Classic Face: the classic head gets the same light as the body (the two scripts no longer
 	  fight over the head's colour every frame), and its face is lit like other decals.
 	* Loads faster: the characters first, then the map in timed slices (as much as fits in a few milliseconds
-	  a frame). The light only comes up once the map is done, so there is no washed-out white while it loads.
+	  a frame), then a second look for anything missed. It takes the time it needs: the light only comes up
+	  once everything is done, so there is no washed-out white while it loads.
 	* Its own changes are recognised by their value (not by switching the watcher off and on), so they never
 	  set it off again: nothing gets darkened twice and the sun is never boosted twice, whatever the game does.
 	* getgenv().LegacyLightingOriginal(instance, property) gives the game's own (undarkened) value.
@@ -57,7 +58,8 @@ local Settings = {
 
 	-- (Addtion-Scripts) loading
 	SliceTime        = 0.008, -- seconds of work a frame while it goes through the map the first time
-	LightUpAfter     = 6,     -- the light comes up when the map is done, or after this many seconds at most
+	LightUpAfter     = false, -- false: the light comes up only once the whole map is done, however long that takes.
+	                          -- A number of seconds: at most that long
 }
 
 ----------------------------------------------------------------------------------------------------
@@ -652,6 +654,16 @@ local function handle(v)
 		end
 		if v:IsA("MeshPart") and (Settings.FixTexturedMeshes or Settings.FixWorldMeshes) then
 			pcall(fixTexturedMesh, v)
+			if not meshFix[v] and v.TextureID == "" and (Settings.FixWorldMeshes or isWorn(v)) then
+				-- its texture can come a moment later (an avatar still loading): it is redrawn then
+				local c
+				c = v:GetPropertyChangedSignal("TextureID"):Connect(function()
+					if stopped or meshFix[v] then c:Disconnect() return end
+					pcall(fixTexturedMesh, v)
+					if meshFix[v] then c:Disconnect() end
+				end)
+				track(c)
+			end
 		end
 		-- A union draws the colours of the parts it was built from and ignores its Color property while
 		-- UsePartColor is off (the default), so darkening Color did nothing. Switch it on: Color is already darkened.
@@ -1144,12 +1156,23 @@ local function stop()
 end
 genv.LegacyLightingStop = stop
 
-setupLighting()
-setupEffects()
-startTerrain()
-pcall(startLegacyExtras)
+-- each part of the set-up on its own, so one that fails (an older Roblox client, a refused property) doesn't
+-- keep the rest from running
+local function setUp(name, fn)
+	local ok, err = pcall(fn)
+	if not ok then warn("[LegacyLighting] " .. name .. " failed: " .. tostring(err)) end
+end
+setUp("lighting", setupLighting)
+setUp("effects", setupEffects)
+setUp("terrain", startTerrain)
+setUp("2019+ extras", startLegacyExtras)
 
-track(workspace.DescendantAdded:Connect(function(v) pcall(handle, v) end))
+-- an object whose handling failed is tried again (by the second look, or when it appears again)
+local function safeHandle(v)
+	if not pcall(handle, v) then handled[v] = nil end
+end
+track(workspace.DescendantAdded:Connect(safeHandle))
+print("[LegacyLighting] loading the map: the light comes up once everything is done")
 
 local function lightUp()
 	if stopped or not startBoost then return end
@@ -1162,7 +1185,9 @@ local function lightUp()
 	end
 	startBoost()
 end
-task.delay(Settings.LightUpAfter or 6, lightUp) -- (a huge map: the light comes up anyway)
+if type(Settings.LightUpAfter) == "number" then
+	task.delay(Settings.LightUpAfter, lightUp)
+end
 
 task.spawn(function()
 	-- The first pass, in slices of a few milliseconds a frame so the game keeps running: the characters
@@ -1171,7 +1196,7 @@ task.spawn(function()
 	local deadline = os.clock() + slice
 	local count = 0
 	local function visit(v)
-		pcall(handle, v)
+		safeHandle(v)
 		count += 1
 		if os.clock() > deadline then
 			task.wait()
@@ -1197,9 +1222,21 @@ task.spawn(function()
 		if stopped then return end
 		if not first[child] then visitTree(child) end
 	end
+	-- a second look through everything: whatever the first pass missed (or failed on) is done now
+	local missed = 0
+	for _, v in ipairs(workspace:GetDescendants()) do
+		if stopped then return end
+		if not handled[v] and not ownedSet[v] then
+			missed += 1
+			visit(v)
+		elseif os.clock() > deadline then
+			task.wait()
+			deadline = os.clock() + slice
+		end
+	end
 	if stopped then return end
-	print(string.format("[LegacyLighting] map done in %.1f s (%d objects) | textured meshes redrawn so they darken too: %d | unions switched to their darkened colour: %d",
-		os.clock() - startedAt, count, meshFixCount, unionFixCount))
+	print(string.format("[LegacyLighting] map done in %.1f s (%d objects, %d caught by the second look) | textured meshes redrawn so they darken too: %d | unions switched to their darkened colour: %d",
+		os.clock() - startedAt, count, missed, meshFixCount, unionFixCount))
 	lightUp()
 	local extras = { "clouds hidden: " .. cloudsOff, "highlights hidden: " .. highlightsOff, "PBR textures removed: " .. #pbrRemoved }
 	for _, note in ipairs(extraNotes) do extras[#extras + 1] = note end
