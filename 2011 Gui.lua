@@ -1927,8 +1927,9 @@ BackpackLayout.FillDirection = Enum.FillDirection.Horizontal
 BackpackLayout.SortOrder = Enum.SortOrder.LayoutOrder
 BackpackLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 BackpackLayout.VerticalAlignment = Enum.VerticalAlignment.Center
--- (Addtion-Scripts) the slots close together, as in the 2011 client (a gap about a twelfth of a slot)
-local SLOT_GAP = 4
+-- (Addtion-Scripts) the slots as close together as they go without touching: each one's edge is drawn 1
+-- outside it (the red outline of the selected one is drawn inside), so 3 leaves 1 between neighbours' edges
+local SLOT_GAP = 3
 BackpackLayout.Padding = UDim.new(0, SLOT_GAP)
 BackpackLayout.Parent = BackpackGui
 
@@ -1968,10 +1969,10 @@ for i = 1, 10 do
 	local slot = Instance.new("Frame")
 	slot.Name = "Slot" .. i
 	slot.Size = UDim2.new(0, SLOT_SIZE, 0, SLOT_SIZE)
-	-- (Addtion-Scripts) the 2011 client's colours (measured on a 2011 screenshot): a solid dark grey box
-	-- with a slightly lighter edge (it was near black and see-through, so it looked black on grass)
-	slot.BackgroundColor3 = Color3.fromRGB(58, 58, 58)
-	slot.BackgroundTransparency = 0.12
+	-- (Addtion-Scripts) a see-through deep black inside, the same black as the GUI's trays (their picture is
+	-- black at 179 / 255), with a slightly lighter edge
+	slot.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	slot.BackgroundTransparency = 1 - 179 / 255
 	slot.BorderColor3 = Color3.fromRGB(105, 105, 105)
 	-- (Addtion-Scripts) each slot its own box with very slightly rounded corners: the border is a UIStroke (a
 	-- frame's own border doesn't follow a UICorner)
@@ -1991,7 +1992,10 @@ for i = 1, 10 do
 
 	local selectionFrame = Instance.new("Frame")
 	selectionFrame.Name = "SelectionFrame"
-	selectionFrame.Size = UDim2.new(1, 0, 1, 0)
+	-- (Addtion-Scripts) a little smaller than the slot, so its red outline (drawn outside it) is inside the
+	-- slot and never reaches the next one
+	selectionFrame.Position = UDim2.new(0, 2.5, 0, 2.5)
+	selectionFrame.Size = UDim2.new(1, -5, 1, -5)
 	selectionFrame.BackgroundTransparency = 1
 	selectionFrame.ZIndex = 12
 	selectionFrame.Parent = slot
