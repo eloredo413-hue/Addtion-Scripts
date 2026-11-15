@@ -790,17 +790,35 @@ local function isFutureTechnology()
 	return ok and readTechnology() == future
 end
 
+-- (Addtion-Scripts) Only Future / ShadowMap are switched: Compatibility (what Hammer stuff's other "legacy
+-- lighting" uses) and Legacy are old-style already and are left as they are, so the two can be on together.
+-- The game's own technology is kept in getgenv().BPGameTechnology by whichever of the two changed it first,
+-- and given back by the last one to stop.
+local function giveTechnologyBack()
+	-- (Hammer stuff's other legacy lighting still on: its old-style lighting stays, it gives it back)
+	if genv.BPLegacyLightingOn then return end
+	local original = genv.BPGameTechnology
+	genv.BPGameTechnology = nil
+	if original ~= nil and readTechnology() ~= original then writeTechnology(original) end
+end
+
 local function forceVoxelTechnology()
 	local okVoxel, voxel = pcall(function() return Enum.Technology.Voxel end)
 	if not okVoxel then return "not supported by this Roblox client" end
+	-- whether or not it is changed here: the last of the two to stop gives the game's technology back
+	onStop(giveTechnologyBack)
 	local before = readTechnology()
 	if before == nil then return "could not be read" end
 	if before == voxel then return "already Voxel" end
+	local modern = false
+	for _, name in ipairs({ "Future", "ShadowMap" }) do
+		local ok, item = pcall(function() return Enum.Technology[name] end)
+		if ok and before == item then modern = true end
+	end
+	if not modern then return "is " .. tostring(before) .. " (old-style already, left as it is)" end
+	if genv.BPGameTechnology == nil then genv.BPGameTechnology = before end
 	writeTechnology(voxel)
 	if readTechnology() == voxel then
-		onStop(function()
-			if readTechnology() == voxel then writeTechnology(before) end
-		end)
 		return "switched " .. tostring(before) .. " -> Voxel"
 	end
 	return "is " .. tostring(before) .. " and the executor refused to change it"
@@ -947,7 +965,9 @@ end
 local strippedOnce = setmetatable({}, { __mode = "k" })
 
 local function stripEffect(e)
-	if ownedSet[e] then return end
+	if ownedSet[e] or stopped then return end
+	-- (the grey colour correction of Hammer stuff's other "legacy lighting": both can be on together)
+	if e:GetAttribute("BPLegacyLighting") then return end
 	pcall(function()
 		if e:IsA("PostEffect") then -- bloom, sunrays, depth of field, blur, colour correction/grading
 			if e:IsA("BloomEffect") or e:IsA("SunRaysEffect") or e:IsA("DepthOfFieldEffect") then
@@ -971,6 +991,7 @@ end
 local function setupEffects()
 	local cc = own(Instance.new("ColorCorrectionEffect"))
 	cc.Name = "LegacyCorrection"
+	cc:SetAttribute("BPIWLegacyLighting", true) -- (Hammer stuff's other legacy lighting leaves these alone)
 	cc.Saturation = 0.2
 	cc.Brightness = 0
 	cc.TintColor = Color3.new(1, 1, 1)
@@ -980,12 +1001,14 @@ local function setupEffects()
 	pcall(function()
 		local cg = own(Instance.new("ColorGradingEffect"))
 		cg.Name = "LegacyGrading"
+		cg:SetAttribute("BPIWLegacyLighting", true)
 		cg.TonemapperPreset = Settings.Voxel2019 and Enum.TonemapperPreset.Default or Enum.TonemapperPreset.Retro
 		cg.Parent = Lighting
 	end)
 
 	local bloom = own(Instance.new("BloomEffect"))
 	bloom.Name = "LegacyBloom"
+	bloom:SetAttribute("BPIWLegacyLighting", true)
 	bloom.Threshold = Settings.BloomThreshold
 	bloom.Intensity = Settings.NeonBloom
 	bloom.Size = Settings.BloomSize
@@ -993,7 +1016,8 @@ local function setupEffects()
 
 	if Settings.StripGameEffects then
 		for _, e in ipairs(Lighting:GetChildren()) do stripEffect(e) end
-		track(Lighting.ChildAdded:Connect(stripEffect))
+		-- (a moment later: whoever added it may mark it first, see stripEffect)
+		track(Lighting.ChildAdded:Connect(function(e) task.defer(stripEffect, e) end))
 		local cam = workspace.CurrentCamera
 		if cam then
 			for _, e in ipairs(cam:GetChildren()) do stripEffect(e) end
