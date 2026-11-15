@@ -130,7 +130,6 @@ local HAMMER_BOXES = {
 	OldHealthBarCheckbox = "isOldHealthBarEnabled",
 	NightSky2008Checkbox = "is2008NightSkyEnabled",
 	AllPlayersCheckbox = "isAllPlayersEnabled",
-	Screen43Checkbox = "isScreen43Enabled",
 	FpsCapCheckbox = "isFpsCapEnabled",
 }
 local OLD_DECAL_BUTTON, OLD_DECAL_KEY = "BPOldDecalButton", "isOldDecalEnabled"

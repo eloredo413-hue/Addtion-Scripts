@@ -9,9 +9,9 @@
 	it off. Each sky's own star count is remembered and put back by the cleanup. The night sky is plain
 	black: the picture it used before had mountains in it.
 	It fades in at sunset (17:30 - 18:15) and out at sunrise (05:45 - 06:30) instead of switching all at
-	once: a layer just behind the stars (a box of panels around the camera, further out than the stars)
+	once: a layer just behind the stars (straight ahead of the camera, further out than the stars)
 	darkens the game's own sky, deep twilight blue first, then black, and the 2008 stars come out one by one,
-	the brightest first. Once it is fully dark the black sky takes over and the panels are put away; at
+	the brightest first. Once it is fully dark the black sky takes over and the layer is put away; at
 	sunrise it runs the other way.
 	The change takes at least a few seconds (TransitionTime): when a game jumps its clock straight from day to
 	night, or this is turned on at night, the whole transition plays instead of a snap.)
@@ -41,7 +41,7 @@ local CONFIG = {
 	DuskEnd = 18.25,    -- 18:15 fully night
 	DawnStart = 5.75,   -- 05:45 the night starts fading out
 	DawnEnd = 6.5,      -- 06:30 fully day
-	FadeDistance = 1900, -- the black panels: just further out than the stars (SphereRadius)
+	FadeDistance = 1900, -- the darkening layer: just further out than the stars (SphereRadius)
 	TransitionTime = 6,  -- (seconds) the quickest the whole change to night (or back) is shown
 	StarWindow = 0.2,    -- each star fades in over this part of the transition (at its own moment)
 	Twilight = Color3.fromRGB(24, 32, 78), -- the sky's colour on its way to black
@@ -61,9 +61,9 @@ local watchedSkies = {}
 local stashedDaySkies = {}
 local starBillboards = {}
 local starPixels = {}  -- (Addtion-Scripts) each star's square, faded in and out
-local fadePanels = {}  -- (Addtion-Scripts) the black panels' SurfaceGuis
-local fadeFrames = {}  -- their black fill, faded in and out
-local fadeOffsets = {} -- each panel's place around the camera
+local fadePanels = {}  -- (Addtion-Scripts) the darkening layer (a BillboardGui in front of the camera)
+local fadeFrames = {}  -- its fill, faded in and out
+local fadeOffsets = {} -- the point it hangs on (kept straight ahead of the camera, behind the stars)
 local originalStarCounts = {} -- (Addtion-Scripts) each sky's own star count, put back by the cleanup
 local starMoment = {}  -- (Addtion-Scripts) when each star comes out (0 - 1 of the transition)
 local starLevel = {}   -- how far each star is faded in now (0 - STAR_STEPS)
@@ -213,60 +213,39 @@ local function createStarfieldCarrier()
 		table.insert(starLevel, 0)
 	end
 
-	-- (Addtion-Scripts) the fade: a box of black panels around the camera, further out than the stars, so
-	-- the stars show in front of it and it covers the game's sky behind them. SurfaceGuis are used (on
-	-- see-through parts) because fog doesn't cover them; each side is 2 x 2 panels (a part can't be
-	-- bigger than 2048). They are only on while it fades.
+	-- (Addtion-Scripts) the fade: one layer straight ahead of the camera, further out than the stars (so they
+	-- show in front of it) and big enough to fill the whole view, darkening the game's sky behind them. It
+	-- is a BillboardGui: phones don't draw parts that far away at lower graphics settings (the box of
+	-- panels used before never showed there, so the sky went from the game's own straight to black), but
+	-- they do draw billboards (the stars are billboards too). It is only on while it fades.
 	local R = CONFIG.FadeDistance
-	local tile = R + 10 -- a little overlap, so no seams
-	for _, normal in ipairs({
-		Vector3.new(1, 0, 0), Vector3.new(-1, 0, 0), Vector3.new(0, 1, 0),
-		Vector3.new(0, -1, 0), Vector3.new(0, 0, 1), Vector3.new(0, 0, -1),
-	}) do
-		local u = (normal.X ~= 0) and Vector3.new(0, 1, 0) or Vector3.new(1, 0, 0)
-		local v = normal:Cross(u) -- u x v = normal, so the panel's Front side faces the camera
-		for _, a in ipairs({ -1, 1 }) do
-			for _, b in ipairs({ -1, 1 }) do
-				local centre = normal * R + u * (a * R / 2) + v * (b * R / 2)
-				local panel = Instance.new("Part")
-				panel.Name = "NightFadePanel"
-				panel.Anchored = true
-				panel.CanCollide = false
-				panel.CanTouch = false
-				panel.CanQuery = false
-				panel.CastShadow = false
-				panel.Locked = true
-				panel.Transparency = 1
-				panel.Size = Vector3.new(tile, tile, 1)
-				local offset = CFrame.fromMatrix(centre, u, v)
-				panel.CFrame = CFrame.new(camera.CFrame.Position) * offset
-				panel.Parent = carrier
+	local point = Instance.new("Attachment")
+	point.Name = "NightFadePoint"
+	point.Position = camera.CFrame.LookVector * R
+	point.Parent = carrier
 
-				local surface = Instance.new("SurfaceGui")
-				surface.Name = "NightFade"
-				surface.Face = Enum.NormalId.Front
-				surface.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
-				surface.PixelsPerStud = 0.05
-				surface.LightInfluence = 0
-				surface.AlwaysOnTop = false
-				surface.Enabled = false
-				surface.Adornee = panel
-				surface.Parent = panel
+	local layer = Instance.new("BillboardGui")
+	layer.Name = "NightFade"
+	layer.Adornee = point
+	layer.Size = UDim2.new(R * 5, 0, R * 5, 0) -- (in studs: wider than any view at that distance)
+	layer.AlwaysOnTop = false
+	layer.LightInfluence = 0
+	layer.MaxDistance = math.huge
+	layer.ResetOnSpawn = false
+	layer.Enabled = false
+	layer.Parent = point
 
-				local fill = Instance.new("Frame")
-				fill.Name = "Black"
-				fill.Size = UDim2.fromScale(1, 1)
-				fill.BorderSizePixel = 0
-				fill.BackgroundColor3 = Color3.new(0, 0, 0)
-				fill.BackgroundTransparency = 1
-				fill.Parent = surface
+	local fill = Instance.new("Frame")
+	fill.Name = "Black"
+	fill.Size = UDim2.fromScale(1, 1)
+	fill.BorderSizePixel = 0
+	fill.BackgroundColor3 = Color3.new(0, 0, 0)
+	fill.BackgroundTransparency = 1
+	fill.Parent = layer
 
-				table.insert(fadePanels, surface)
-				table.insert(fadeFrames, fill)
-				table.insert(fadeOffsets, { panel = panel, offset = offset })
-			end
-		end
-	end
+	table.insert(fadePanels, layer)
+	table.insert(fadeFrames, fill)
+	table.insert(fadeOffsets, point)
 
 	return carrier
 end
@@ -274,7 +253,7 @@ end
 local starCarrier = createStarfieldCarrier()
 local currentNightState = nil
 local currentStarAmount = nil -- (Addtion-Scripts) the amount the stars were last set for
-local currentFadeStep = nil  -- the panels' fade, in 60 steps (0 = put away)
+local currentFadeStep = nil  -- the darkening layer's fade, in 60 steps (0 = put away)
 local shownAmount = 0        -- how far into the night it is shown (moves towards targetAmount)
 local targetAmount = 0       -- how far into the night the clock is
 
@@ -297,7 +276,7 @@ local function setStars(amount)
 	end
 end
 
--- the panels: amount from 0 to 1 while it changes (deep blue to black, see-through to solid); anything else
+-- the darkening layer: amount from 0 to 1 while it changes (deep blue to black, see-through to solid); anything else
 -- puts them away
 local BLACK = Color3.new(0, 0, 0)
 local function setFade(amount)
@@ -317,19 +296,18 @@ local function setFade(amount)
 			fill.BackgroundColor3 = color
 		end
 	end
-	-- (they follow the camera only while on: put around it now, before they show)
+	-- (it follows the camera only while on: put straight ahead of it now, before it shows)
 	if on and not wasOn then
 		local camera = Workspace.CurrentCamera
 		if camera then
-			local around = CFrame.new(camera.CFrame.Position)
-			for _, entry in ipairs(fadeOffsets) do entry.panel.CFrame = around * entry.offset end
+			for _, point in ipairs(fadeOffsets) do point.Position = camera.CFrame.LookVector * CONFIG.FadeDistance end
 		end
 	end
 end
 
 -- // 3. Toggle Night Sky & Classic Stars Strictly Based on Lighting.ClockTime //
 -- (Addtion-Scripts) what is shown for the amount shown now: the black sky once it is fully night, the
--- stars and the panels while it changes
+-- stars and the darkening layer while it changes
 local function applyShown()
 	local amount = shownAmount
 	local nightActive = amount >= 1
@@ -368,8 +346,8 @@ local function applyShown()
 	end
 
 	currentNightState = nightActive
-	-- (Addtion-Scripts) the stars come out over sunset and go over sunrise; the panels cover the game's
-	-- sky while it changes (once fully night the black sky itself is up, so they are put away)
+	-- (Addtion-Scripts) the stars come out over sunset and go over sunrise; the layer covers the game's
+	-- sky while it changes (once fully night the black sky itself is up, so it is put away)
 	setStars(amount)
 	setFade(nightActive and 0 or amount)
 end
@@ -423,10 +401,11 @@ RunService:BindToRenderStep(RENDER_STEP_NAME, Enum.RenderPriority.Camera.Value +
 	if starCarrier then
 		local around = CFrame.new(camera.CFrame.Position)
 		starCarrier.CFrame = around
-		-- (Addtion-Scripts) the black panels follow the camera only while they are on
+		-- (Addtion-Scripts) the darkening layer stays straight ahead of the camera while it is on
 		if currentFadeStep and currentFadeStep > 0 then
-			for _, entry in ipairs(fadeOffsets) do
-				entry.panel.CFrame = around * entry.offset
+			local ahead = camera.CFrame.LookVector * CONFIG.FadeDistance
+			for _, point in ipairs(fadeOffsets) do
+				point.Position = ahead
 			end
 		end
 	end

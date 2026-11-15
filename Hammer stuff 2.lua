@@ -71,7 +71,6 @@ task.spawn(function()
 		isOldHealthBarEnabled   = config.isOldHealthBarEnabled or false,
 		is2008NightSkyEnabled   = config.is2008NightSkyEnabled or false,
 		isAllPlayersEnabled     = config.isAllPlayersEnabled or false,
-		isScreen43Enabled       = config.isScreen43Enabled or false,
 		isFpsCapEnabled         = config.isFpsCapEnabled or false,
 		fpsCap                  = math.max(0, math.floor(tonumber(config.fpsCap) or 0)),
 	}
@@ -3456,38 +3455,13 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
-	-- 19. 4:3 SCREEN (Screen 4-3.lua in this repo)
-	-- Black bars on the sides, and the GUIs moved in to the 4:3 part. Unticking gives the whole screen back.
+	-- (the 4:3 screen option was taken out: it is turned off if an earlier copy left it on)
 	------------------------------------------------------------
 	do
-		local SCREEN43_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Screen%204-3.lua"
 		local genv = (getgenv and getgenv()) or _G
-		local loading = false
-		local function turnOff()
-			local api = genv.BPScreen43
-			if api and type(api.Disable) == "function" then pcall(api.Disable) end
-		end
-		function actions.applyScreen43()
-			local api = genv.BPScreen43
-			if api and type(api.Enable) == "function" then pcall(api.Enable) return end
-			if loading then return end
-			loading = true
-			task.spawn(function()
-				local ok, err = pcall(function()
-					loadstring(game:HttpGet(SCREEN43_URL))()
-				end)
-				loading = false
-				if not ok then
-					warn("[4:3 screen] couldn't load: " .. tostring(err))
-					return
-				end
-				-- unticked while it was downloading
-				if not state.isScreen43Enabled then turnOff() end
-			end)
-		end
-		function actions.restoreScreen43()
-			turnOff()
-		end
+		local api = genv.BPScreen43
+		if api and type(api.Disable) == "function" then pcall(api.Disable) end
+		genv.BPScreen43 = nil
 	end
 
 	------------------------------------------------------------
@@ -4327,18 +4301,6 @@ task.spawn(function()
 		helpText      = "For the 2013 and 2013 mobile GUIs only: their health bar becomes the 2011-2013 one (dark tray, green bar, HEALTH). The 2011 and 2012 GUIs always have that one (nothing before 2011 does). Untick for the 2013 GUIs' own bar."
 	})
 
-	createAddonRow({
-		containerName = "Screen43Container",
-		checkboxName  = "Screen43Checkbox",
-		helpName      = "Screen43HelpButton",
-		label         = "4:3 screen",
-		yPos          = startY,
-		stateKey      = "isScreen43Enabled",
-		onEnable      = actions.applyScreen43,
-		onDisable     = actions.restoreScreen43,
-		helpText      = "Shows the game 4:3, like an old monitor: black bars on the left and right. The old era GUIs (2005 - 2016) and the joystick / jump button are moved in to the 4:3 part, the 2005 - 2011 ones shown as big as on a 4:3 screen. Untick for the whole screen again."
-	})
-
 	-- the FPS cap: its tick box, then a number box (the "?" after it); the label shows the frame rate now
 	createAddonRow({
 		containerName = "FpsCapContainer",
@@ -4586,7 +4548,6 @@ task.spawn(function()
 	if state.isOldHealthBarEnabled then task.spawn(actions.applyOldHealthBar) end
 	if state.is2008NightSkyEnabled then task.spawn(actions.apply2008NightSky) end
 	if state.isAllPlayersEnabled then task.spawn(actions.applyAllPlayers) end
-	if state.isScreen43Enabled then task.spawn(actions.applyScreen43) end
 	if state.isFpsCapEnabled then task.spawn(actions.applyFpsCap) end
 	if state.is2013DynamicEnabled then task.spawn(actions.apply2013Dynamic) end
 	if state.is2015AudioEnabled then task.spawn(actions.apply2015Audio)
