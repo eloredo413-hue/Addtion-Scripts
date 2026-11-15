@@ -58,13 +58,15 @@ end
 local STORE_FILE = "BloxyParadoxSavedSettings.json"
 local CONFIG_FILE = "BloxyParadoxConfig.json"
 local ANIM_FILE = "BloxyAnimation2007Choice.json"
+local MODERN_R6_FILE = "BloxyModernR6Choice.json"
 local TERRAIN_FILE = "BloxyTerrainChoice.json"
 local TOPBAR_PICK_FILE = "BloxyTopbarPick.json"
 local SETUP_FILE = "BloxySetupAnswers.json"
-local SETTINGS_FILES = { CONFIG_FILE, ANIM_FILE, TERRAIN_FILE, TOPBAR_PICK_FILE, SETUP_FILE }
+local SETTINGS_FILES = { CONFIG_FILE, ANIM_FILE, MODERN_R6_FILE, TERRAIN_FILE, TOPBAR_PICK_FILE, SETUP_FILE }
 -- written when the saved settings had no such file (that step was never picked: the same as no file)
 local WHEN_MISSING = {
 	[ANIM_FILE] = '{"Animation2007":false}',
+	[MODERN_R6_FILE] = '{"ModernR6":false}',
 	[TERRAIN_FILE] = '{}',
 	[TOPBAR_PICK_FILE] = '{}',
 	[SETUP_FILE] = '{}',
@@ -663,8 +665,14 @@ local function fromSettings(title, files)
 	if has("safe chat") then return yesNo(choices.SafeChat) end
 	if has("backpack") then return pick({ none = "No", simple = "Simple 2008 remake", advanced = "Advanced" }, choices.Backpack) end
 	if has("animations") then
-		local anim = decode(files[ANIM_FILE])
-		if type(anim) == "table" and anim.Animation2007 == true then return { "2007" } end
+		-- (2007 is on the R6 step, Modern R6 on the R15 one: each only where its button is)
+		if has("r15") then
+			local modernR6 = decode(files[MODERN_R6_FILE])
+			if type(modernR6) == "table" and modernR6.ModernR6 == true then return { "Modern R6" } end
+		else
+			local anim = decode(files[ANIM_FILE])
+			if type(anim) == "table" and anim.Animation2007 == true then return { "2007" } end
+		end
 		return pick({ R6_2008 = "2008", R6_2006 = "2006", R6_2014 = "2014", normal = "Normal",
 			R15_2008 = "2008 FE", R15_2014 = "2014 FE", R15_Old = "Old R15" }, choices.Anims)
 	end
