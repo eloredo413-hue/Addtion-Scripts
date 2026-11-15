@@ -46,8 +46,8 @@ local pg = Players.LocalPlayer:WaitForChild("PlayerGui")
 --   * "Hide game GUI" leaves it alone (it is in the hidden-UI container, and is told to keep it).
 --   * What it found is printed to the console.
 -- Redrawn every frame and the bar eases toward its width, so it moves smoothly. On purpose
--- different from the original: the bar stops growing at MAX_BAR pixels, so it fits a phone screen
--- (the original kept getting wider; about 5 pixels per point of speed instead of about 7).
+-- the original's stretch: about 7 pixels for each point of speed, up to 90% of the screen's width (it had
+-- been held to 5 pixels a point and 300 wide to fit a phone; the original kept getting wider).
 --========================================================
 -- mode: "show" = the old speedometer, and the game's own switched off; "hideOnly" = only the game's
 -- own switched off (2005 / 2006: no speedometer at all)
@@ -61,8 +61,8 @@ local function startSpeedometer(mode)
 
     local LocalPlayer = Players.LocalPlayer
     local BLUE = Color3.fromRGB(0, 0, 255)
-    local PIXELS_PER_SPEED = 5       -- the original: about 7 on a 720p screen
-    local MAX_BAR = 300              -- fits a phone screen
+    local PIXELS_PER_SPEED = 7       -- the original: about 7 on a 720p screen
+    local MAX_BAR_SHARE = 0.9         -- (Addtion-Scripts) at most 90% of the screen's width (it used to stop at 300)
     local MIN_BAR = 3                -- so it can be seen at a standstill
     local BAR_HEIGHT = 12
     local EASE = 14                  -- how fast the bar follows (per second)
@@ -308,7 +308,9 @@ local function startSpeedometer(mode)
     end
 
     local function barWidthFor(speed)
-        return math.clamp(speed * PIXELS_PER_SPEED, MIN_BAR, MAX_BAR)
+        local camera = workspace.CurrentCamera
+        local maxBar = camera and camera.ViewportSize.X * MAX_BAR_SHARE or 300
+        return math.clamp(speed * PIXELS_PER_SPEED, MIN_BAR, math.max(MIN_BAR, maxBar))
     end
 
     local function frame(dt)
@@ -392,7 +394,7 @@ local function startSpeedometer(mode)
         holder.Name = "Holder"
         holder.AnchorPoint = Vector2.new(0.5, 0)
         holder.Position = UDim2.new(0.5, 0, 0.55, 0)
-        holder.Size = UDim2.new(0, MAX_BAR + 20, 0, 32)
+        holder.Size = UDim2.new(1, 0, 0, 32) -- (the whole width: the bar can stretch across)
         holder.BackgroundTransparency = 1
         holder.BorderSizePixel = 0
         holder.Parent = gui
