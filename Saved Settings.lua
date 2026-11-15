@@ -1,5 +1,5 @@
 --[[ SAVED SETTINGS (Addtion-Scripts) ]]
--- A panel like Bloxy's hammer one, opened by the floppy disk (decal 90710789204448) under the hammer:
+-- A panel like Bloxy's hammer one, opened by the floppy disk (decal 137454100118380) under the hammer:
 -- save what is set now under a name, and load, rename or delete what was saved. They are kept in
 -- BloxyParadoxSavedSettings.json, so they are still there after leaving the game or running the script again.
 --
@@ -76,7 +76,7 @@ local WHEN_MISSING = {
 	[SETUP_FILE] = '{}',
 }
 
-local ICON_IMAGE = "rbxthumb://type=Asset&id=90710789204448&w=420&h=420"
+local ICON_IMAGE = "rbxthumb://type=Asset&id=137454100118380&w=420&h=420"
 -- "Paradox" in the name: the game GUI hider leaves it alone. Not "Bloxy": More guis takes the first GUI with
 -- "Bloxy" in its name to be Bloxy's own. And no name here has "settings", "menu" or "chat" in it: the 2013 /
 -- 2013 mobile GUIs (Bloxy's and ours) hide every button named like that, to get rid of the game's menu buttons.
