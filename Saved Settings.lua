@@ -132,6 +132,8 @@ local HAMMER_BOXES = {
 	AllPlayersCheckbox = "isAllPlayersEnabled",
 	FpsCapCheckbox = "isFpsCapEnabled",
 	HideMobileControlsCheckbox = "isHideMobileControlsEnabled",
+	IWLegacyLightingCheckbox = "isIWLegacyLightingEnabled",
+	ChatBarCheckbox = "isChatBarEnabled",
 }
 local OLD_DECAL_BUTTON, OLD_DECAL_KEY = "BPOldDecalButton", "isOldDecalEnabled"
 

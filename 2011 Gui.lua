@@ -1953,6 +1953,8 @@ BackpackLayout.VerticalAlignment = Enum.VerticalAlignment.Center
 -- (Addtion-Scripts) the slots as close together as they go without touching: each one's edge is drawn 1
 -- outside it (the red outline of the selected one is drawn inside), so 3 leaves 1 between neighbours' edges
 local SLOT_GAP = 3
+local SLOT_EDGE = Color3.fromRGB(105, 105, 105)
+local SLOT_EDGE_SELECTED = Color3.fromRGB(225, 20, 20) -- (2 thick: still only meets the next slot's edge)
 BackpackLayout.Padding = UDim.new(0, SLOT_GAP)
 BackpackLayout.Parent = BackpackGui
 
@@ -2172,14 +2174,16 @@ local function updateBackpack()
 					textFallback.Text = ""
 				end
 			end
-			if characterModel and tool.Parent == characterModel then
-				if stroke then
-					stroke.Enabled = true
-				end
-			else
-				if stroke then
-					stroke.Enabled = false
-				end
+			-- (Addtion-Scripts) the selected slot's own edge turns red (and a little thicker): one outline, not a
+			-- red one inside the grey one
+			local selected = characterModel ~= nil and tool.Parent == characterModel
+			if stroke then
+				stroke.Enabled = false
+			end
+			local edge = slot:FindFirstChild("SlotBorder")
+			if edge then
+				edge.Color = selected and SLOT_EDGE_SELECTED or SLOT_EDGE
+				edge.Thickness = selected and 2 or 1
 			end
 			slot.Visible = true
 		else
