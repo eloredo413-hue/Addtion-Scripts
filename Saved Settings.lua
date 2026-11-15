@@ -17,8 +17,12 @@
 --   * the setup answers itself with the saved answers, press by press, with whichever Bloxy and More guis are
 --     running (the GUI, safe chat, explosion, terrain...). Tapping an answer yourself meanwhile stops it, and so
 --     does an answer that isn't there (More guis' 2013 mobile, say), so nothing else gets confirmed instead.
---   * the hammer's options change straight away (their boxes are pressed, so each option turns itself on or
---     off as usual)
+--   * the hammer's options change straight away, all at once (their boxes are pressed one right after the other,
+--     so each option turns itself on or off as usual), and then Paradox closes (this panel and Bloxy's hammer
+--     panel) so the setup can be answered with nothing in the way
+--   * the animations step on the other kind of avatar than the one it was saved on (R6 / R15): the same era
+--     there: 2007 and 2008 (R6) -> 2008 FE (R15), 2014 -> 2014 FE, and back (2008 FE -> 2008, 2014 FE -> 2014,
+--     Modern R6 -> Normal, R6's own modern animations); the rest as it was picked
 --   * "skip setup" is left as it is (older versions turned it on, so Bloxy skipped the setup and loaded its
 --     plain year: that is undone once)
 --   * Bloxy writes its settings file with only its own settings in it, which dropped the other scripts' (the
@@ -343,6 +347,7 @@ local bloxyGui, hammer, hammerPanel, hammerClicker
 local isOpen = false
 local hammerOpen = false -- Bloxy's hammer panel (counted from its taps)
 local applying = false   -- a load is going on
+local closeParadox       -- closes this panel and Bloxy's hammer panel (set further down, once they exist)
 local destroyed = false
 local refreshList
 local replaying = false  -- the setup is being answered with saved answers
@@ -604,6 +609,23 @@ local function finalAnswers(answers)
 	return out
 end
 
+-- THE ANIMATIONS STEP is "Choose your animations: R6 Mode" or "...: R15 Mode", after the avatar. A pick made on the
+-- other kind of avatar is given as the same era on this one; the rest as it was picked.
+local ANIM_ON_R15 = { ["2007"] = "2008 FE", ["2008"] = "2008 FE", ["2014"] = "2014 FE" }
+local ANIM_ON_R6 = { ["2008 fe"] = "2008", ["2014 fe"] = "2014", ["modern r6"] = "Normal" }
+local function animRig(title)
+	local t = string.lower(title or "")
+	if not string.find(t, "choose your animations", 1, true) then return nil end
+	if string.find(t, "r15", 1, true) then return "r15" end
+	if string.find(t, "r6", 1, true) then return "r6" end
+	return nil
+end
+local function animForRig(answer, rig)
+	if type(answer) ~= "string" then return answer end
+	local map = (rig == "r15") and ANIM_ON_R15 or ANIM_ON_R6
+	return map[string.lower(answer)] or answer
+end
+
 -- A file saved before answers were kept: at least its topbar (More guis' pick, else Bloxy's)
 local TOPBAR_QUESTION = "Which topbar do you prefer?"
 local TOPBAR_TEXTS = { ["2013mobile"] = "2013 mobile", ["2023_WIP"] = "2023 new", ["2023_FFlags"] = "2024(fflags)",
@@ -665,16 +687,24 @@ local function fromSettings(title, files)
 	if has("safe chat") then return yesNo(choices.SafeChat) end
 	if has("backpack") then return pick({ none = "No", simple = "Simple 2008 remake", advanced = "Advanced" }, choices.Backpack) end
 	if has("animations") then
-		-- (2007 is on the R6 step, Modern R6 on the R15 one: each only where its button is)
-		if has("r15") then
-			local modernR6 = decode(files[MODERN_R6_FILE])
-			if type(modernR6) == "table" and modernR6.ModernR6 == true then return { "Modern R6" } end
-		else
-			local anim = decode(files[ANIM_FILE])
-			if type(anim) == "table" and anim.Animation2007 == true then return { "2007" } end
-		end
-		return pick({ R6_2008 = "2008", R6_2006 = "2006", R6_2014 = "2014", normal = "Normal",
+		-- (2007 is on the R6 step, Modern R6 on the R15 one; picked on the other kind of avatar, the same era
+		-- on this one: see THE ANIMATIONS STEP above)
+		local rig = has("r15") and "r15" or "r6"
+		local anim = decode(files[ANIM_FILE])
+		local modernR6 = decode(files[MODERN_R6_FILE])
+		local saved2007 = type(anim) == "table" and anim.Animation2007 == true
+		local savedModernR6 = type(modernR6) == "table" and modernR6.ModernR6 == true
+		if rig == "r15" and savedModernR6 then return { "Modern R6" } end
+		if rig == "r6" and saved2007 then return { "2007" } end
+		local picked = pick({ R6_2008 = "2008", R6_2006 = "2006", R6_2014 = "2014", normal = "Normal",
 			R15_2008 = "2008 FE", R15_2014 = "2014 FE", R15_Old = "Old R15" }, choices.Anims)
+		-- (2007 / Modern R6 move Bloxy's own pick on as Normal: picked on the other avatar, the same era here)
+		if picked and picked[1] == "Normal" then
+			if rig == "r15" and saved2007 then return { "2008 FE" } end
+			if rig == "r6" and savedModernR6 then return { "Normal" } end
+		end
+		if picked then return { animForRig(picked[1], rig) } end
+		return nil
 	end
 	if has("old sounds") then return yesNo(choices.Sounds) end
 	if has("cursor") or has("mouse") then
@@ -769,6 +799,22 @@ local function answerSetup(answers, files, name, firstWait)
 						fromFile[title] = true
 						queues[title] = list
 						fromSettingsCount = fromSettingsCount + #list
+					end
+				end
+				-- the animations step recorded on the other kind of avatar (R6 / R15): its answers, the same era here
+				local rig = animRig(title)
+				if rig and (not queues[title] or #queues[title] == 0) then
+					for otherTitle, otherQueue in pairs(queues) do
+						local otherRig = animRig(otherTitle)
+						if otherRig and otherRig ~= rig and #otherQueue > 0 then
+							local mapped = {}
+							for _, a in ipairs(otherQueue) do table.insert(mapped, animForRig(a, rig)) end
+							queues[title] = mapped
+							queues[otherTitle] = {}
+							print("[Saved Settings] animations picked on " .. string.upper(otherRig) .. ", given as "
+								.. table.concat(mapped, ", ") .. " on " .. string.upper(rig))
+							break
+						end
 					end
 				end
 				if (not queues[title] or #queues[title] == 0) and not fromFile[title] then
@@ -895,6 +941,7 @@ local function loadSettings(name)
 	for key, value in pairs(config) do knownSettings[key] = value end
 	local wanted = function(key) return config[key] == true end
 	local turnedOn, turnedOff, failed = {}, {}, {}
+	-- (all at once: each box is pressed right after the one before; each option starts its own loading)
 	local function pressBox(box, boxName)
 		local on = boxIsOn(box)
 		if press(box) then
@@ -902,8 +949,6 @@ local function loadSettings(name)
 		else
 			table.insert(failed, shortName(boxName))
 		end
-		-- (an option may load a script: the next one waits for the game to run smoothly)
-		settle(2)
 	end
 
 	local ok = pcall(function()
@@ -959,6 +1004,8 @@ local function loadSettings(name)
 			#turnedOn > 0 and table.concat(turnedOn, ", ") or "none", #turnedOff > 0 and table.concat(turnedOff, ", ") or "none",
 			#failed > 0 and ("; couldn't press (used at the next start): " .. table.concat(failed, ", ")) or ""))
 	end
+	-- Paradox closes (this panel and Bloxy's hammer panel): the setup is answered with nothing in the way
+	if closeParadox then pcall(closeParadox) end
 	-- the setup (GUI, safe chat, explosion, ...): answered now if it is on screen, or as soon as it shows
 	local onScreen = setupOnScreen()
 	if not onScreen then
@@ -1433,6 +1480,11 @@ closePanel = function()
 	if nameBox then pcall(function() nameBox:ReleaseFocus() end) end
 	if icon then tween(icon, { Position = ICON_REST, Rotation = -12 }) end
 	if panel then tween(panel, { Position = PANEL_CLOSED }) end
+end
+
+closeParadox = function()
+	if isOpen then closePanel() end
+	closeHammer()
 end
 
 local function destroy()
