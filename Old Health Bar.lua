@@ -1,7 +1,7 @@
 --[[ OLD HEALTH BAR (Addtion-Scripts) ]]
 -- The 2011-2013 Roblox health bar: the dark tray (35238000), the green bar inside it with a dark edge above
 -- and below (35238053; red, 35238036, at a quarter or less), "HEALTH" on the right (34816363), the lost
--- part flashing white and the red hurt overlay (34854607) on a big hit.
+-- part showing white for a moment on each hit (then fading out) and the red hurt overlay (34854607).
 --
 -- It takes the place of the GUI's own health bar: that one (Roblox's old HealthGUI "tray", the 2013 mobile
 -- GUI's HealthFrame, or any bar made of the same pictures) is hidden, and this one goes exactly where it
@@ -27,6 +27,7 @@ local StarterGui = game:GetService("StarterGui")
 local ContentProvider = game:GetService("ContentProvider")
 local CoreGui = game:GetService("CoreGui")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
 while not LocalPlayer do
@@ -58,7 +59,10 @@ local BAR_HEIGHT = 0.848
 local LABEL_POSITION = UDim2.new(0.68, 0, 0.29, 0)
 local LABEL_SIZE = UDim2.new(0.25, 0, 0.36, 0)
 
-local FLASH_DURATION = 0.18
+-- (measured on the user's recording of the 2011 - 2013 bar: on each hit the lost part shows solid white for
+-- about 0.7 seconds, over "HEALTH" too, then fades out in about 0.3)
+local FLASH_HOLD = 0.7
+local FLASH_FADE = 0.3
 local OVERLAY_PERCENT = 5 -- a hit of this much of the health or more shows the red hurt overlay
 
 local running = false
@@ -273,18 +277,36 @@ local function build()
 	end)
 end
 
+-- each hit its own white piece (two hits close together each show theirs), just left of what is left
 local function flashLost(oldRatio, newRatio)
 	local lost = math.clamp(oldRatio - newRatio, 0, 1)
-	if lost <= 0.005 then return end
-	flashToken = flashToken + 1
-	local token = flashToken
+	if lost <= 0.005 or not tray or not tray.Parent then return end
+	local piece = Instance.new("Frame")
+	piece.Name = "WhiteFlashPiece"
+	piece.BackgroundColor3 = Color3.new(1, 1, 1)
+	piece.BorderSizePixel = 0
 	-- the bar empties from the left, towards "HEALTH": the lost part is just left of what is left
-	whiteFlash.Position = UDim2.new(BAR_LEFT + BAR_WIDTH * (1 - oldRatio), 0, BAR_TOP, 0)
-	whiteFlash.Size = UDim2.new(BAR_WIDTH * lost, 0, BAR_HEIGHT, 0)
-	whiteFlash.Visible = true
-	task.delay(FLASH_DURATION, function()
-		if flashToken == token and whiteFlash then whiteFlash.Visible = false end
+	piece.Position = UDim2.new(BAR_LEFT + BAR_WIDTH * (1 - oldRatio), 0, BAR_TOP, 0)
+	piece.Size = UDim2.new(BAR_WIDTH * lost, 0, BAR_HEIGHT, 0)
+	piece.ZIndex = 6 -- (over "HEALTH", as in the recording)
+	piece.Parent = tray
+	task.delay(FLASH_HOLD, function()
+		if not piece.Parent then return end
+		local ok = pcall(function()
+			local fade = TweenService:Create(piece, TweenInfo.new(FLASH_FADE, Enum.EasingStyle.Linear),
+				{ BackgroundTransparency = 1 })
+			fade.Completed:Connect(function() piece:Destroy() end)
+			fade:Play()
+		end)
+		if not ok then piece:Destroy() end
 	end)
+end
+
+local function clearFlashes()
+	if not tray then return end
+	for _, child in ipairs(tray:GetChildren()) do
+		if child.Name == "WhiteFlashPiece" then child:Destroy() end
+	end
 end
 
 local function hurtFlash()
@@ -327,6 +349,7 @@ local function bindCharacter(character)
 	currentHumanoid = humanoid
 	lastRatio = math.clamp(humanoid.Health / math.max(humanoid.MaxHealth, 1), 0, 1)
 	if whiteFlash then whiteFlash.Visible = false end
+	clearFlashes()
 	update(humanoid.Health)
 	table.insert(charConns, humanoid.HealthChanged:Connect(update))
 	table.insert(charConns, humanoid:GetPropertyChangedSignal("MaxHealth"):Connect(function()
