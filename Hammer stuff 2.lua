@@ -71,6 +71,8 @@ task.spawn(function()
 		isOldHealthBarEnabled   = config.isOldHealthBarEnabled or false,
 		is2008NightSkyEnabled   = config.is2008NightSkyEnabled or false,
 		isAllPlayersEnabled     = config.isAllPlayersEnabled or false,
+		isScreen43Enabled       = config.isScreen43Enabled or false,
+		fpsCap                  = math.max(0, math.floor(tonumber(config.fpsCap) or 0)),
 	}
 
 	-- Hammer stuff 1 (and the base GUI) save to the same file, so re-read it first and
@@ -3453,6 +3455,65 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
+	-- 19. 4:3 SCREEN (Screen 4-3.lua in this repo)
+	-- Black bars on the sides, and the GUIs moved in to the 4:3 part. Unticking gives the whole screen back.
+	------------------------------------------------------------
+	do
+		local SCREEN43_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Screen%204-3.lua"
+		local genv = (getgenv and getgenv()) or _G
+		local loading = false
+		local function turnOff()
+			local api = genv.BPScreen43
+			if api and type(api.Disable) == "function" then pcall(api.Disable) end
+		end
+		function actions.applyScreen43()
+			local api = genv.BPScreen43
+			if api and type(api.Enable) == "function" then pcall(api.Enable) return end
+			if loading then return end
+			loading = true
+			task.spawn(function()
+				local ok, err = pcall(function()
+					loadstring(game:HttpGet(SCREEN43_URL))()
+				end)
+				loading = false
+				if not ok then
+					warn("[4:3 screen] couldn't load: " .. tostring(err))
+					return
+				end
+				-- unticked while it was downloading
+				if not state.isScreen43Enabled then turnOff() end
+			end)
+		end
+		function actions.restoreScreen43()
+			turnOff()
+		end
+	end
+
+	------------------------------------------------------------
+	-- 20. FPS CAP
+	-- The frame rate capped at a number typed in (the executor's setfpscap). Empty or 0: no cap.
+	------------------------------------------------------------
+	do
+		local genv = (getgenv and getgenv()) or _G
+		function actions.setFpsCap(value)
+			local cap = math.floor(tonumber(value) or 0)
+			if cap < 0 then cap = 0 end
+			if cap > 0 and cap < 5 then cap = 5 end   -- (lower than that the game can hardly be played)
+			if cap > 1000 then cap = 1000 end
+			local setCap = (type(setfpscap) == "function" and setfpscap) or (type(genv.setfpscap) == "function" and genv.setfpscap)
+			if not setCap then
+				warn("[FPS cap] this executor has no setfpscap, so the frame rate can't be capped")
+				return cap, false
+			end
+			local ok = pcall(setCap, cap)
+			-- (some executors want a big number, not 0, for no cap)
+			if not ok and cap == 0 then ok = pcall(setCap, 1000) end
+			print("[FPS cap] " .. (cap > 0 and ("capped at " .. cap .. " FPS") or "no cap"))
+			return cap, ok
+		end
+	end
+
+	------------------------------------------------------------
 	-- 10. HIDE GAME GUI (LOADSTRING HOOK)
 	-- The GUI Hider (Hide game GUI.lua in this repo: the gist without its __namecall hook) hides the game's
 	-- own ScreenGuis (TopbarPlus, HUDs, shop buttons) and leaves Bloxy Paradox and the era GUIs alone.
@@ -4189,6 +4250,67 @@ task.spawn(function()
 		helpText      = "For the 2013 and 2013 mobile GUIs only: their health bar becomes the 2011-2013 one (dark tray, green bar, HEALTH). The 2011 and 2012 GUIs always have that one (nothing before 2011 does). Untick for the 2013 GUIs' own bar."
 	})
 
+	createAddonRow({
+		containerName = "Screen43Container",
+		checkboxName  = "Screen43Checkbox",
+		helpName      = "Screen43HelpButton",
+		label         = "4:3 screen",
+		yPos          = startY,
+		stateKey      = "isScreen43Enabled",
+		onEnable      = actions.applyScreen43,
+		onDisable     = actions.restoreScreen43,
+		helpText      = "Shows the game 4:3, like an old monitor: black bars on the left and right, and the GUIs moved in from the sides to the 4:3 part. Roblox's own menu and chat stay as they are. Untick for the whole screen again."
+	})
+
+	-- the FPS cap: a number box where the tick box would be
+	local fpsBox
+	do
+		local cont, cb, help = buildRow(scroll, "FpsCapContainer", "fps cap", startY, "FpsCapCheckbox", "FpsCapHelpButton")
+		table.insert(layoutEntries, { frame = cont, extra = function() return 0 end })
+		cb.Visible = false
+		help.Position = UDim2.new(0, 164, 0, 7)
+		fpsBox = Instance.new("TextBox")
+		fpsBox.Name = "FpsCapBox"
+		fpsBox.Size = UDim2.new(0, 40, 0, 18)
+		fpsBox.Position = UDim2.new(0, 118, 0, 6)
+		fpsBox.BackgroundColor3 = Color3.fromRGB(220, 220, 220)
+		fpsBox.BackgroundTransparency = 0.5
+		fpsBox.BorderSizePixel = 0
+		fpsBox.ClearTextOnFocus = false
+		fpsBox.Font = Enum.Font.SourceSansBold
+		fpsBox.TextSize = 14
+		fpsBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+		fpsBox.PlaceholderText = "off"
+		fpsBox.PlaceholderColor3 = Color3.fromRGB(200, 200, 200)
+		fpsBox.Text = state.fpsCap > 0 and tostring(state.fpsCap) or ""
+		fpsBox.ZIndex = 97
+		fpsBox.Parent = cont
+		local st = Instance.new("UIStroke")
+		st.Color = Color3.fromRGB(255, 255, 255)
+		st.Thickness = 1.2
+		st.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		st.Parent = fpsBox
+		fpsBox.FocusLost:Connect(function()
+			local digits = string.match(fpsBox.Text or "", "%d+")
+			local cap = actions.setFpsCap(digits or 0)
+			state.fpsCap = cap
+			fpsBox.Text = cap > 0 and tostring(cap) or ""
+			saveConfig()
+		end)
+		help.MouseButton1Click:Connect(function()
+			playClick()
+			showInfo("Caps the frame rate: type a number (like 30 or 60) and tap away. Empty or 0 for no cap. Needs an executor with setfpscap.")
+		end)
+		-- (Saved Settings sets it after loading a file)
+		local genv = (getgenv and getgenv()) or _G
+		genv.BPHammer2SetFpsCap = function(value)
+			local cap = actions.setFpsCap(value)
+			state.fpsCap = cap
+			if fpsBox and fpsBox.Parent then fpsBox.Text = cap > 0 and tostring(cap) or "" end
+			saveConfig()
+		end
+	end
+
 	------------------------------------------------------------
 	-- OLD DECAL RENDERING BUTTON
 	------------------------------------------------------------
@@ -4285,6 +4407,11 @@ task.spawn(function()
 			refreshOldDecalBtn()
 			table.insert(restores, actions.restoreOldDecal)
 		end
+		if state.fpsCap > 0 then
+			state.fpsCap = 0
+			if fpsBox then fpsBox.Text = "" end
+			table.insert(restores, function() actions.setFpsCap(0) end)
+		end
 		saveConfig()
 
 		-- Hammer stuff 1's options (2013 skybox, remove lighting, materials, no shadows)
@@ -4332,6 +4459,8 @@ task.spawn(function()
 	if state.isOldHealthBarEnabled then task.spawn(actions.applyOldHealthBar) end
 	if state.is2008NightSkyEnabled then task.spawn(actions.apply2008NightSky) end
 	if state.isAllPlayersEnabled then task.spawn(actions.applyAllPlayers) end
+	if state.isScreen43Enabled then task.spawn(actions.applyScreen43) end
+	if state.fpsCap > 0 then task.spawn(actions.setFpsCap, state.fpsCap) end
 	if state.is2013DynamicEnabled then task.spawn(actions.apply2013Dynamic) end
 	if state.is2015AudioEnabled then task.spawn(actions.apply2015Audio)
 	elseif state.is2016AudioEnabled then task.spawn(actions.apply2016Audio) end

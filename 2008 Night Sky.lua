@@ -9,9 +9,12 @@
 	it off. Each sky's own star count is remembered and put back by the cleanup. The night sky is plain
 	black: the picture it used before had mountains in it.
 	It fades in at sunset (17:30 - 18:15) and out at sunrise (05:45 - 06:30) instead of switching all at
-	once: the 2008 stars fade in, and a black layer just behind them (a box of black panels around the
-	camera, further out than the stars) fades in over the game's own sky. Once it is fully dark the black
-	sky takes over and the panels are put away; at sunrise it runs the other way.)
+	once: a layer just behind the stars (a box of panels around the camera, further out than the stars)
+	darkens the game's own sky, deep twilight blue first, then black, and the 2008 stars come out one by one,
+	the brightest first. Once it is fully dark the black sky takes over and the panels are put away; at
+	sunrise it runs the other way.
+	The change takes at least a few seconds (TransitionTime): when a game jumps its clock straight from day to
+	night, or this is turned on at night, the whole transition plays instead of a snap.)
 ]=]
 
 local Lighting = game:GetService("Lighting")
@@ -39,6 +42,9 @@ local CONFIG = {
 	DawnStart = 5.75,   -- 05:45 the night starts fading out
 	DawnEnd = 6.5,      -- 06:30 fully day
 	FadeDistance = 1900, -- the black panels: just further out than the stars (SphereRadius)
+	TransitionTime = 6,  -- (seconds) the quickest the whole change to night (or back) is shown
+	StarWindow = 0.2,    -- each star fades in over this part of the transition (at its own moment)
+	Twilight = Color3.fromRGB(24, 32, 78), -- the sky's colour on its way to black
 
 	-- Pitch-black skybox asset used only while Night is active
 	-- (Addtion-Scripts) 264909758 was a purple night picture with mountains, so a mountain sky showed every
@@ -59,6 +65,9 @@ local fadePanels = {}  -- (Addtion-Scripts) the black panels' SurfaceGuis
 local fadeFrames = {}  -- their black fill, faded in and out
 local fadeOffsets = {} -- each panel's place around the camera
 local originalStarCounts = {} -- (Addtion-Scripts) each sky's own star count, put back by the cleanup
+local starMoment = {}  -- (Addtion-Scripts) when each star comes out (0 - 1 of the transition)
+local starLevel = {}   -- how far each star is faded in now (0 - STAR_STEPS)
+local STAR_STEPS = 6
 
 -- // Helper: how far into the night the clock is: 0 = day, 1 = night, in between while it fades //
 local function nightAmount(clockTime)
@@ -128,6 +137,8 @@ local function createStarfieldCarrier()
 
 	table.clear(starBillboards)
 	table.clear(starPixels)
+	table.clear(starMoment)
+	table.clear(starLevel)
 	table.clear(fadePanels)
 	table.clear(fadeFrames)
 	table.clear(fadeOffsets)
@@ -195,6 +206,11 @@ local function createStarfieldCarrier()
 
 		table.insert(starBillboards, billboard)
 		table.insert(starPixels, pixel)
+		-- (Addtion-Scripts) the brightest come out first, as at dusk, with a little randomness
+		local brightness = (gray - CONFIG.MinBrightness) / math.max(1, CONFIG.MaxBrightness - CONFIG.MinBrightness)
+		local moment = (1 - brightness) * 0.6 + rng:NextNumber() * 0.4
+		table.insert(starMoment, moment * (1 - CONFIG.StarWindow))
+		table.insert(starLevel, 0)
 	end
 
 	-- (Addtion-Scripts) the fade: a box of black panels around the camera, further out than the stars, so
@@ -257,40 +273,65 @@ end
 
 local starCarrier = createStarfieldCarrier()
 local currentNightState = nil
-local currentStarStep = nil  -- (Addtion-Scripts) the stars' fade, in 20 steps
-local currentFadeStep = nil  -- the black panels' fade, in 40 steps (0 = put away)
+local currentStarAmount = nil -- (Addtion-Scripts) the amount the stars were last set for
+local currentFadeStep = nil  -- the panels' fade, in 60 steps (0 = put away)
+local shownAmount = 0        -- how far into the night it is shown (moves towards targetAmount)
+local targetAmount = 0       -- how far into the night the clock is
 
--- (Addtion-Scripts) the stars from 0 (gone) to 1 (fully shown), changed only when the step changes
+-- (Addtion-Scripts) the stars for an amount from 0 (none) to 1 (all of them): each one fades in over its own
+-- part of the transition, so they come out one by one. Only the stars whose step changes are touched.
 local function setStars(amount)
-	local step = math.floor(amount * 20 + 0.5)
-	if step == currentStarStep then return end
-	currentStarStep = step
-	local shown = step > 0
-	local transparency = 1 - step / 20
+	if amount == currentStarAmount then return end
+	currentStarAmount = amount
+	local window = CONFIG.StarWindow
 	for i, billboard in ipairs(starBillboards) do
-		billboard.Enabled = shown
-		local pixel = starPixels[i]
-		if pixel then pixel.BackgroundTransparency = transparency end
+		local level = math.floor((amount - (starMoment[i] or 0)) / window * STAR_STEPS + 0.5)
+		level = math.clamp(level, 0, STAR_STEPS)
+		if amount >= 1 then level = STAR_STEPS elseif amount <= 0 then level = 0 end
+		if level ~= starLevel[i] then
+			starLevel[i] = level
+			billboard.Enabled = level > 0
+			local pixel = starPixels[i]
+			if pixel then pixel.BackgroundTransparency = 1 - level / STAR_STEPS end
+		end
 	end
 end
 
--- the black panels: amount from 0 to 1 while it fades; anything else puts them away
+-- the panels: amount from 0 to 1 while it changes (deep blue to black, see-through to solid); anything else
+-- puts them away
+local BLACK = Color3.new(0, 0, 0)
 local function setFade(amount)
-	local step = (amount > 0 and amount < 1) and math.max(1, math.floor(amount * 40 + 0.5)) or 0
+	local step = (amount > 0 and amount < 1) and math.max(1, math.floor(amount * 60 + 0.5)) or 0
 	if step == currentFadeStep then return end
+	local wasOn = currentFadeStep ~= nil and currentFadeStep > 0
 	currentFadeStep = step
 	local on = step > 0
-	local transparency = 1 - step / 40
+	local a = step / 60
+	local transparency = 1 - math.min(1, a * 1.1)
+	local color = CONFIG.Twilight:Lerp(BLACK, math.clamp((a - 0.25) / 0.65, 0, 1))
 	for i, surface in ipairs(fadePanels) do
-		surface.Enabled = on
+		if surface.Enabled ~= on then surface.Enabled = on end
 		local fill = fadeFrames[i]
-		if fill then fill.BackgroundTransparency = transparency end
+		if fill then
+			fill.BackgroundTransparency = transparency
+			fill.BackgroundColor3 = color
+		end
+	end
+	-- (they follow the camera only while on: put around it now, before they show)
+	if on and not wasOn then
+		local camera = Workspace.CurrentCamera
+		if camera then
+			local around = CFrame.new(camera.CFrame.Position)
+			for _, entry in ipairs(fadeOffsets) do entry.panel.CFrame = around * entry.offset end
+		end
 	end
 end
 
 -- // 3. Toggle Night Sky & Classic Stars Strictly Based on Lighting.ClockTime //
-local function updateTimeState()
-	local amount = nightAmount(Lighting.ClockTime)
+-- (Addtion-Scripts) what is shown for the amount shown now: the black sky once it is fully night, the
+-- stars and the panels while it changes
+local function applyShown()
+	local amount = shownAmount
 	local nightActive = amount >= 1
 
 	-- Always keep default Roblox stars disabled on every Sky in Lighting
@@ -327,26 +368,33 @@ local function updateTimeState()
 	end
 
 	currentNightState = nightActive
-	-- (Addtion-Scripts) the stars fade in over sunset and out over sunrise; the black panels cover the
-	-- game's sky while it fades (once fully night the black sky itself is up, so they are put away)
+	-- (Addtion-Scripts) the stars come out over sunset and go over sunrise; the panels cover the game's
+	-- sky while it changes (once fully night the black sky itself is up, so they are put away)
 	setStars(amount)
 	setFade(nightActive and 0 or amount)
 end
 
+-- the clock: where the night is going to (the render step below moves what is shown there, no quicker than
+-- TransitionTime for the whole change)
+local function updateTimeState()
+	targetAmount = nightAmount(Lighting.ClockTime)
+end
+
 updateTimeState()
+applyShown()
 
 table.insert(connections, Lighting:GetPropertyChangedSignal("ClockTime"):Connect(updateTimeState))
 table.insert(connections, Lighting.ChildAdded:Connect(function(child)
 	if child:IsA("Sky") then
 		lockZeroDefaultStars(child)
-		if child ~= nightSky and isNightTime(Lighting.ClockTime) then
-			task.defer(updateTimeState)
+		if child ~= nightSky and shownAmount >= 1 then
+			task.defer(applyShown)
 		end
 	end
 end))
 
 -- // 4. Lock Star Sphere Position to Camera //
-RunService:BindToRenderStep(RENDER_STEP_NAME, Enum.RenderPriority.Camera.Value + 1, function()
+RunService:BindToRenderStep(RENDER_STEP_NAME, Enum.RenderPriority.Camera.Value + 1, function(deltaTime)
 	local camera = Workspace.CurrentCamera
 	if not camera then
 		return
@@ -357,9 +405,20 @@ RunService:BindToRenderStep(RENDER_STEP_NAME, Enum.RenderPriority.Camera.Value +
 		end
 		starCarrier = createStarfieldCarrier()
 		currentNightState = nil
-		currentStarStep = nil
+		currentStarAmount = nil
 		currentFadeStep = nil
 		updateTimeState()
+		applyShown()
+	end
+	-- (Addtion-Scripts) the transition: what is shown moves towards the clock's amount
+	if shownAmount ~= targetAmount then
+		local step = math.min(deltaTime or (1 / 60), 0.25) / CONFIG.TransitionTime
+		if targetAmount > shownAmount then
+			shownAmount = math.min(targetAmount, shownAmount + step)
+		else
+			shownAmount = math.max(targetAmount, shownAmount - step)
+		end
+		applyShown()
 	end
 	if starCarrier then
 		local around = CFrame.new(camera.CFrame.Position)
@@ -399,6 +458,8 @@ _G.Cleanup2008NightSky = function()
 	table.clear(createdInstances)
 	table.clear(starBillboards)
 	table.clear(starPixels)
+	table.clear(starMoment)
+	table.clear(starLevel)
 	table.clear(fadePanels)
 	table.clear(fadeFrames)
 	table.clear(fadeOffsets)
@@ -416,5 +477,6 @@ do
 	local genv = (getgenv and getgenv()) or _G
 	genv.Cleanup2008NightSky = _G.Cleanup2008NightSky
 end
-print("[2008 Night Sky] On: a pitch-black sky and square stars at night, fading in at sunset (17:30 - 18:15)"
-	.. " and out at sunrise (05:45 - 06:30).")
+print("[2008 Night Sky] On: a pitch-black sky and square stars at night. At sunset (17:30 - 18:15) the sky"
+	.. " goes deep blue, then black, and the stars come out one by one (at least " .. CONFIG.TransitionTime
+	.. " seconds, also when the clock jumps to night); at sunrise (05:45 - 06:30) the other way.")
