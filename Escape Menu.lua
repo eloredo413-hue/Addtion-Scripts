@@ -36,6 +36,13 @@ do
         -- 2016 and older: their gap; 2017 and later (or a year not known): a little less
         return (year ~= nil and year <= 2016) and GAP or GAP_2017
     end
+    -- How much taller the page's scroll area is made: the gap, and on 2019 and later some room after the last
+    -- row too (their Settings page scrolled only as far as its own height, so the last row, Camera Inverted,
+    -- stayed cut off at the bottom: it can now be scrolled up into view).
+    local BOTTOM_ROOM_2019 = 70
+    local function canvasRoomFor(year)
+        return gapFor(year) + ((year ~= nil and year >= 2019) and BOTTOM_ROOM_2019 or 0)
+    end
 
     local function topbarYear()
         -- the pick at Confirm first (More guis' 2017 / 2019 / 2021 are saved as Bloxy's 2023)
@@ -347,7 +354,7 @@ do
             pad.Parent = obj
         end
         pad.PaddingTop = UDim.new(0, gapFor(year))
-        pcall(fitCanvas, obj, gapFor(year))
+        pcall(fitCanvas, obj, canvasRoomFor(year))
         pcall(fitToScreen, clipper)
     end
 
@@ -361,7 +368,7 @@ do
         local existing = view:FindFirstChild("BPMenuGap")
         if existing then
             existing.PaddingTop = UDim.new(0, gapFor(year))
-            pcall(fitCanvas, view, gapFor(year))
+            pcall(fitCanvas, view, canvasRoomFor(year))
             return
         end
         -- only the escape menu's (SettingsHub: its tab bar is called HubBar)
@@ -372,7 +379,7 @@ do
         pad.Name = "BPMenuGap"
         pad.PaddingTop = UDim.new(0, gapFor(year))
         pad.Parent = view
-        pcall(fitCanvas, view, gapFor(year))
+        pcall(fitCanvas, view, canvasRoomFor(year))
         -- (SettingsHub's own PageView is fitted through its PageViewClipper, above)
         if not (view.Name == "PageView" and view.Parent and view.Parent.Name == "PageViewClipper") then
             pcall(fitToScreen, view)
