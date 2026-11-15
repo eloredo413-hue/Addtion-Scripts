@@ -30,6 +30,8 @@
 -- + Saved settings: a floppy disk under Bloxy's hammer opens a panel to save / load / rename / delete named
 --   copies of the setup and hammer settings (Saved Settings.lua)
 -- + "Skip setup" brings back More guis' topbars too (2013 mobile, 2023 old...): the pick is saved at Confirm
+-- + 2006 / 2008 / 2010: the inventory sits right on the chat bar (no gap); the green outline of the tool in
+--   hand still shows whole
 --========================================================
 
 if getgenv().ClassicDialogCleanup then
@@ -3011,5 +3013,75 @@ end
         end
     end)
 end)
+
+--========================================================
+-- 2006 / 2008 / 2010 GUIS: THE INVENTORY RIGHT ON TOP OF THE CHAT BAR
+-- Their inventory (ClassicBackpack) sat 2 pixels above the chat bar, room left for the green outline of the
+-- tool in hand, which is drawn just outside its slot. It now sits right on the bar, and is drawn above the
+-- bar, so that outline is still whole (its bottom edge goes over the top of the bar). The same for the 2006
+-- gist, the 2008 GUI, the new 2010 GUI and Bloxy's own 2010: they share this inventory and chat bar. 2005
+-- (no inventory) and 2011 (another GUI) are not touched.
+--========================================================
+if getgenv().BPChatGapCleanup then
+    pcall(getgenv().BPChatGapCleanup)
+    getgenv().BPChatGapCleanup = nil
+end
+do
+    local conns = {}
+    local function bottomAnchored(obj)
+        return obj.AnchorPoint.Y == 1 and obj.Position.Y.Scale == 1 and obj.Size.Y.Scale == 0
+    end
+    -- true once the inventory is placed (or was already)
+    local function closeGap(gui)
+        local bar = gui:FindFirstChild("ClassicBottomChatBar")
+        local pack = gui:FindFirstChild("ClassicBackpack")
+        if not (bar and pack and bar:IsA("GuiObject") and pack:IsA("GuiObject")) then return false end
+        -- only the layout these GUIs have: both held by their bottom edge, the bar at the very bottom
+        if not (bottomAnchored(bar) and bar.Position.Y.Offset == 0 and bottomAnchored(pack)) then return true end
+        local x = pack.Position.X
+        local bottom = -bar.Size.Y.Offset -- the top of the bar
+        if pack.Position.Y.Offset ~= bottom then
+            pack.Position = UDim2.new(x.Scale, x.Offset, 1, bottom)
+        end
+        if pack.ZIndex <= bar.ZIndex then pack.ZIndex = bar.ZIndex + 1 end
+        return true
+    end
+    local function watchGui(gui)
+        if gui.Name ~= "Classic2010Gui" or not gui:IsA("LayerCollector") then return end
+        if closeGap(gui) then return end
+        -- the GUI is put on screen empty and filled afterwards: the chat bar comes before the inventory
+        local conn
+        conn = gui.ChildAdded:Connect(function()
+            if conn and closeGap(gui) then
+                conn:Disconnect()
+                conn = nil
+            end
+        end)
+        table.insert(conns, conn)
+    end
+    -- where these GUIs are put: gethui() when the executor has it, CoreGui when not
+    local containers, seen = {}, {}
+    pcall(function()
+        if type(gethui) == "function" then table.insert(containers, gethui()) end
+    end)
+    pcall(function() table.insert(containers, game:GetService("CoreGui")) end)
+    for _, container in ipairs(containers) do
+        if typeof(container) == "Instance" and not seen[container] then
+            seen[container] = true
+            pcall(function()
+                for _, child in ipairs(container:GetChildren()) do
+                    pcall(watchGui, child)
+                end
+                table.insert(conns, container.ChildAdded:Connect(function(child)
+                    pcall(watchGui, child)
+                end))
+            end)
+        end
+    end
+    getgenv().BPChatGapCleanup = function()
+        for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
+        table.clear(conns)
+    end
+end
 
 print("[Loader] All scripts loaded.")
