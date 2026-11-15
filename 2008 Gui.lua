@@ -2299,7 +2299,10 @@ storeConnection(
 local BackpackGui = Instance.new("Frame")
 BackpackGui.Name = "ClassicBackpack"
 BackpackGui.AnchorPoint = Vector2.new(0, 1)
-BackpackGui.Position = UDim2.new(0, 3, 1, -22)
+-- right on the chat bar (20 high), and drawn above it: the green outline of the tool in hand goes just outside
+-- its slot, so its bottom edge shows over the top of the bar
+BackpackGui.Position = UDim2.new(0, 3, 1, -20)
+BackpackGui.ZIndex = 2
 BackpackGui.BackgroundTransparency = 1
 BackpackGui.Parent = ScreenGui
 
