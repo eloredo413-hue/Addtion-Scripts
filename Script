@@ -30,7 +30,7 @@
 -- + Saved settings: a floppy disk under Bloxy's hammer opens a panel to save / load / rename / delete named
 --   copies of the setup and hammer settings (Saved Settings.lua)
 -- + "Skip setup" brings back More guis' topbars too (2013 mobile, 2023 old...): the pick is saved at Confirm
--- + 2006 / 2008 / 2010: the inventory sits right on the chat bar (no gap), the bar drawn over the green outline;
+-- + 2006 / 2008 / 2010: the inventory sits right on the chat bar (no gap), the green outline just inside its slot;
 --   2010's "Health" text a little bigger and pure blue, like the 2010 client
 --========================================================
 
@@ -3016,10 +3016,12 @@ end)
 
 --========================================================
 -- 2006 / 2008 / 2010 GUIS: THE INVENTORY RIGHT ON THE CHAT BAR, AND 2010'S "HEALTH"
--- * Their inventory (ClassicBackpack) sat 2 pixels above the chat bar. It now sits right on the bar, and the bar
---   is drawn over it: the bottom edge of the green outline (the tool in hand, drawn just outside its slot) goes
---   behind the bar. The same for the 2006 gist, the 2008 GUI, the new 2010 GUI and Bloxy's own 2010: they
---   share this inventory and chat bar. 2005 (no inventory) and 2011 (another GUI) are not touched.
+-- * Their inventory (ClassicBackpack) sat 2 pixels above the chat bar (room for the green outline of the tool in
+--   hand, drawn just outside its slot). It now sits right on the bar, and the outline is drawn just inside the
+--   slot: whole (not cut off by the bar) and over nothing. The same for the 2006 gist, the 2008 GUI, the new 2010
+--   GUI and Bloxy's own 2010: they share this inventory and chat bar. 2005 (no inventory) and 2011 (another GUI)
+--   are not touched. (An earlier copy put the bar over the inventory; with these GUIs' Global layering that hid
+--   the 2008 bar's own "To chat click here" text: a bar left like that gets its text back on top.)
 -- * 2010 (the new GUI and Bloxy's own): "Health" under the health bar is a little bigger (16, was 14) and pure
 --   blue, as in the 2010 client (its light blue had some green in it). Only the text: the bar stays as it was.
 --   The 2006 and 2008 ones are their own and are left alone.
@@ -3037,24 +3039,30 @@ do
         return obj.AnchorPoint.Y == 1 and obj.Position.Y.Scale == 1 and obj.Size.Y.Scale == 0
     end
 
-    -- With "Global" layering every element is drawn by its own ZIndex: the bar and what is on it are lifted
-    -- above everything in the inventory (the outline's frame is 10).
-    local function liftBar(bar, pack)
-        local packTop = pack.ZIndex
-        for _, d in ipairs(pack:GetDescendants()) do
-            if d:IsA("GuiObject") and d.ZIndex > packTop then packTop = d.ZIndex end
-        end
-        local items = { bar }
+    -- the green outline of the tool in hand drawn just inside its slot (it was drawn just outside it)
+    local function insetOutline(slot)
+        local sel = slot:FindFirstChild("SelectionFrame")
+        if not (sel and sel:IsA("GuiObject")) then return end
+        local stroke = sel:FindFirstChildOfClass("UIStroke")
+        local t = (stroke and stroke.Thickness) or 2
+        sel.Size = UDim2.new(1, -2 * t, 1, -2 * t)
+        sel.Position = UDim2.new(0, t, 0, t)
+    end
+
+    -- "Global" layering: a bar drawn over its own text (an earlier copy of this fix, or the 2008 GUI, raised the bar
+    -- only): the text and the typing box back on top of it, in their own order
+    local function barTextOnTop(bar)
+        local items, low = {}, math.huge
         for _, d in ipairs(bar:GetDescendants()) do
-            if d:IsA("GuiObject") then table.insert(items, d) end
+            if d:IsA("GuiObject") then
+                table.insert(items, d)
+                if d.ZIndex < low then low = d.ZIndex end
+            end
         end
-        local low = math.huge
-        for _, o in ipairs(items) do
-            if o.ZIndex < low then low = o.ZIndex end
+        if #items > 0 and low < bar.ZIndex then
+            local shift = bar.ZIndex - low
+            for _, o in ipairs(items) do o.ZIndex = o.ZIndex + shift end
         end
-        if low > packTop then return end
-        local shift = packTop + 1 - low
-        for _, o in ipairs(items) do o.ZIndex = o.ZIndex + shift end
     end
 
     -- true once the inventory is placed (or was already)
@@ -3062,6 +3070,9 @@ do
         local bar = gui:FindFirstChild("ClassicBottomChatBar")
         local pack = gui:FindFirstChild("ClassicBackpack")
         if not (bar and pack and bar:IsA("GuiObject") and pack:IsA("GuiObject")) then return false end
+        local global = false
+        pcall(function() global = gui.ZIndexBehavior == Enum.ZIndexBehavior.Global end)
+        if global then barTextOnTop(bar) end
         -- only the layout these GUIs have: both held by their bottom edge, the bar at the very bottom
         if not (bottomAnchored(bar) and bar.Position.Y.Offset == 0 and bottomAnchored(pack)) then return true end
         local x = pack.Position.X
@@ -3069,17 +3080,9 @@ do
         if pack.Position.Y.Offset ~= bottom then
             pack.Position = UDim2.new(x.Scale, x.Offset, 1, bottom)
         end
-        local global = false
-        pcall(function() global = gui.ZIndexBehavior == Enum.ZIndexBehavior.Global end)
-        if global then
-            liftBar(bar, pack)
-            -- (the slots are made after the inventory is put on screen)
-            table.insert(conns, pack.DescendantAdded:Connect(function() liftBar(bar, pack) end))
-            table.insert(conns, bar.DescendantAdded:Connect(function() liftBar(bar, pack) end))
-        elseif bar.ZIndex <= pack.ZIndex then
-            -- ("Sibling" layering: the bar, and all on it, over the inventory and all in it)
-            bar.ZIndex = pack.ZIndex + 1
-        end
+        for _, slot in ipairs(pack:GetChildren()) do insetOutline(slot) end
+        -- (the slots are made after the inventory is put on screen)
+        table.insert(conns, pack.ChildAdded:Connect(insetOutline))
         return true
     end
 

@@ -1835,7 +1835,6 @@ BottomChatBar.BackgroundColor3 =
 	)
 BottomChatBar.BorderSizePixel = 0
 BottomChatBar.Active = true
-BottomChatBar.ZIndex = 2 -- over the inventory, which sits right on it
 BottomChatBar.Parent =
 	ScreenGui
 local ChatPromptLabel =
@@ -2300,8 +2299,8 @@ storeConnection(
 local BackpackGui = Instance.new("Frame")
 BackpackGui.Name = "ClassicBackpack"
 BackpackGui.AnchorPoint = Vector2.new(0, 1)
--- right on the chat bar (20 high), which is drawn over it: the bottom edge of the green outline of the tool in
--- hand (just outside its slot) goes behind the bar
+-- right on the chat bar (20 high); the green outline of the tool in hand is drawn just inside its slot (below), so
+-- it is whole and covers nothing
 BackpackGui.Position = UDim2.new(0, 3, 1, -20)
 BackpackGui.BackgroundTransparency = 1
 BackpackGui.Parent = ScreenGui
@@ -2332,7 +2331,9 @@ for i = 1, 10 do
 
 	local selectionFrame = Instance.new("Frame")
 	selectionFrame.Name = "SelectionFrame"
-	selectionFrame.Size = UDim2.new(1, 0, 1, 0)
+	-- (Addtion-Scripts) 2 in from each side: the 2-thick outline is drawn just inside the slot, not over the chat bar
+	selectionFrame.Size = UDim2.new(1, -4, 1, -4)
+	selectionFrame.Position = UDim2.new(0, 2, 0, 2)
 	selectionFrame.BackgroundTransparency = 1
 	selectionFrame.ZIndex = 10
 	selectionFrame.Parent = slot
