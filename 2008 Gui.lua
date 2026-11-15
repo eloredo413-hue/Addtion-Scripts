@@ -1,6 +1,6 @@
 -- [[ 2008 ROBLOX LOOK - built on the 2010 GUI ]]
 -- (Addtion-Scripts: the repo copy of the 2008 GUI gist, loaded in its place by the loader. The health bar is
--- the 2008 client's size and place: a thin bar on the right just under the player list, "Health" under it.)
+-- the 2008 client's: a short bar on the right just under the player list, "Health" under it.)
 -- [[ TEXTCHATSERVICE CHAT ]]
 -- [[ 2008 CARTOON FONT EVERYWHERE (like the 2006 GUI does with its font) ]]
 -- [[ NO CHAT BUBBLES, NO SCREENSHOT BUTTON ]]
@@ -1166,14 +1166,22 @@ local HealthFrame =
 	Instance.new("Frame")
 HealthFrame.Name =
 	"ClassicHealthFrame"
--- (Addtion-Scripts) The 2008 client's size and place: a thin bar 4 wide and 12% of the screen tall, its top 28%
--- of the way down (just under the player list), 35 in from the right edge
+-- (Addtion-Scripts) As in the 2008 client: a short bar on the right just under the player list (its top a
+-- little below the list's bottom, under the list's right part). In the GUI's own units, so it is scaled with
+-- the rest of it (on a phone the whole GUI is shown smaller) and stays under the list whatever its size.
+local HEALTH_WIDTH, HEALTH_HEIGHT, HEALTH_GAP = 12, 60, 12
 HealthFrame.AnchorPoint =
 	Vector2.new(1, 0)
 HealthFrame.Size =
-	UDim2.new(0, 4, 0.12, 0)
-HealthFrame.Position =
-	UDim2.new(1, -35, 0.28, 0)
+	UDim2.new(0, HEALTH_WIDTH, 0, HEALTH_HEIGHT)
+local function placeHealthBar()
+	local listPos, listSize = PlayerList.Position, PlayerList.Size
+	HealthFrame.Position = UDim2.new(1, listPos.X.Offset - 25, 0,
+		listPos.Y.Offset + listSize.Y.Offset + HEALTH_GAP)
+end
+placeHealthBar()
+storeConnection(PlayerList:GetPropertyChangedSignal("Size"):Connect(placeHealthBar))
+storeConnection(PlayerList:GetPropertyChangedSignal("Position"):Connect(placeHealthBar))
 HealthFrame.BackgroundColor3 =
 	Color3.fromRGB(255, 0, 0)
 HealthFrame.BorderSizePixel = 0
@@ -1201,16 +1209,16 @@ local HealthLabel =
 HealthLabel.AnchorPoint =
 	Vector2.new(0.5, 0)
 HealthLabel.Size =
-	UDim2.new(0, 50, 0, 13)
+	UDim2.new(0, 60, 0, 18)
 HealthLabel.Position =
-	UDim2.new(0.5, 0, 1, 2)
+	UDim2.new(0.5, 0, 1, 3)
 HealthLabel.BackgroundTransparency = 1
 HealthLabel.Text = "Health"
 HealthLabel.TextColor3 =
 	Color3.fromRGB(0, 0, 255)
 HealthLabel.Font =
 	CARTOON_FONT
-HealthLabel.TextSize = 13
+HealthLabel.TextSize = 16
 HealthLabel.Parent =
 	HealthFrame
 local function setupHealthTracking(character)

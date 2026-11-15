@@ -1,9 +1,12 @@
 --[[ SCREEN 4:3 (Addtion-Scripts) ]]
 -- Hammer stuff 2's "4:3 screen": the game shown 4:3, like an old monitor.
 --   * black bars on the left and right (under every GUI, over the game's 3D view)
---   * every GUI's pieces moved in from the sides so they sit inside the 4:3 part: a padding is added to each
---     ScreenGui (or added to the one it has), so their own layouts and scripts are left as they are
---   * Roblox's own GUIs (its menu, chat, player list...) are left alone
+--   * the old era GUIs (2005 - 2016: the top bar, the bottom bar, the hotbar, the player list) moved in from the
+--     sides so they sit inside the 4:3 part: a padding is added to their ScreenGui (or added to the one it
+--     has), so their own layouts and scripts are left as they are
+--   * nothing else is moved: Bloxy's setup and hammer, the saved settings panel, the game's own GUIs, the
+--     touch controls, the executor's window and Roblox's own GUIs stay where they are (moving them all in
+--     made them run into each other)
 -- It follows the screen (turning the phone, resizing the window) and GUIs made later.
 -- getgenv().BPScreen43 = { Enable, Disable, IsOn }
 
@@ -20,13 +23,13 @@ local ASPECT = 4 / 3
 -- "Paradox" in the name: the game GUI hider leaves it alone
 local BARS_NAME = "ParadoxScreen43Bars"
 local PAD_NAME = "BPScreen43Padding"
--- Roblox's own GUIs: left alone
-local ROBLOX_GUIS = {
-	RobloxGui = true, TopBarApp = true, ExperienceChat = true, RobloxLoadingGUI = true, RobloxPromptGui = true,
-	RobloxNetworkPauseNotification = true, PlayerList = true, TeleportGui = true, DevConsoleMaster = true,
-	ThemeProvider = true, InGameMenu = true, InGameMenuInformationalDialog = true, PurchasePromptApp = true,
-	HeadsetDisconnectedDialog = true, CoreScriptLocalization = true, BubbleChat = true, TopBar = true,
-	FoundationOverlay = true, EmotesMenu = true,
+-- the old era GUIs moved in to the 4:3 part (nothing else is)
+local ERA_GUIS = {
+	Classic2010Gui = true,  -- 2005, 2006, 2008 and 2010
+	Early2011Gui = true,    -- 2011
+	BPOldHealthBar = true,  -- the 2011 - 2013 health bar
+	NewRobloxGui = true,    -- 2012 - 2016 (the legacy package)
+	CustomHealthGui = true, -- Bloxy's 2012 / 2013 health bar
 }
 
 local on = false
@@ -65,10 +68,7 @@ local function holders()
 end
 
 local function skip(gui)
-	if not gui:IsA("ScreenGui") then return true end
-	if gui.Name == BARS_NAME or ROBLOX_GUIS[gui.Name] then return true end
-	if string.sub(gui.Name, 1, 6) == "Roblox" then return true end
-	return false
+	return not (gui:IsA("ScreenGui") and ERA_GUIS[gui.Name])
 end
 
 -- a GUI's pieces moved in from the sides: its own area on the screen (it may already stay out of the
@@ -91,9 +91,17 @@ local function padGui(gui)
 			pad.Parent = gui
 		end
 		padded[gui] = entry
+		entry.conns = {}
+		-- (the GUI's own scale: the 2008 and 2011 GUIs are shown smaller on a phone, and the padding with them)
+		local scaler = gui:FindFirstChildOfClass("UIScale")
+		if scaler then
+			entry.scaler = scaler
+			table.insert(entry.conns, scaler:GetPropertyChangedSignal("Scale"):Connect(function()
+				task.defer(padGui, gui)
+			end))
+		end
 		if not entry.ours then
 			-- (the GUI's own code changing its padding: that is its new one, the bars' added on top again)
-			entry.conns = {}
 			for _, prop in ipairs({ "PaddingLeft", "PaddingRight" }) do
 				local c = theirs:GetPropertyChangedSignal(prop):Connect(function()
 					local key = (prop == "PaddingLeft") and "left" or "right"
@@ -111,6 +119,8 @@ local function padGui(gui)
 	local left = math.max(0, side - pos.X)
 	local right = math.max(0, (pos.X + size.X) - (screenWidth - side))
 	if side <= 0 then left, right = 0, 0 end
+	local scale = (entry.scaler and entry.scaler.Parent == gui and entry.scaler.Scale > 0) and entry.scaler.Scale or 1
+	left, right = math.ceil(left / scale), math.ceil(right / scale)
 	entry.setLeft = UDim.new(entry.left.Scale, entry.left.Offset + left)
 	entry.setRight = UDim.new(entry.right.Scale, entry.right.Offset + right)
 	if entry.pad.PaddingLeft ~= entry.setLeft then entry.pad.PaddingLeft = entry.setLeft end
@@ -195,7 +205,7 @@ function api.Enable()
 	end
 	refresh()
 	local side = sideWidth()
-	print("[4:3 screen] On: black bars on the sides (" .. side .. " wide each) and the GUIs moved in to the 4:3 part")
+	print("[4:3 screen] On: black bars on the sides (" .. side .. " wide each) and the old era GUIs moved in to the 4:3 part")
 end
 
 function api.Disable()

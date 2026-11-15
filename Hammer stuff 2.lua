@@ -72,6 +72,7 @@ task.spawn(function()
 		is2008NightSkyEnabled   = config.is2008NightSkyEnabled or false,
 		isAllPlayersEnabled     = config.isAllPlayersEnabled or false,
 		isScreen43Enabled       = config.isScreen43Enabled or false,
+		isFpsCapEnabled         = config.isFpsCapEnabled or false,
 		fpsCap                  = math.max(0, math.floor(tonumber(config.fpsCap) or 0)),
 	}
 
@@ -3491,25 +3492,101 @@ task.spawn(function()
 
 	------------------------------------------------------------
 	-- 20. FPS CAP
-	-- The frame rate capped at a number typed in (the executor's setfpscap). Empty or 0: no cap.
+	-- The frame rate capped at the number typed in. The executor's setfpscap does it; when there is none, or
+	-- the frame rate stays above the cap anyway (some executors have one that does nothing), a frame limiter
+	-- here does it (each frame waits until its time is up). The frame rate now is counted, for the row's label.
 	------------------------------------------------------------
 	do
 		local genv = (getgenv and getgenv()) or _G
-		function actions.setFpsCap(value)
+		local RunService = game:GetService("RunService")
+		local DEFAULT_CAP = 60
+		local limiterConn = nil
+		local applyToken = 0
+		local frames, fpsNow = 0, 0
+
+		-- the frame rate now (frames counted each half second)
+		RunService.RenderStepped:Connect(function() frames = frames + 1 end)
+		task.spawn(function()
+			local last = os.clock()
+			while true do
+				task.wait(0.5)
+				local now = os.clock()
+				fpsNow = frames / math.max(now - last, 1e-3)
+				frames, last = 0, now
+				if type(actions.onFpsMeasured) == "function" then pcall(actions.onFpsMeasured, fpsNow) end
+			end
+		end)
+		function actions.currentFps() return fpsNow end
+
+		local function executorCap()
+			local fn = setfpscap or set_fps_cap or genv.setfpscap or genv.set_fps_cap
+			if type(fn) == "function" then return fn end
+			return nil
+		end
+
+		local function stopLimiter()
+			if limiterConn then limiterConn:Disconnect() limiterConn = nil end
+		end
+		local function startLimiter(cap)
+			stopLimiter()
+			local frameTime = 1 / cap
+			local nextFrame = os.clock() + frameTime
+			limiterConn = RunService.RenderStepped:Connect(function()
+				local now = os.clock()
+				-- (a busy wait: the frame doesn't end before its time)
+				while now < nextFrame do now = os.clock() end
+				nextFrame = math.max(nextFrame + frameTime, now)
+			end)
+		end
+
+		local function clampCap(value)
 			local cap = math.floor(tonumber(value) or 0)
 			if cap < 0 then cap = 0 end
 			if cap > 0 and cap < 5 then cap = 5 end   -- (lower than that the game can hardly be played)
 			if cap > 1000 then cap = 1000 end
-			local setCap = (type(setfpscap) == "function" and setfpscap) or (type(genv.setfpscap) == "function" and genv.setfpscap)
-			if not setCap then
-				warn("[FPS cap] this executor has no setfpscap, so the frame rate can't be capped")
-				return cap, false
+			return cap
+		end
+		actions.clampFpsCap = clampCap
+
+		-- cap 0: no cap
+		function actions.setFpsCap(value)
+			local cap = clampCap(value)
+			applyToken = applyToken + 1
+			local token = applyToken
+			stopLimiter()
+			local setCap = executorCap()
+			if cap == 0 then
+				if setCap then
+					if not pcall(setCap, 0) then pcall(setCap, 1000) end
+				end
+				print("[FPS cap] no cap")
+				return cap
 			end
-			local ok = pcall(setCap, cap)
-			-- (some executors want a big number, not 0, for no cap)
-			if not ok and cap == 0 then ok = pcall(setCap, 1000) end
-			print("[FPS cap] " .. (cap > 0 and ("capped at " .. cap .. " FPS") or "no cap"))
-			return cap, ok
+			if setCap and pcall(setCap, cap) then
+				print("[FPS cap] capped at " .. cap .. " FPS (the executor's setfpscap)")
+				-- does it hold? if the frame rate stays above the cap, the limiter takes over
+				task.delay(2.5, function()
+					if token ~= applyToken then return end
+					if fpsNow > cap + 4 then
+						startLimiter(cap)
+						print("[FPS cap] the frame rate stayed at " .. math.floor(fpsNow) .. ": capped at " .. cap
+							.. " by a frame limiter instead")
+					end
+				end)
+			else
+				startLimiter(cap)
+				print("[FPS cap] capped at " .. cap .. " FPS (a frame limiter: this executor has no setfpscap)")
+			end
+			return cap
+		end
+
+		function actions.applyFpsCap()
+			if state.fpsCap <= 0 then state.fpsCap = DEFAULT_CAP end
+			state.fpsCap = actions.setFpsCap(state.fpsCap)
+			if type(actions.onFpsCapChanged) == "function" then pcall(actions.onFpsCapChanged) end
+		end
+		function actions.restoreFpsCap()
+			actions.setFpsCap(0)
 		end
 	end
 
@@ -4262,50 +4339,105 @@ task.spawn(function()
 		helpText      = "Shows the game 4:3, like an old monitor: black bars on the left and right, and the GUIs moved in from the sides to the 4:3 part. Roblox's own menu and chat stay as they are. Untick for the whole screen again."
 	})
 
-	-- the FPS cap: a number box where the tick box would be
+	-- the FPS cap: its tick box, then a number box (the "?" after it); the label shows the frame rate now
+	createAddonRow({
+		containerName = "FpsCapContainer",
+		checkboxName  = "FpsCapCheckbox",
+		helpName      = "FpsCapHelpButton",
+		label         = "fps cap",
+		yPos          = startY,
+		stateKey      = "isFpsCapEnabled",
+		onEnable      = actions.applyFpsCap,
+		onDisable     = actions.restoreFpsCap,
+		helpText      = "Caps the frame rate. Tick it, then type the number (like 30) in the box: it is used straight away. The number after \"fps cap\" is your frame rate now. Untick for no cap. (Roblox itself stops at 60 unless its own setting is higher.)"
+	})
 	local fpsBox
 	do
-		local cont, cb, help = buildRow(scroll, "FpsCapContainer", "fps cap", startY, "FpsCapCheckbox", "FpsCapHelpButton")
-		table.insert(layoutEntries, { frame = cont, extra = function() return 0 end })
-		cb.Visible = false
-		help.Position = UDim2.new(0, 164, 0, 7)
-		fpsBox = Instance.new("TextBox")
-		fpsBox.Name = "FpsCapBox"
-		fpsBox.Size = UDim2.new(0, 40, 0, 18)
-		fpsBox.Position = UDim2.new(0, 118, 0, 6)
-		fpsBox.BackgroundColor3 = Color3.fromRGB(220, 220, 220)
-		fpsBox.BackgroundTransparency = 0.5
-		fpsBox.BorderSizePixel = 0
-		fpsBox.ClearTextOnFocus = false
-		fpsBox.Font = Enum.Font.SourceSansBold
-		fpsBox.TextSize = 14
-		fpsBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-		fpsBox.PlaceholderText = "off"
-		fpsBox.PlaceholderColor3 = Color3.fromRGB(200, 200, 200)
-		fpsBox.Text = state.fpsCap > 0 and tostring(state.fpsCap) or ""
-		fpsBox.ZIndex = 97
-		fpsBox.Parent = cont
-		local st = Instance.new("UIStroke")
-		st.Color = Color3.fromRGB(255, 255, 255)
-		st.Thickness = 1.2
-		st.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-		st.Parent = fpsBox
-		fpsBox.FocusLost:Connect(function()
-			local digits = string.match(fpsBox.Text or "", "%d+")
-			local cap = actions.setFpsCap(digits or 0)
-			state.fpsCap = cap
-			fpsBox.Text = cap > 0 and tostring(cap) or ""
-			saveConfig()
-		end)
-		help.MouseButton1Click:Connect(function()
-			playClick()
-			showInfo("Caps the frame rate: type a number (like 30 or 60) and tap away. Empty or 0 for no cap. Needs an executor with setfpscap.")
-		end)
-		-- (Saved Settings sets it after loading a file)
+		local row = rows.isFpsCapEnabled
+		local cont = row and row.checkbox.Parent
+		if cont then
+			local help = cont:FindFirstChild("FpsCapHelpButton")
+			if help then help.Position = UDim2.new(0, 184, 0, 7) end
+			local label = cont:FindFirstChildOfClass("TextLabel")
+			fpsBox = Instance.new("TextBox")
+			fpsBox.Name = "FpsCapBox"
+			fpsBox.Size = UDim2.new(0, 36, 0, 18)
+			fpsBox.Position = UDim2.new(0, 142, 0, 6)
+			fpsBox.BackgroundColor3 = Color3.fromRGB(220, 220, 220)
+			fpsBox.BackgroundTransparency = 0.5
+			fpsBox.BorderSizePixel = 0
+			fpsBox.ClearTextOnFocus = false
+			fpsBox.Font = Enum.Font.SourceSansBold
+			fpsBox.TextSize = 14
+			fpsBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+			fpsBox.PlaceholderText = "60"
+			fpsBox.PlaceholderColor3 = Color3.fromRGB(200, 200, 200)
+			fpsBox.Text = state.fpsCap > 0 and tostring(state.fpsCap) or ""
+			fpsBox.ZIndex = 97
+			fpsBox.Parent = cont
+			local st = Instance.new("UIStroke")
+			st.Color = Color3.fromRGB(255, 255, 255)
+			st.Thickness = 1.2
+			st.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+			st.Parent = fpsBox
+
+			local function showBox()
+				if not fpsBox:IsFocused() then
+					fpsBox.Text = state.fpsCap > 0 and tostring(state.fpsCap) or ""
+				end
+			end
+			actions.onFpsCapChanged = showBox
+			-- the number typed: used straight away (a moment after the last key, and when the box is left);
+			-- typing one turns the cap on
+			local typedToken = 0
+			local function useTyped()
+				local digits = string.match(fpsBox.Text or "", "%d+")
+				if not digits then return end
+				local cap = actions.clampFpsCap(digits)
+				if cap <= 0 then
+					if state.isFpsCapEnabled then
+						state.isFpsCapEnabled = false
+						row.checkbox.Text = ""
+						actions.restoreFpsCap()
+					end
+					state.fpsCap = 0
+				else
+					state.fpsCap = cap
+					if not state.isFpsCapEnabled then
+						state.isFpsCapEnabled = true
+						row.checkbox.Text = "✓"
+					end
+					actions.applyFpsCap()
+				end
+				saveConfig()
+			end
+			fpsBox:GetPropertyChangedSignal("Text"):Connect(function()
+				if not fpsBox:IsFocused() then return end
+				typedToken = typedToken + 1
+				local token = typedToken
+				task.delay(1, function()
+					if token == typedToken then useTyped() end
+				end)
+			end)
+			fpsBox.FocusLost:Connect(function()
+				typedToken = typedToken + 1
+				useTyped()
+				showBox()
+			end)
+
+			-- the frame rate now, after "fps cap"
+			actions.onFpsMeasured = function(fps)
+				if label and label.Parent then
+					label.Text = string.format("fps cap (%d)", math.floor(fps + 0.5))
+				end
+			end
+		end
+		-- (Saved Settings sets the number after loading a file; its tick box is pressed like the others)
 		local genv = (getgenv and getgenv()) or _G
 		genv.BPHammer2SetFpsCap = function(value)
-			local cap = actions.setFpsCap(value)
+			local cap = actions.clampFpsCap(value)
 			state.fpsCap = cap
+			if state.isFpsCapEnabled and cap > 0 then actions.applyFpsCap() end
 			if fpsBox and fpsBox.Parent then fpsBox.Text = cap > 0 and tostring(cap) or "" end
 			saveConfig()
 		end
@@ -4407,11 +4539,6 @@ task.spawn(function()
 			refreshOldDecalBtn()
 			table.insert(restores, actions.restoreOldDecal)
 		end
-		if state.fpsCap > 0 then
-			state.fpsCap = 0
-			if fpsBox then fpsBox.Text = "" end
-			table.insert(restores, function() actions.setFpsCap(0) end)
-		end
 		saveConfig()
 
 		-- Hammer stuff 1's options (2013 skybox, remove lighting, materials, no shadows)
@@ -4460,7 +4587,7 @@ task.spawn(function()
 	if state.is2008NightSkyEnabled then task.spawn(actions.apply2008NightSky) end
 	if state.isAllPlayersEnabled then task.spawn(actions.applyAllPlayers) end
 	if state.isScreen43Enabled then task.spawn(actions.applyScreen43) end
-	if state.fpsCap > 0 then task.spawn(actions.setFpsCap, state.fpsCap) end
+	if state.isFpsCapEnabled then task.spawn(actions.applyFpsCap) end
 	if state.is2013DynamicEnabled then task.spawn(actions.apply2013Dynamic) end
 	if state.is2015AudioEnabled then task.spawn(actions.apply2015Audio)
 	elseif state.is2016AudioEnabled then task.spawn(actions.apply2016Audio) end

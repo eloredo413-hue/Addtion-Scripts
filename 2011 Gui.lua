@@ -1331,8 +1331,9 @@ end
 local RightControlBG = Instance.new("ImageLabel")
 RightControlBG.Name = "RightControlBG"
 RightControlBG.AnchorPoint = Vector2.new(1, 0)
--- (Addtion-Scripts) as narrow as the 2011 tray: only REPORT and full screen are on it
-RightControlBG.Size = UDim2.new(0, 104, 1, 0)
+-- (Addtion-Scripts) as narrow as the 2011 tray (only REPORT and full screen are on it), with a little room
+-- after the full screen button
+RightControlBG.Size = UDim2.new(0, 112, 1, 0)
 RightControlBG.Position = UDim2.new(1, 0, 0, 0)
 RightControlBG.Visible = true
 RightControlBG.Active = true
@@ -1356,8 +1357,38 @@ RightLayout.Padding = UDim.new(0, 6)
 RightLayout.Parent = RightButtonContainer
 
 local RightPadding = Instance.new("UIPadding")
-RightPadding.PaddingRight = UDim.new(0, 8)
+RightPadding.PaddingRight = UDim.new(0, 10)
 RightPadding.Parent = RightButtonContainer
+
+-- (Addtion-Scripts) On a phone the GUI stops at the screen's safe area (its camera hole): the tray runs on to the
+-- screen's real edge, so the full screen button isn't at the very end of it.
+do
+	local trayEdge = Instance.new("Frame")
+	trayEdge.Name = "RightControlEdge"
+	trayEdge.BackgroundColor3 = Color3.new(0, 0, 0)
+	trayEdge.BackgroundTransparency = 1 - 179 / 255 -- (the tray picture's own darkness)
+	trayEdge.BorderSizePixel = 0
+	trayEdge.Position = UDim2.new(1, 0, 0, 0)
+	trayEdge.Size = UDim2.new(0, 0, 1, 0)
+	trayEdge.Visible = false
+	trayEdge.ZIndex = RightControlBG.ZIndex
+	trayEdge.Parent = RightControlBG
+	local function fitTrayEdge()
+		local camera = Workspace.CurrentCamera
+		if not camera then return end
+		local right = ScreenGui.AbsolutePosition.X + ScreenGui.AbsoluteSize.X
+		local inset = camera.ViewportSize.X - right
+		if inset < 1 then trayEdge.Visible = false return end
+		local scaler = ScreenGui:FindFirstChild("AutoUIScale")
+		local scale = (scaler and scaler.Scale > 0) and scaler.Scale or 1
+		pcall(function() ScreenGui.ClipToDeviceSafeArea = false end)
+		trayEdge.Size = UDim2.new(0, math.ceil(inset / scale) + 1, 1, 0)
+		trayEdge.Visible = true
+	end
+	task.defer(fitTrayEdge)
+	storeConnection(ScreenGui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitTrayEdge))
+	storeConnection(ScreenGui:GetPropertyChangedSignal("AbsolutePosition"):Connect(fitTrayEdge))
+end
 
 -- 1) The "Record" bar, the screenshot circle and the camera buttons
 -- (Addtion-Scripts) As in the 2011 client: they stand just left of the right tray, not on it; the tray has
@@ -1367,7 +1398,7 @@ RightPadding.Parent = RightButtonContainer
 local CameraControls = Instance.new("Frame")
 CameraControls.Name = "CameraControls"
 CameraControls.AnchorPoint = Vector2.new(1, 0)
-CameraControls.Position = UDim2.new(1, -106, 0, 0)
+CameraControls.Position = UDim2.new(1, -114, 0, 0) -- (just left of the 112 wide tray)
 CameraControls.Size = UDim2.new(0, 150, 1, 0)
 CameraControls.BackgroundTransparency = 1
 CameraControls.ZIndex = 6
@@ -1938,14 +1969,14 @@ for i = 1, 10 do
 	slot.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 	slot.BackgroundTransparency = 0.25
 	slot.BorderColor3 = Color3.fromRGB(95, 95, 95)
-	-- (Addtion-Scripts) each slot its own box with slightly rounded corners: the border is a UIStroke (a
+	-- (Addtion-Scripts) each slot its own box with very slightly rounded corners: the border is a UIStroke (a
 	-- frame's own border doesn't follow a UICorner)
 	slot.BorderSizePixel = 0
 	slot.LayoutOrder = i
 	slot.ZIndex = 8
 	slot.Visible = false
 	local slotCorner = Instance.new("UICorner")
-	slotCorner.CornerRadius = UDim.new(0, 6)
+	slotCorner.CornerRadius = UDim.new(0, 2) -- (only just rounded)
 	slotCorner.Parent = slot
 	local slotBorder = Instance.new("UIStroke")
 	slotBorder.Name = "SlotBorder"
@@ -1961,7 +1992,7 @@ for i = 1, 10 do
 	selectionFrame.ZIndex = 12
 	selectionFrame.Parent = slot
 	local selectionCorner = Instance.new("UICorner")
-	selectionCorner.CornerRadius = UDim.new(0, 6)
+	selectionCorner.CornerRadius = UDim.new(0, 2)
 	selectionCorner.Parent = selectionFrame
 
 	local stroke = Instance.new("UIStroke")
