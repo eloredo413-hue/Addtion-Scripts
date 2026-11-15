@@ -1,17 +1,20 @@
 --[[ OLD GUI FIX (Addtion-Scripts) ]]
 -- Bloxy's 2012 and 2013 GUIs (the legacy package's "NewRobloxGui"):
 --   * their menu (and its other windows: help, report, save) is drawn above the hotbar: the menu sits at
---     ZIndex 1 - 5 and the hotbar's slot numbers at 4 - 9 in the same GUI, so the numbers showed through it
+--     ZIndex 1 - 5 and the hotbar's slot numbers and items at 2 - 10 in the same GUI, so they showed
+--     through it
 --   * while the menu is open, the GUI is put above every other GUI (a hotbar or inventory of another GUI
 --     showed through the menu too)
---   * on a phone the menu (only the menu: the rest of the GUI keeps its size) is shown at a PC's size, so it
---     doesn't look zoomed in and fits on the screen (it ran past its top and bottom)
---   * the backpack window ("Gear") ends above the hotbar instead of running under it (on a phone it did)
--- The GUI is told by what is in it (the old menu, "UserSettingsShield"), not only by the topbar picked: the
--- topbar's name wasn't always there to read, and then nothing was done.
+--   * on a phone the menu (only the menu: the rest of the GUI keeps its size) is shown smaller, at about a
+--     PC's size, so it doesn't look zoomed in and fits on the screen (it ran past its top and bottom)
+--   * the backpack window fits between the top of the screen and the hotbar: 2012's ("Gear") ran under the
+--     hotbar, 2013's ran off the top of a phone's screen (it is then shown smaller, with its button on top)
+-- The menu's windows are made inside the GUI's "ControlFrame" (the menu's own code puts them there), so
+-- they are looked for there. The GUI is told by what is in it (the old menu), not only by the topbar
+-- picked: the topbar's name isn't always there to read.
 -- On a phone it also tells the safe chat to show at the same size for the GUIs before 2014 and 2013 mobile
 -- (getgenv().BPSafeChatScale, read by Better SafeChat.lua).
--- 2013 mobile keeps its menu's size.
+-- 2013 mobile keeps its menu's size. 2014 (which has the same menu) is left to its own fixes.
 
 local Env = (getgenv and getgenv()) or _G
 if Env.BPOldGuiFixLoaded then return end
@@ -20,8 +23,10 @@ Env.BPOldGuiFixLoaded = true
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 
-local PC_SCALE = 0.7  -- the size on a phone (the same as the safe chat's)
-local LIFT = 10       -- how far the menu windows are raised above everything else in the GUI
+local PC_SCALE = 0.7  -- the menu's size on a phone (the same as the safe chat's)
+local MENU_HEIGHT = 430 -- the 2012 / 2013 settings window's height (it should fit on the screen)
+local LIFT = 20       -- how far the menu windows are raised above everything else in the GUI (the
+                      -- hotbar, backpack, chat and player list go up to ZIndex 10)
 
 local MENU_WINDOWS = {
 	UserSettingsShield = true, HelpDialogShield = true, SaveDialogShield = true, ReportAbuseShield = true,
@@ -48,15 +53,40 @@ local function onPhone()
 	return ok and result == true
 end
 
--- a GUI with the old menu (2012 / 2013): the menu raised (and, on a phone, zoomed down; not 2013 mobile's)
-local function wanted(gui)
+-- where the menu's windows are: in the GUI's ControlFrame (and, in case, the GUI itself)
+local function windowHolders(gui)
+	local list = {}
+	local controls = gui:FindFirstChild("ControlFrame")
+	if controls then table.insert(list, controls) end
+	table.insert(list, gui)
+	return list
+end
+
+local function menuWindows(gui)
+	local found = {}
+	for _, holder in ipairs(windowHolders(gui)) do
+		for _, child in ipairs(holder:GetChildren()) do
+			if MENU_WINDOWS[child.Name] and child:IsA("GuiObject") then table.insert(found, child) end
+		end
+	end
+	return found
+end
+
+-- 2012 or 2013: the old menu, and not 2014 (the same menu, with its own health script)
+local function isOldGui(gui)
 	local pick = topbarPick()
 	local year = pick and tonumber(string.match(pick, "(20%d%d)"))
+	if year == 2012 or year == 2013 then return #menuWindows(gui) > 0 end
+	if year ~= nil and year >= 2014 and not string.find(pick, "mobile", 1, true) then return false end
+	return #menuWindows(gui) > 0 and gui:FindFirstChild("HealthScript") == nil
+end
+
+-- what is done: fix (the menu raised, the backpack fitted), zoom (on a phone, not 2013 mobile's)
+local function wanted(gui)
+	local pick = topbarPick()
 	local mobile = pick ~= nil and string.find(pick, "mobile", 1, true) ~= nil
-	local fix = gui ~= nil and gui:FindFirstChild("UserSettingsShield") ~= nil
-	-- the safe chat's size: the GUIs before 2014 and 2013 mobile, on a phone
-	local safeChat = onPhone() and year ~= nil and (year < 2014 or mobile)
-	return fix, fix and onPhone() and not mobile, safeChat
+	local fix = gui ~= nil and isOldGui(gui)
+	return fix, fix and onPhone() and not mobile
 end
 
 --========================================================
@@ -85,7 +115,7 @@ local function raiseWindow(window)
 end
 
 --========================================================
--- A PC'S SIZE ON A PHONE
+-- THE MENU SMALLER ON A PHONE
 --========================================================
 local function scaleOf(obj, scale)
 	local s = obj:FindFirstChild("BPPcScale")
@@ -99,6 +129,13 @@ local function scaleOf(obj, scale)
 		s.Parent = obj
 	end
 	if s.Scale ~= scale then s.Scale = scale end
+end
+
+-- the menu's size on this phone: a PC's, or smaller if the settings window wouldn't fit
+local function menuScale(gui)
+	local height = gui.AbsoluteSize.Y
+	if height <= 0 then return PC_SCALE end
+	return math.max(0.4, math.min(PC_SCALE, height * 0.92 / MENU_HEIGHT))
 end
 
 -- a full-screen window (the menu's dark shield): made bigger by as much as it is zoomed down, so it still
@@ -130,7 +167,7 @@ end
 -- While a menu window is open, the whole GUI goes above every other GUI (and back when it closes).
 local ON_TOP = 1000000000 -- (below this script's own panels: the save disk, the safe chat)
 local topWatch = setmetatable({}, { __mode = "k" })
-local function keepOnTopWhileOpen(gui)
+local function keepOnTopWhileOpen(gui, windows)
 	local state = topWatch[gui]
 	if not state then
 		state = { order = gui.DisplayOrder, windows = setmetatable({}, { __mode = "k" }) }
@@ -139,7 +176,7 @@ local function keepOnTopWhileOpen(gui)
 	local function update()
 		local open = false
 		for window in pairs(state.windows) do
-			if window.Parent == gui and window.Visible then open = true break end
+			if window.Parent ~= nil and window:IsDescendantOf(gui) and window.Visible then open = true break end
 		end
 		if open then
 			if gui.DisplayOrder ~= ON_TOP then
@@ -149,19 +186,68 @@ local function keepOnTopWhileOpen(gui)
 		elseif gui.DisplayOrder == ON_TOP then
 			gui.DisplayOrder = state.order
 		end
+		-- (if the GUI draws its frames by their parents' order, the menu's frame goes above the hotbar's)
+		pcall(function()
+			if gui.ZIndexBehavior ~= Enum.ZIndexBehavior.Sibling then return end
+			local controls = gui:FindFirstChild("ControlFrame")
+			if not controls then return end
+			if open then
+				if not state.controlsZ then state.controlsZ = controls.ZIndex end
+				controls.ZIndex = 50
+			elseif state.controlsZ then
+				controls.ZIndex = state.controlsZ
+				state.controlsZ = nil
+			end
+		end)
 	end
-	for _, child in ipairs(gui:GetChildren()) do
-		if MENU_WINDOWS[child.Name] and child:IsA("GuiObject") and not state.windows[child] then
-			state.windows[child] = true
-			child:GetPropertyChangedSignal("Visible"):Connect(update)
+	for _, window in ipairs(windows) do
+		if not state.windows[window] then
+			state.windows[window] = true
+			window:GetPropertyChangedSignal("Visible"):Connect(update)
 		end
 	end
 	update()
 end
 
--- The backpack window ("Gear") opens over the middle of the screen (60% of its height, from 20% down),
--- which on a short screen runs under the hotbar. Once it has opened, it is made to end just above the hotbar
--- (a little higher up, a little shorter).
+--========================================================
+-- THE BACKPACK BETWEEN THE TOP OF THE SCREEN AND THE HOTBAR
+--========================================================
+-- The backpack's own code opens it with a tween to where it wants it. Each time it moves it, where it
+-- wanted it is kept, and it is put where it fits instead: moved up (2012: it ran under the hotbar), or, if
+-- it is taller than the room there, also shown smaller (2013 on a phone: it ran off the top of the
+-- screen). 2013's backpack button, on top of the window while it is open, goes with it.
+
+-- the GUI's area its frames are placed in (inside its padding)
+local function areaOf(holder)
+	local pos, size = holder.AbsolutePosition, holder.AbsoluteSize
+	local x, y, w, h = pos.X, pos.Y, size.X, size.Y
+	local pad = holder:FindFirstChildOfClass("UIPadding")
+	if pad then
+		local l = pad.PaddingLeft.Scale * size.X + pad.PaddingLeft.Offset
+		local r = pad.PaddingRight.Scale * size.X + pad.PaddingRight.Offset
+		local t = pad.PaddingTop.Scale * size.Y + pad.PaddingTop.Offset
+		local b = pad.PaddingBottom.Scale * size.Y + pad.PaddingBottom.Offset
+		x, y, w, h = x + l, y + t, w - l - r, h - t - b
+	end
+	return x, y, w, h
+end
+
+-- where the GUI's own code put an object (not where it was put here)
+local function newSpot(obj)
+	return { want = obj.Position, ours = nil }
+end
+local function wantedSpot(spot, obj)
+	local now = obj.Position
+	if spot.ours == nil or now ~= spot.ours then spot.want = now end
+	return spot.want
+end
+local function putAt(spot, obj, position)
+	if obj.Position ~= position then
+		spot.ours = position
+		obj.Position = position
+	end
+end
+
 local backpackFixed = setmetatable({}, { __mode = "k" })
 local function fitBackpack(gui)
 	local backpack = gui:FindFirstChild("Backpack")
@@ -169,43 +255,108 @@ local function fitBackpack(gui)
 	if not (backpack and loadout and backpack:IsA("GuiObject") and loadout:IsA("GuiObject")) then return end
 	if backpackFixed[backpack] then return end
 	backpackFixed[backpack] = true
-	local ours = nil
-	local function fit()
-		if not backpack.Visible or not loadout.Visible then return end
-		local size = backpack.Size
-		if size == ours then return end
-		-- (only once it has opened: the opening and closing tweens run through small sizes)
-		if size.X.Scale < 0.5 and size.X.Offset < 200 then return end
-		local guiTop = gui.AbsolutePosition.Y
-		local screenH = gui.AbsoluteSize.Y
-		local hotbarTop = loadout.AbsolutePosition.Y - guiTop
-		local top = math.floor(screenH * 0.06)
-		local bottom = math.floor(hotbarTop - 8)
-		local nowBottom = backpack.AbsolutePosition.Y - guiTop + backpack.AbsoluteSize.Y
-		if nowBottom <= bottom or bottom - top < 120 then return end
-		ours = UDim2.new(size.X.Scale, size.X.Offset, 0, bottom - top)
-		backpack.Position = UDim2.new(backpack.Position.X.Scale, backpack.Position.X.Offset, 0, top)
-		backpack.Size = ours
+
+	local controls = gui:FindFirstChild("ControlFrame")
+	local button = controls and controls:FindFirstChild("BackpackButton")
+	if button and not button:IsA("GuiObject") then button = nil end
+	local backpackSpot = newSpot(backpack)
+	local buttonSpot = button and newSpot(button)
+	local scaler = nil
+	local busy = false
+	local said = false
+
+	local function setScale(scale)
+		if scale >= 0.999 then
+			if scaler then scaler.Scale = 1 end
+			return
+		end
+		if not scaler or scaler.Parent ~= backpack then
+			scaler = Instance.new("UIScale")
+			scaler.Name = "BPFitScale"
+			scaler.Parent = backpack
+		end
+		if scaler.Scale ~= scale then scaler.Scale = scale end
 	end
-	backpack:GetPropertyChangedSignal("Size"):Connect(function() task.defer(fit) end)
-	backpack:GetPropertyChangedSignal("Visible"):Connect(function() task.defer(fit) end)
-	fit()
+
+	local function update()
+		if busy then return end
+		busy = true
+		local ok, err = pcall(function()
+			local want = wantedSpot(backpackSpot, backpack)
+			local buttonWant = button and wantedSpot(buttonSpot, button)
+			local place, scale, newTop, oldTop = want, 1, nil, nil
+			if backpack.Visible and loadout.Visible and backpack.Parent == gui then
+				local ox, oy, aw, ah = areaOf(gui)
+				local size = backpack.Size
+				local w = size.X.Scale * aw + size.X.Offset
+				local h = size.Y.Scale * ah + size.Y.Offset
+				local left = ox + want.X.Scale * aw + want.X.Offset
+				local top = oy + want.Y.Scale * ah + want.Y.Offset
+				local topLimit = oy + math.floor(ah * 0.04)
+				local bottomLimit = loadout.AbsolutePosition.Y - 6
+				local room = bottomLimit - topLimit
+				if h > 1 and room > 60 and (top < topLimit - 0.5 or top + h > bottomLimit + 0.5) then
+					scale = math.min(1, room / h)
+					local shownW, shownH = w * scale, h * scale
+					newTop = math.max(topLimit, math.min(top, bottomLimit - shownH))
+					oldTop = top
+					local newLeft = left + (w - shownW) / 2
+					place = UDim2.new(0, math.floor(newLeft - ox + 0.5), 0, math.floor(newTop - oy + 0.5))
+				end
+			end
+			setScale(scale)
+			putAt(backpackSpot, backpack, place)
+
+			-- 2013's backpack button: on top of the window while it is open (just above where the window
+			-- wanted to be): kept just above where it is now
+			if button then
+				local buttonPlace = buttonWant
+				if newTop and button.Parent then
+					local cx, cy, cw, ch = areaOf(button.Parent)
+					local bTop = cy + buttonWant.Y.Scale * ch + buttonWant.Y.Offset
+					local gap = oldTop - bTop
+					if gap > 0 and gap < 40 then
+						buttonPlace = UDim2.new(buttonWant.X.Scale, buttonWant.X.Offset, 0,
+							math.floor(newTop - gap - cy + 0.5))
+					end
+				end
+				putAt(buttonSpot, button, buttonPlace)
+			end
+
+			if newTop and not said then
+				said = true
+				print("[Old Gui Fix] backpack window fitted above the hotbar")
+			end
+		end)
+		busy = false
+		if not ok then warn("[Old Gui Fix] backpack: " .. tostring(err)) end
+	end
+
+	backpack:GetPropertyChangedSignal("Position"):Connect(update)
+	backpack:GetPropertyChangedSignal("Size"):Connect(update)
+	backpack:GetPropertyChangedSignal("Visible"):Connect(update)
+	loadout:GetPropertyChangedSignal("Visible"):Connect(update)
+	loadout:GetPropertyChangedSignal("AbsolutePosition"):Connect(update)
+	gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(update)
+	if button then button:GetPropertyChangedSignal("Position"):Connect(update) end
+	update()
 end
 
 --========================================================
 -- APPLYING IT
 --========================================================
 local said = {}
+local oldGuiUp = false
 local function fixGui(gui)
 	local fix, zoom = wanted(gui)
 	if not fix then return end
-	local scale = zoom and PC_SCALE or 1
+	oldGuiUp = true
+	local scale = zoom and menuScale(gui) or 1
 
-	for _, child in ipairs(gui:GetChildren()) do
-		if MENU_WINDOWS[child.Name] and child:IsA("GuiObject") then
-			raiseWindow(child)
-			pcall(fitWindow, child, scale)
-		end
+	local windows = menuWindows(gui)
+	for _, window in ipairs(windows) do
+		raiseWindow(window)
+		pcall(fitWindow, window, scale)
 	end
 
 	-- (the hotbar and the corner buttons keep their own size: only the menu is zoomed down)
@@ -222,17 +373,19 @@ local function fixGui(gui)
 	end
 
 	-- above every other GUI while the menu is open
-	keepOnTopWhileOpen(gui)
+	keepOnTopWhileOpen(gui, windows)
 
 	-- the backpack window above the hotbar
 	pcall(fitBackpack, gui)
 
-	local key = tostring(gui) .. tostring(scale)
+	local key = tostring(gui) .. "|" .. #windows .. "|" .. tostring(scale)
 	if not said[key] then
 		said[key] = true
-		print("[Old Gui Fix] the 2012 / 2013 GUI (" .. gui:GetFullName() .. ", topbar " .. tostring(topbarPick())
-			.. "): menu above the hotbar, backpack above the hotbar"
-			.. (scale ~= 1 and (", the menu at a PC's size on this phone (" .. math.floor(scale * 100) .. "%)") or ""))
+		local names = {}
+		for _, window in ipairs(windows) do table.insert(names, window.Name) end
+		print("[Old Gui Fix] the 2012 / 2013 GUI (topbar " .. tostring(topbarPick()) .. "): "
+			.. #windows .. " menu window(s) raised above the hotbar (" .. table.concat(names, ", ") .. ")"
+			.. (scale ~= 1 and (", the menu at " .. math.floor(scale * 100) .. "% on this phone") or ""))
 	end
 end
 
@@ -240,15 +393,23 @@ local watched = setmetatable({}, { __mode = "k" })
 local function watchGui(gui)
 	if watched[gui] or gui.Name ~= "NewRobloxGui" then return end
 	watched[gui] = true
-	print("[Old Gui Fix] found " .. gui:GetFullName() .. " (old menu: "
-		.. tostring(gui:FindFirstChild("UserSettingsShield") ~= nil) .. ", phone: " .. tostring(onPhone())
-		.. ", topbar: " .. tostring(topbarPick()) .. ")")
+	print("[Old Gui Fix] found " .. gui:GetFullName() .. " (phone: " .. tostring(onPhone())
+		.. ", topbar: " .. tostring(topbarPick()) .. "): waiting for its menu")
 	-- the menu windows and the hotbar are made a little after the GUI
-	gui.ChildAdded:Connect(function() task.delay(0.2, function() pcall(fixGui, gui) end) end)
-	local controls = gui:FindFirstChild("ControlFrame")
-	if controls then
-		controls.ChildAdded:Connect(function() task.delay(0.2, function() pcall(fixGui, gui) end) end)
+	local function soon() task.delay(0.2, function() pcall(fixGui, gui) end) end
+	gui.ChildAdded:Connect(soon)
+	local hooked = setmetatable({}, { __mode = "k" })
+	local function hookControls()
+		local controls = gui:FindFirstChild("ControlFrame")
+		if controls and not hooked[controls] then
+			hooked[controls] = true
+			controls.ChildAdded:Connect(function(child)
+				if MENU_WINDOWS[child.Name] or child.Name == "BackpackButton" then soon() end
+			end)
+		end
 	end
+	hookControls()
+	gui.ChildAdded:Connect(hookControls)
 	pcall(fixGui, gui)
 end
 
@@ -278,11 +439,16 @@ task.spawn(function()
 				if gui then watchGui(gui) end
 			end)
 		end
-		local _, _, safeChat = wanted(nil)
-		Env.BPSafeChatScale = safeChat and PC_SCALE or nil
+		oldGuiUp = false
 		for gui in pairs(watched) do
 			if gui.Parent then pcall(fixGui, gui) end
 		end
+		-- the safe chat's size: the GUIs before 2014 and 2013 mobile, on a phone
+		local pick = topbarPick()
+		local year = pick and tonumber(string.match(pick, "(20%d%d)"))
+		local mobile = pick ~= nil and string.find(pick, "mobile", 1, true) ~= nil
+		local safeChat = onPhone() and ((year ~= nil and (year < 2014 or mobile)) or oldGuiUp)
+		Env.BPSafeChatScale = safeChat and PC_SCALE or nil
 		task.wait(3)
 	end
 end)

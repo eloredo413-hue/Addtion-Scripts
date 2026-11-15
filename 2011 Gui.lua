@@ -83,6 +83,7 @@ local ARCHIVE_BASES = {
 	"https://archive.roblonium.com/Client/Windows/RobloxApp/2011/2.2011/February%20%280.34.0.22%29/version-2de7d827839d40a3/content/textures/",
 	ARCHIVE_BASE,
 }
+local ARCHIVE_TAGS = { dec = 1, may = 2, feb = 3, oct = 4 }
 local customAssetFunc = (type(getcustomasset) == "function" and getcustomasset)
 	or (type(getsynasset) == "function" and getsynasset)
 local canWriteFiles = (type(writefile) == "function") and (type(isfile) == "function") and (customAssetFunc ~= nil)
@@ -114,10 +115,11 @@ local function get2011Texture(relPath, fallbackAsset)
 			if isfile(filePath) then
 				okReady = true
 			else
-				-- ("dec:" in front: only the December 2010 client's picture, never another year's)
+				-- ("dec:", "may:", "feb:" or "oct:" in front: only that client's picture, never another's)
 				local bases, path = ARCHIVE_BASES, relPath
-				if relPath:sub(1, 4) == "dec:" then
-					bases, path = { ARCHIVE_BASES[1] }, relPath:sub(5)
+				local tag, rest = relPath:match("^(%a%a%a):(.+)$")
+				if tag and ARCHIVE_TAGS[tag] then
+					bases, path = { ARCHIVE_BASES[ARCHIVE_TAGS[tag]] }, rest
 				end
 				for _, base in ipairs(bases) do
 					local okHttp, bytes = pcall(game.HttpGet, game, base .. path)
@@ -140,7 +142,7 @@ local function get2011Texture(relPath, fallbackAsset)
 		end
 	end
 
-	local finalFallback = fallbackAsset or ("rbxasset://textures/" .. (relPath:gsub("^dec:", "")))
+	local finalFallback = fallbackAsset or ("rbxasset://textures/" .. (relPath:gsub("^%a%a%a:", "")))
 	resolvedTextureCache[relPath] = finalFallback
 	return finalFallback
 end
@@ -148,7 +150,7 @@ end
 -- Asynchronously binds normal, hover (_ovr), and pressed (_dn) textures from the 2011 archive to an ImageButton/ImageLabel
 local function bind2011ButtonStates(btn, iconTarget, normalRel, ovrRel, dnRel, fallbackId, fallbackRotation)
 	iconTarget = iconTarget or btn
-	iconTarget.Image = fallbackId or ("rbxasset://textures/" .. (normalRel:gsub("^dec:", "")))
+	iconTarget.Image = fallbackId or ("rbxasset://textures/" .. (normalRel:gsub("^%a%a%a:", "")))
 	if fallbackRotation then
 		iconTarget.Rotation = fallbackRotation
 	end
@@ -1357,16 +1359,16 @@ local RightPadding = Instance.new("UIPadding")
 RightPadding.PaddingRight = UDim.new(0, 8)
 RightPadding.Parent = RightButtonContainer
 
--- 1) RecordToggle Button (RecordToggle.png, RecordToggle_ovr.png, RecordToggle_sel.png)
--- (Addtion-Scripts) As in the December 2010 client: "Record", the screenshot and the camera buttons are single
--- icons standing just left of the right tray, not on it; the tray has "! REPORT" and full screen. The record and
--- screenshot icons are the December 2010 ones only (square, 20 x 20; another year's are a different shape and
--- were stretched into the button), and while recording the record button shows the stop square.
+-- 1) The "Record" bar, the screenshot circle and the camera buttons
+-- (Addtion-Scripts) As in the 2011 client: they stand just left of the right tray, not on it; the tray has
+-- "! REPORT" and full screen. "Record" is the May 2011 client's bar (a film camera and "Record", 65 x 30), and
+-- while recording its red "Stop" bar (the same size: nothing is stretched); the screenshot button is the
+-- camera in a circle.
 local CameraControls = Instance.new("Frame")
 CameraControls.Name = "CameraControls"
 CameraControls.AnchorPoint = Vector2.new(1, 0)
 CameraControls.Position = UDim2.new(1, -110, 0, 0)
-CameraControls.Size = UDim2.new(0, 120, 1, 0)
+CameraControls.Size = UDim2.new(0, 150, 1, 0)
 CameraControls.BackgroundTransparency = 1
 CameraControls.ZIndex = 6
 CameraControls.Parent = BottomControlFrame
@@ -1380,34 +1382,40 @@ do
 	layout.Parent = CameraControls
 end
 
-local ICON = 24 -- the 20 x 20 icons, a little bigger
-local RecordBtn = make2011Button("RecordToggle", 1, UDim2.new(0, ICON, 0, ICON), CameraControls,
-	"dec:RecordToggle_ovr.png", "dec:RecordToggle_ovr.png", "dec:RecordToggle_sdn.png", "rbxassetid://23847250")
+-- "Record": its own two pictures only ("Record", and "Stop" while recording), no others swapped in
+local RecordBtn = Instance.new("ImageButton")
+RecordBtn.Name = "RecordToggle"
+RecordBtn.LayoutOrder = 1
+RecordBtn.Size = nativeSize(65, 30)
+RecordBtn.BackgroundTransparency = 1
+RecordBtn.BorderSizePixel = 0
 RecordBtn.ScaleType = Enum.ScaleType.Fit
-local ScreenshotBtn = make2011Button("Screenshot", 2, UDim2.new(0, ICON, 0, ICON), CameraControls,
-	"dec:Screenshot.png", "dec:Screenshot_ovr.png", "dec:Screenshot_ovr.png", "rbxassetid://4456953824")
-ScreenshotBtn.ScaleType = Enum.ScaleType.Fit
-
--- while recording: the stop square (December 2010's), back to the film camera when it stops
+RecordBtn.AutoButtonColor = false
+RecordBtn.ZIndex = 7
+RecordBtn.Image = "rbxassetid://23847250"
+RecordBtn.Parent = CameraControls
 do
 	local recording = false
+	local recordTex, stopTex = nil, nil
+	local function show()
+		local tex = (recording and stopTex) or recordTex
+		if tex and RecordBtn.Image ~= tex then RecordBtn.Image = tex end
+	end
 	task.spawn(function()
-		local stopTex = get2011Texture("dec:RecordToggle_sovr.png", nil)
-		local filmTex = get2011Texture("dec:RecordToggle_ovr.png", nil)
-		storeConnection(RecordBtn.MouseButton1Click:Connect(function()
-			recording = not recording
-			task.defer(function()
-				if recording and stopTex then RecordBtn.Image = stopTex
-				elseif filmTex then RecordBtn.Image = filmTex end
-			end)
-		end))
-		storeConnection(RecordBtn.MouseLeave:Connect(function()
-			task.defer(function()
-				if recording and stopTex then RecordBtn.Image = stopTex end
-			end)
-		end))
+		recordTex = get2011Texture("may:RecordToggle.png", "rbxassetid://23847250")
+		stopTex = get2011Texture("may:RecordToggle_dn.png", recordTex)
+		show()
 	end)
+	storeConnection(RecordBtn.MouseButton1Click:Connect(function()
+		recording = not recording
+		show()
+	end))
 end
+
+-- the screenshot circle (pressed: the circle filled in)
+local ScreenshotBtn = make2011Button("Screenshot", 2, nativeSize(31, 31), CameraControls,
+	"may:Screenshot.png", "oct:Screenshot_ovr.png", "oct:Screenshot_dn.png", "rbxassetid://4456953824")
+ScreenshotBtn.ScaleType = Enum.ScaleType.Fit
 
 local CameraPanel = Instance.new("Frame")
 CameraPanel.Name = "CameraPanel"
