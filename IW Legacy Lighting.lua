@@ -422,33 +422,47 @@ end
 local retroStuds = Settings.LegacyStuds == true
 local studWatched = setmetatable({}, { __mode = "k" })
 
+-- this script's stud texture on one face of a part (made once; true when it is there)
+local function ensureStud(part, face)
+	local name = "LegacyStuds" .. face
+	if part:FindFirstChild(name) then return false end
+	local t = own(Instance.new("Texture"))
+	t.Name = name
+	t.Texture = "rbxassetid://13225057574"
+	t.StudsPerTileU = 2
+	t.StudsPerTileV = 2
+	t.Face = Enum.NormalId[face]
+	t.Transparency = 0
+	t.Color3 = mul(part.Color, 2.5)
+	t.Parent = part
+	return true
+end
+
+local watchStudPart -- (below)
+
 -- (only Plastic, as in 2016 and as Bloxy's 2016 textures do: called again when the material changes)
 local function addStuds(part)
 	if not retroStuds then return end
 	if not (part:IsA("Part") or part:IsA("WedgePart")) then return end
 	if part.Material ~= Enum.Material.Plastic or not studsAllowed(part) then
-		for _, t in ipairs(studTextures(part)) do t:Destroy() end
+		for _, t in ipairs(studTextures(part)) do
+			-- (a face mirrored from Bloxy's 2016 studs stays while Bloxy's is there: see RETRO STUDS)
+			local face = string.sub(t.Name, 12)
+			if not part:FindFirstChild(face .. "Surface_ClassicTexture") then t:Destroy() end
+		end
 		return
 	end
 	local madeAny = false
 	for _, face in ipairs(FACES) do
 		if part[face .. "Surface"] == Enum.SurfaceType.Studs then
-			local name = "LegacyStuds" .. face
-			if not part:FindFirstChild(name) then
-				local t = own(Instance.new("Texture"))
-				t.Name = name
-				t.Texture = "rbxassetid://13225057574"
-				t.StudsPerTileU = 2
-				t.StudsPerTileV = 2
-				t.Face = Enum.NormalId[face]
-				t.Transparency = 0
-				t.Color3 = mul(part.Color, 2.5)
-				t.Parent = part
-				madeAny = true
-			end
+			if ensureStud(part, face) then madeAny = true end
 		end
 	end
-	if madeAny and not studWatched[part] then
+	if madeAny then watchStudPart(part) end
+end
+
+watchStudPart = function(part)
+	if not studWatched[part] then
 		studWatched[part] = true
 		track(part:GetPropertyChangedSignal("Color"):Connect(function()
 			for _, t in ipairs(studTextures(part)) do t.Color3 = mul(part.Color, 2.5) end
@@ -465,8 +479,10 @@ studsFollowMaterial = addStuds
 ----------------------------------------------------------------------------------------------------
 -- RETRO STUDS with Bloxy's "2016 textures": that choice puts a stud texture ("TopSurface_ClassicTexture" ...)
 -- on every stud face of the Plastic parts, coloured from the part. Under this lighting it came out far too dark
--- (the part is darkened, and so was its texture), so while this runs it is hidden (kept at Transparency 1) and
--- the retro studs above are used instead. Stopping gives Bloxy's back as they were.
+-- (the part is darkened, and so was its texture), so while this runs the two are switched one for one: each of
+-- Bloxy's stud faces is hidden (kept at Transparency 1) and gets this script's stud on the same part and face,
+-- made for this lighting; when Bloxy takes one away, this script's goes too. Stopping gives Bloxy's back as they
+-- were (this script's are removed).
 ----------------------------------------------------------------------------------------------------
 local function isBloxyStud(v)
 	return v.ClassName == "Texture" and string.find(v.Name, "Surface_ClassicTexture$") ~= nil
@@ -477,6 +493,17 @@ local function hideBloxyStud(t)
 	if bloxyHidden[t] then return end
 	bloxyHidden[t] = true
 	hold(t, "Transparency", 1, true)
+	-- this script's stud on the same face ("TopSurface_ClassicTexture" -> "Top")
+	local part = t.Parent
+	local face = string.match(t.Name, "^(%a+)Surface_ClassicTexture$")
+	if not (part and part:IsA("BasePart") and face and Enum.NormalId[face]) then return end
+	if ensureStud(part, face) then watchStudPart(part) end
+	track(t.AncestryChanged:Connect(function()
+		if stopped or t.Parent == part then return end
+		-- Bloxy took its stud away (the face isn't studs any more, or the part isn't Plastic): ours goes too
+		local ours = part:FindFirstChild("LegacyStuds" .. face)
+		if ours and ownedSet[ours] then pcall(function() ours:Destroy() end) end
+	end))
 end
 
 -- Bloxy's saved texture choice
