@@ -13,7 +13,9 @@ task.spawn(function()
 	local SoundService = game:GetService("SoundService")
 
 	local CONFIG_FILE = "BloxyParadoxConfig.json"
-	local CAMERA_URL = "https://gist.githubusercontent.com/eloredo413-hue/81660979f9506a61e0344f32a8096f96/raw/05a2619b3a2737d7c4a97814650f8980e103c5ef/Retro%2520camera"
+	-- the repo copy has first person like the 2012 camera (Retro Camera.lua); the gist is the fallback
+	local CAMERA_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Retro%20Camera.lua"
+	local CAMERA_GIST = "https://gist.githubusercontent.com/eloredo413-hue/81660979f9506a61e0344f32a8096f96/raw/05a2619b3a2737d7c4a97814650f8980e103c5ef/Retro%2520camera"
 	-- the repo copy works with R15 avatars too; the gist (R6 only) is the fallback
 	local PHYSICS_2006_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2006%20Physics.lua"
 	local PHYSICS_2006_GIST = "https://gist.githubusercontent.com/eloredo413-hue/03ef8e46682bfb53e26e6847abfde344/raw/0fb71153c3b4a369a0390228a2bec3a4a5655c56/2006%2520Physics"
@@ -570,13 +572,15 @@ print("[Retro Master] Full script loaded successfully.")
 	local function fetchCameraScript()
 		if CAMERA_SRC then return CAMERA_SRC end
 		print("[Physics/Camera] Fetching camera script...")
-		local ok, src = pcall(function()
-			return game:HttpGet(CAMERA_URL, true)
-		end)
-		if ok and type(src) == "string" and #src > 100 then
-			CAMERA_SRC = src
-			print("[Physics/Camera] Camera script fetched (" .. #src .. " bytes).")
-			return src
+		for _, url in ipairs({ CAMERA_URL, CAMERA_GIST }) do
+			local ok, src = pcall(function()
+				return game:HttpGet(url, true)
+			end)
+			if ok and type(src) == "string" and #src > 100 then
+				CAMERA_SRC = src
+				print("[Physics/Camera] Camera script fetched (" .. #src .. " bytes)" .. (url == CAMERA_GIST and ", from the gist" or "") .. ".")
+				return src
+			end
 		end
 		warn("[Physics/Camera] Failed to fetch camera script.")
 		return nil
