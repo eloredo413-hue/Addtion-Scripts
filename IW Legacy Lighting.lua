@@ -21,11 +21,17 @@
 	* Its own changes are recognised by their value (not by switching the watcher off and on), so they never
 	  set it off again: nothing gets darkened twice and the sun is never boosted twice, whatever the game does.
 	* getgenv().LegacyLightingOriginal(instance, property) gives the game's own (undarkened) value.
+	* With Bloxy's "2016 textures" picked (saved in its settings, or its stud textures showing up, also when
+	  it is picked while this runs): the retro studs (LegacyStuds) come on and Bloxy's 2016 studs are hidden;
+	  stopping this gives Bloxy's back.
 ]]
 
 local Settings = {
 	LegacyIntensity  = 3,     -- the original value
 	LegacyStuds      = false, -- studs on plain parts that use the Studs surface
+	RetroStudsWith2016Textures = true, -- (Addtion-Scripts) with Bloxy's "2016 textures" picked: the studs above are
+	                          -- switched on, and Bloxy's own 2016 stud textures hidden while this runs (they come
+	                          -- back when it stops). Under this lighting Bloxy's came out far too dark.
 	Voxel2019        = false, -- true = modern tonemapper instead of the retro one
 	LitSurfaceGuis   = true,  -- text/images on parts follow the lighting like parts do
 	NeonLight        = 1.5,   -- light given off by neon parts in the world (0 = off)
@@ -228,6 +234,7 @@ local function onColorChanged(inst, prop)
 end
 
 local refreshNeonLight, watchNeon -- (neon lights, below)
+local studsFollowMaterial -- (studs, below)
 
 -- the material or the head's mesh changed: neon / a textured head keep their colour, the rest is darkened
 local function recheck(part)
@@ -254,6 +261,7 @@ local function recheck(part)
 	if (Settings.NeonLight or 0) > 0 then
 		if part.Material == NEON then watchNeon(part) else refreshNeonLight(part) end
 	end
+	if studsFollowMaterial then pcall(studsFollowMaterial, part) end
 end
 
 local function watchHeadMesh(head)
@@ -410,10 +418,18 @@ local function studTextures(part)
 	return list
 end
 
+-- the studs are on with LegacyStuds, or with Bloxy's "2016 textures" (see RETRO STUDS below)
+local retroStuds = Settings.LegacyStuds == true
+local studWatched = setmetatable({}, { __mode = "k" })
+
+-- (only Plastic, as in 2016 and as Bloxy's 2016 textures do: called again when the material changes)
 local function addStuds(part)
-	if not Settings.LegacyStuds then return end
+	if not retroStuds then return end
 	if not (part:IsA("Part") or part:IsA("WedgePart")) then return end
-	if not studsAllowed(part) then return end
+	if part.Material ~= Enum.Material.Plastic or not studsAllowed(part) then
+		for _, t in ipairs(studTextures(part)) do t:Destroy() end
+		return
+	end
 	local madeAny = false
 	for _, face in ipairs(FACES) do
 		if part[face .. "Surface"] == Enum.SurfaceType.Studs then
@@ -432,7 +448,8 @@ local function addStuds(part)
 			end
 		end
 	end
-	if madeAny then
+	if madeAny and not studWatched[part] then
+		studWatched[part] = true
 		track(part:GetPropertyChangedSignal("Color"):Connect(function()
 			for _, t in ipairs(studTextures(part)) do t.Color3 = mul(part.Color, 2.5) end
 		end))
@@ -442,6 +459,62 @@ local function addStuds(part)
 			end
 		end))
 	end
+end
+studsFollowMaterial = addStuds
+
+----------------------------------------------------------------------------------------------------
+-- RETRO STUDS with Bloxy's "2016 textures": that choice puts a stud texture ("TopSurface_ClassicTexture" ...)
+-- on every stud face of the Plastic parts, coloured from the part. Under this lighting it came out far too dark
+-- (the part is darkened, and so was its texture), so while this runs it is hidden (kept at Transparency 1) and
+-- the retro studs above are used instead. Stopping gives Bloxy's back as they were.
+----------------------------------------------------------------------------------------------------
+local function isBloxyStud(v)
+	return v.ClassName == "Texture" and string.find(v.Name, "Surface_ClassicTexture$") ~= nil
+end
+
+local bloxyHidden = setmetatable({}, { __mode = "k" })
+local function hideBloxyStud(t)
+	if bloxyHidden[t] then return end
+	bloxyHidden[t] = true
+	hold(t, "Transparency", 1, true)
+end
+
+-- Bloxy's saved texture choice
+local function bloxyTextures()
+	local ok, choice = pcall(function()
+		if not (readfile and isfile and isfile("BloxyParadoxConfig.json")) then return nil end
+		local cfg = game:GetService("HttpService"):JSONDecode(readfile("BloxyParadoxConfig.json"))
+		return type(cfg) == "table" and type(cfg.Choices) == "table" and cfg.Choices.Textures or nil
+	end)
+	return ok and choice or nil
+end
+
+if Settings.RetroStudsWith2016Textures and tostring(bloxyTextures()) == "2016" then
+	retroStuds = true
+	print("[LegacyLighting] Bloxy's 2016 textures are picked: retro studs on (Bloxy's 2016 studs hidden while this runs)")
+end
+
+-- picked while this runs (its stud textures show up): the studs go on everywhere
+local function enableRetroStuds()
+	if retroStuds or stopped or not Settings.RetroStudsWith2016Textures then return end
+	retroStuds = true
+	print("[LegacyLighting] Bloxy's 2016 textures are on: retro studs on (Bloxy's 2016 studs hidden while this runs)")
+	task.spawn(function()
+		local slice = Settings.SliceTime or 0.008
+		local deadline = os.clock() + slice
+		for _, v in ipairs(workspace:GetDescendants()) do
+			if stopped then return end
+			if v:IsA("BasePart") then
+				pcall(addStuds, v)
+			elseif isBloxyStud(v) then
+				pcall(hideBloxyStud, v)
+			end
+			if os.clock() > deadline then
+				task.wait()
+				deadline = os.clock() + slice
+			end
+		end
+	end)
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -685,6 +758,11 @@ local function handle(v)
 		SetProp(v, "VertexColor")
 	elseif class == "Decal" or class == "Texture" then
 		if string.sub(v.Name, 1, 11) == "LegacyStuds" then return end -- (left by an older run)
+		if Settings.RetroStudsWith2016Textures and isBloxyStud(v) then
+			enableRetroStuds()
+			hideBloxyStud(v)
+			return
+		end
 		SetProp(v, "Color3")
 	elseif class == "Shirt" or class == "Pants" then
 		SetProp(v, "Color3")

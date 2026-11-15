@@ -1167,11 +1167,11 @@ local HealthFrame =
 HealthFrame.Name =
 	"ClassicHealthFrame"
 -- (Addtion-Scripts) The 2008 client's size (measured on a 2008 screenshot, as parts of the screen's height:
--- 1.25% wide and 12.5% tall, "Health" right under it), floating just above the camera buttons and Report in
--- the bottom-right corner, over their middle. Placed below, once the label is made, and again when the screen
--- or the GUI's scale changes.
+-- 1.25% wide and 12.5% tall, "Health" right under it), floating where it was, just under the player list, but
+-- lined up with the camera buttons and Report on the right (over their middle). Placed below, once the label is
+-- made, and again when the screen, the GUI's scale or the player list changes.
 HealthFrame.AnchorPoint =
-	Vector2.new(0.5, 1)
+	Vector2.new(0.5, 0)
 HealthFrame.BackgroundColor3 =
 	Color3.fromRGB(255, 0, 0)
 HealthFrame.BorderSizePixel = 0
@@ -1213,32 +1213,39 @@ HealthLabel.Parent =
 	HealthFrame
 -- (Addtion-Scripts) the 2008 client's size and place, worked out from the screen's height in the GUI's own
 -- units (its scale makes them the right size on the screen)
--- (the camera buttons and Report are made further down: placed once they are there)
-local HEALTH_OVER_REPORT = 22 -- how far above the camera buttons Report's word reaches (its picture is 48 high)
-local HEALTH_GAP = 8          -- room between "Health" and Report
+-- (the camera buttons and Report are made further down: placed again once they are there)
 local function placeHealthBar()
 	local scale = (uiScale and uiScale.Scale > 0) and uiScale.Scale or 1
 	local h = math.max(1, ScreenGui.AbsoluteSize.Y / scale)
 	local width = math.max(3, math.floor(h * 0.0125 + 0.5))
 	local height = math.max(30, math.floor(h * 0.125 + 0.5))
-	local labelHeight = math.floor(h * 0.035 + 0.5)
-	local labelGap = math.floor(h * 0.01 + 0.5)
-	-- over the middle of the camera buttons, "Health" just above Report
+	-- across: over the middle of the camera buttons and Report (the right-hand column)
+	local middleX = -36
 	local palette = ScreenGui:FindFirstChild("RightPalette")
-	local middleX, bottomY = -36, -(72 + HEALTH_OVER_REPORT + HEALTH_GAP)
 	if palette then
 		local p, sz = palette.Position, palette.Size
 		middleX = p.X.Offset - sz.X.Offset * palette.AnchorPoint.X + sz.X.Offset / 2
-		local paletteTop = p.Y.Offset - sz.Y.Offset * palette.AnchorPoint.Y
-		bottomY = paletteTop - HEALTH_OVER_REPORT - HEALTH_GAP
+	end
+	-- down: where it was, just under the player list (and never higher than 28% down the screen)
+	local labelHeight = math.floor(h * 0.035 + 0.5)
+	local labelGap = math.floor(h * 0.01 + 0.5)
+	local listPos, listSize = PlayerList.Position, PlayerList.Size
+	local top = math.max(listPos.Y.Offset + listSize.Y.Offset + h * 0.012, h * 0.279)
+	-- (a very long player list on a short screen: "Health" still ends above Report's word)
+	if palette then
+		local p, sz = palette.Position, palette.Size
+		local reportTop = h + p.Y.Offset - sz.Y.Offset * palette.AnchorPoint.Y - 22
+		top = math.min(top, reportTop - 6 - labelHeight - labelGap - height)
 	end
 	HealthFrame.Size = UDim2.new(0, width, 0, height)
-	HealthFrame.Position = UDim2.new(1, math.floor(middleX + 0.5), 1, math.floor(bottomY - labelHeight - labelGap + 0.5))
+	HealthFrame.Position = UDim2.new(1, math.floor(middleX + 0.5), 0, math.floor(top + 0.5))
 	HealthLabel.TextSize = math.max(10, math.floor(h * 0.03 + 0.5))
 	HealthLabel.Size = UDim2.new(0, math.floor(h * 0.14 + 0.5), 0, labelHeight)
 	HealthLabel.Position = UDim2.new(0.5, 0, 1, labelGap)
 end
 placeHealthBar()
+storeConnection(PlayerList:GetPropertyChangedSignal("Size"):Connect(placeHealthBar))
+storeConnection(PlayerList:GetPropertyChangedSignal("Position"):Connect(placeHealthBar))
 storeConnection(ScreenGui:GetPropertyChangedSignal("AbsoluteSize"):Connect(placeHealthBar))
 if uiScale then storeConnection(uiScale:GetPropertyChangedSignal("Scale"):Connect(placeHealthBar)) end
 local function setupHealthTracking(character)
