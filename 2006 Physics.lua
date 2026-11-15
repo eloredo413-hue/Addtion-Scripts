@@ -5,6 +5,8 @@
 --     no landing squash (Roblox's R15 Animate speeds the animations up when the hip height drops)
 --   * the climbing check (a small box in front of the feet) is measured from the feet, as on R6
 -- R6 works exactly as before.
+-- Sinking into the ground, as in 2006 (and as the "Old" physics does): falling lowers the body up to a stud,
+-- so a landing ends with the legs in the ground, and the body rises back out within about half a second.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -113,12 +115,25 @@ local function setupCharacterPhysics(character)
     -- (and followed if Roblox changes it, e.g. when the body is scaled).
     local r15HipHeight = humanoid.HipHeight > 0 and humanoid.HipHeight or 2
     local lastSetHipHeight = nil
+    -- (Addtion-Scripts) SINKING INTO THE GROUND, as in 2006 and as the "Old" physics does it: falling fast lowers
+    -- the body (up to a stud), so a landing ends with the legs in the ground, and the body rises back out within
+    -- about half a second (rising fast lifts it a little instead). Walking onto a higher or lower floor brings it
+    -- straight back up. Unlike the Old physics, a landing lower down than where you jumped from (off a ledge)
+    -- sinks too. R6: through the hip height. R15: the body is moved down on its root joint instead (a lower hip
+    -- height makes Roblox's R15 animations run faster).
+    local SINK_RATE = 20 / 3 -- studs a second the sink moves while falling or rising fast
+    local SINK_DECAY = 0.925 -- kept each 1/60 s once back on the ground
+    local sinkOffset = 0
+    local sinkFloorY = nil
+
     local function setHipHeight(value)
         if isR15 then
             if lastSetHipHeight and math.abs(humanoid.HipHeight - lastSetHipHeight) > 0.001 then
                 -- changed by something else (Roblox scaling the body): that is the new base
                 r15HipHeight = humanoid.HipHeight - (lastSetHipHeight - r15HipHeight)
             end
+        else
+            value = value + sinkOffset
         end
         humanoid.HipHeight = value
         lastSetHipHeight = value
@@ -401,9 +416,77 @@ local function setupCharacterPhysics(character)
     local currentSquash = 0
     local currentTilt = 0
 
+    -- (Addtion-Scripts) the sink (see SINKING INTO THE GROUND above)
+    local sinkRay = RaycastParams.new()
+    sinkRay.FilterType = Enum.RaycastFilterType.Exclude
+    sinkRay.FilterDescendantsInstances = { character }
+    local function floorBelow()
+        local hit = workspace:Raycast(rootPart.Position, Vector3.new(0, -5000, 0), sinkRay)
+        return hit and hit.Position.Y or nil
+    end
+    local function updateSink(dt)
+        local state = humanoid:GetState()
+        local level = floorBelow()
+        if humanoid.Sit or humanoid.SeatPart or humanoid.Health <= 0
+            or state == Enum.HumanoidStateType.Climbing or state == Enum.HumanoidStateType.Swimming then
+            sinkOffset = 0
+        else
+            local vy = rootPart.AssemblyLinearVelocity.Y
+            if math.abs(vy) > 8 then
+                local goal = vy > 0 and 1 or -1
+                local step = SINK_RATE * dt
+                if sinkOffset < goal then
+                    sinkOffset = math.min(goal, sinkOffset + step)
+                else
+                    sinkOffset = math.max(goal, sinkOffset - step)
+                end
+            elseif level and sinkFloorY and math.abs(level - sinkFloorY) > 0.5 then
+                sinkOffset = 0 -- walked onto a higher or lower floor
+            else
+                sinkOffset = sinkOffset * SINK_DECAY ^ (dt * 60)
+                if math.abs(sinkOffset) < 0.001 then sinkOffset = 0 end
+            end
+        end
+        -- (followed in the air too, so the floor you land on is the one compared with afterwards)
+        sinkFloorY = level
+    end
+
+    -- R15: the body moved down on its root joint (LowerTorso.Root), from whatever it is set to by anything else
+    local rootJoint, rootBase, rootWritten = nil, nil, nil
+    local function applyR15Sink()
+        if not (rootJoint and rootJoint.Parent) then
+            local lowerTorso = character:FindFirstChild("LowerTorso")
+            rootJoint = lowerTorso and lowerTorso:FindFirstChild("Root")
+            rootBase, rootWritten = nil, nil
+            if not (rootJoint and rootJoint:IsA("Motor6D")) then rootJoint = nil return end
+        end
+        local current = rootJoint.C0
+        if rootWritten == nil or current ~= rootWritten then rootBase = current end
+        local want = rootBase + Vector3.new(0, sinkOffset, 0)
+        if current ~= want then
+            rootJoint.C0 = want
+        end
+        rootWritten = rootJoint.C0
+    end
+    if isR15 then
+        -- put back when this stops (run again, or the character dies)
+        table.insert(activeConnections, {
+            Connected = true,
+            Disconnect = function(self)
+                self.Connected = false
+                if rootJoint and rootJoint.Parent and rootBase and rootJoint.C0 == rootWritten then
+                    pcall(function() rootJoint.C0 = rootBase end)
+                end
+            end,
+        })
+    end
+
     table.insert(activeConnections, RunService.RenderStepped:Connect(function(dt)
         if not torso.Parent then return end
         torso:GetConnectedParts()
+
+        updateSink(math.min(dt, 0.1))
+        if isR15 then applyR15Sink() end
 
         if timePeriod > 14 then
             humanoid.AutoRotate = autoRotateTime < os.clock()
