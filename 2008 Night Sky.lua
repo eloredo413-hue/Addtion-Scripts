@@ -227,7 +227,10 @@ local function createStarfieldCarrier()
 	local layer = Instance.new("BillboardGui")
 	layer.Name = "NightFade"
 	layer.Adornee = point
-	layer.Size = UDim2.new(R * 5, 0, R * 5, 0) -- (in studs: wider than any view at that distance)
+	-- (in screen pixels, a little bigger than the screen, like the stars' squares are in pixels: one sized in
+	-- studs to cover the view at that distance came out many screens big, and wasn't drawn on a phone)
+	local viewport = camera.ViewportSize
+	layer.Size = UDim2.fromOffset(math.ceil(viewport.X * 1.3), math.ceil(viewport.Y * 1.3))
 	layer.AlwaysOnTop = false
 	layer.LightInfluence = 0
 	layer.MaxDistance = math.huge
@@ -279,6 +282,7 @@ end
 -- the darkening layer: amount from 0 to 1 while it changes (deep blue to black, see-through to solid); anything else
 -- puts them away
 local BLACK = Color3.new(0, 0, 0)
+local saidLayer = false
 local function setFade(amount)
 	local step = (amount > 0 and amount < 1) and math.max(1, math.floor(amount * 60 + 0.5)) or 0
 	if step == currentFadeStep then return end
@@ -296,11 +300,26 @@ local function setFade(amount)
 			fill.BackgroundColor3 = color
 		end
 	end
-	-- (it follows the camera only while on: put straight ahead of it now, before it shows)
+	-- (it follows the camera only while on: put straight ahead of it now, before it shows, as big as the screen)
 	if on and not wasOn then
 		local camera = Workspace.CurrentCamera
 		if camera then
 			for _, point in ipairs(fadeOffsets) do point.Position = camera.CFrame.LookVector * CONFIG.FadeDistance end
+			local viewport = camera.ViewportSize
+			for _, layer in ipairs(fadePanels) do
+				layer.Size = UDim2.fromOffset(math.ceil(viewport.X * 1.3), math.ceil(viewport.Y * 1.3))
+			end
+		end
+		if not saidLayer then
+			saidLayer = true
+			task.delay(0.3, function()
+				local layer = fadePanels[1]
+				if layer and layer.Enabled then
+					local size = layer.AbsoluteSize
+					print("[2008 Night Sky] twilight layer on (" .. math.floor(size.X) .. " x " .. math.floor(size.Y)
+						.. " on the screen; 0 x 0 means it isn't drawn)")
+				end
+			end)
 		end
 	end
 end
