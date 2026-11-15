@@ -1927,7 +1927,9 @@ BackpackLayout.FillDirection = Enum.FillDirection.Horizontal
 BackpackLayout.SortOrder = Enum.SortOrder.LayoutOrder
 BackpackLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 BackpackLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-BackpackLayout.Padding = UDim.new(0, 4)
+-- (Addtion-Scripts) the slots close together, as in the 2011 client (a gap about a twelfth of a slot)
+local SLOT_GAP = 4
+BackpackLayout.Padding = UDim.new(0, SLOT_GAP)
 BackpackLayout.Parent = BackpackGui
 
 local itemSlots = {}
@@ -1966,9 +1968,11 @@ for i = 1, 10 do
 	local slot = Instance.new("Frame")
 	slot.Name = "Slot" .. i
 	slot.Size = UDim2.new(0, SLOT_SIZE, 0, SLOT_SIZE)
-	slot.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-	slot.BackgroundTransparency = 0.25
-	slot.BorderColor3 = Color3.fromRGB(95, 95, 95)
+	-- (Addtion-Scripts) the 2011 client's colours (measured on a 2011 screenshot): a solid dark grey box
+	-- with a slightly lighter edge (it was near black and see-through, so it looked black on grass)
+	slot.BackgroundColor3 = Color3.fromRGB(58, 58, 58)
+	slot.BackgroundTransparency = 0.12
+	slot.BorderColor3 = Color3.fromRGB(105, 105, 105)
 	-- (Addtion-Scripts) each slot its own box with very slightly rounded corners: the border is a UIStroke (a
 	-- frame's own border doesn't follow a UICorner)
 	slot.BorderSizePixel = 0
@@ -1980,7 +1984,7 @@ for i = 1, 10 do
 	slotCorner.Parent = slot
 	local slotBorder = Instance.new("UIStroke")
 	slotBorder.Name = "SlotBorder"
-	slotBorder.Color = Color3.fromRGB(95, 95, 95)
+	slotBorder.Color = Color3.fromRGB(105, 105, 105)
 	slotBorder.Thickness = 1
 	slotBorder.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	slotBorder.Parent = slot
@@ -1998,23 +2002,24 @@ for i = 1, 10 do
 	local stroke = Instance.new("UIStroke")
 	stroke.Name = "SelectionStroke"
 	stroke.Thickness = 2.5
-	stroke.Color = Color3.fromRGB(220, 0, 0)
+	stroke.Color = Color3.fromRGB(225, 20, 20)
 	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	stroke.Enabled = false
 	stroke.Parent = selectionFrame
 
 	local numberLabel = Instance.new("TextLabel")
-	numberLabel.Size = UDim2.new(0, 14, 0, 14)
-	numberLabel.Position = UDim2.new(0, 3, 0, 2)
+	numberLabel.Size = UDim2.new(0, 16, 0, 16)
+	numberLabel.Position = UDim2.new(0, 4, 0, 2)
 	numberLabel.BackgroundTransparency = 1
 	numberLabel.Text = tostring(i == 10 and 0 or i)
 	numberLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	numberLabel.TextStrokeTransparency = 0
+	-- (Addtion-Scripts) as in the 2011 client: a bigger plain white number, only a faint outline
+	numberLabel.TextStrokeTransparency = 0.7
 	numberLabel.TextXAlignment = Enum.TextXAlignment.Left
 	numberLabel.TextYAlignment = Enum.TextYAlignment.Top
-	numberLabel.Font = Enum.Font.ArialBold
+	numberLabel.Font = Enum.Font.Arial
 	numberLabel.BorderSizePixel = 0
-	numberLabel.TextSize = 12
+	numberLabel.TextSize = 15
 	numberLabel.ZIndex = 11
 	numberLabel.Parent = slot
 
@@ -2114,9 +2119,11 @@ local function updateBackpack()
 			totalVisibleSlots = totalVisibleSlots + 1
 		end
 	end
+	-- (Addtion-Scripts) as wide as the slots shown with their gaps, so they sit together in the middle
+	local shown = math.max(1, totalVisibleSlots)
 	BackpackGui.Size = UDim2.new(
 		0,
-		math.max(1, totalVisibleSlots) * (SLOT_SIZE + 2),
+		shown * SLOT_SIZE + (shown - 1) * SLOT_GAP,
 		0,
 		SLOT_SIZE
 	)
