@@ -3798,12 +3798,15 @@ local FIRST_BUTTON_BLUE = true
 local MOBILE_LAYOUT_LIKE_2021 = true
 
 -- 2021 mobile layout, as fractions of the screen height (measured on
--- the 2021 gui on a 2340x1080 phone).
+-- the 2021 gui on a 2340x1080 phone). (Addtion-Scripts) The question and
+-- buttons a little lower, so they sit in the middle of the screen
+-- (measured on the picture wanted: the question's middle at 38% of the
+-- screen height, the buttons from 52.6%; they were at 31.1% and 45.65%).
 local MobileLayout = {
-	QuestionCenterY = 0.311, -- middle of the question line
+	QuestionCenterY = 0.38, -- middle of the question line
 	QuestionHeight = 0.12,
 	QuestionTextSize = 0.0515, -- only used if the text can't be measured
-	ButtonTop = 0.4565,
+	ButtonTop = 0.526,
 	ButtonWidth = 0.5315,
 	ButtonHeight = 0.1148,
 	ButtonGap = 0.1361, -- space between the two buttons

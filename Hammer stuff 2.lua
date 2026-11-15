@@ -4336,7 +4336,7 @@ task.spawn(function()
 		stateKey      = "isScreen43Enabled",
 		onEnable      = actions.applyScreen43,
 		onDisable     = actions.restoreScreen43,
-		helpText      = "Shows the game 4:3, like an old monitor: black bars on the left and right, and the GUIs moved in from the sides to the 4:3 part. Roblox's own menu and chat stay as they are. Untick for the whole screen again."
+		helpText      = "Shows the game 4:3, like an old monitor: black bars on the left and right. The old era GUIs (2005 - 2016) and the joystick / jump button are moved in to the 4:3 part, the 2005 - 2011 ones shown as big as on a 4:3 screen. Untick for the whole screen again."
 	})
 
 	-- the FPS cap: its tick box, then a number box (the "?" after it); the label shows the frame rate now
