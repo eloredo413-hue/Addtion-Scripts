@@ -295,6 +295,8 @@ local MORE_GUIS_SWAPS = {
     -- 2011 (2011 Gui.lua): the chat log shows the messages again (the loader's 2011-style bubbles had switched
     -- off the part that filled it), and the buttons as in the 2011 client (mouse lock, "Record", "REPORT")
     URL_2011      = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2011%20Gui.lua",
+    -- 2008 (2008 Gui.lua): the health bar the 2008 client's size and place (thin, under the player list)
+    URL_2008      = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2008%20Gui.lua",
     -- 2021 / 2023 new / 2023 old: the top bar's chat icon (and the 2021 Roblox logo) are drawn when their image
     -- files do not load in the client (a PC's), so they are never blank
     -- 2019 / 2017: a PC with a touch screen is a PC (it has a keyboard), so it gets the PC layout and menus
