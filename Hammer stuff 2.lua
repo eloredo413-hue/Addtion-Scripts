@@ -3264,6 +3264,9 @@ task.spawn(function()
 	-- "Running" sound is muted while it is on and gets its volume back when it is off).
 	--   2015 audio: pitch = speed / 16 (1.0 at normal speed: the lower 2015 pitch)
 	--   2016 audio: pitch = speed / 16 x Roblox's own pitch for the floor (usually 1.85)
+	-- It plays only while you walk yourself: you press to move (MoveDirection, as Roblox's own sound checks), you
+	-- are running on the ground (not sitting, climbing or swimming), and you move against the floor. A conveyor
+	-- carrying you (its belt moves, you don't) is silent, and walking on one sounds like normal walking.
 	-- Only one at a time; it comes back after a respawn.
 	------------------------------------------------------------
 	do
@@ -3295,6 +3298,21 @@ task.spawn(function()
 			if current.token ~= token or not mode then return end
 			local defaultRunning = rootPart:FindFirstChild("Running")
 
+			-- the part under you, to take away its own movement (a conveyor's belt, a moving platform)
+			local floorRay = RaycastParams.new()
+			floorRay.FilterType = Enum.RaycastFilterType.Exclude
+			floorRay.FilterDescendantsInstances = { character }
+			local function floorVelocity()
+				local legs = humanoid.RigType == Enum.HumanoidRigType.R6 and 2 or humanoid.HipHeight
+				local reach = legs + rootPart.Size.Y / 2 + 2
+				local hit = workspace:Raycast(rootPart.Position, Vector3.new(0, -reach, 0), floorRay)
+				if hit and hit.Instance then
+					local ok, v = pcall(function() return hit.Instance:GetVelocityAtPosition(hit.Position) end)
+					if ok and v then return v end
+				end
+				return Vector3.new(0, 0, 0)
+			end
+
 			local walkSound = Instance.new("Sound")
 			walkSound.Name = SOUND_NAME
 			walkSound.Looped = true
@@ -3320,10 +3338,17 @@ task.spawn(function()
 					if defaultRunning.PlaybackSpeed > 0 then basePitch = defaultRunning.PlaybackSpeed end
 					defaultRunning.Volume = 0
 				end
-				local velocity = rootPart.AssemblyLinearVelocity
-				local currentSpeed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
-				-- only while moving on the ground
-				if currentSpeed > 0.5 and humanoid.FloorMaterial ~= Enum.Material.Air then
+				local walking = false
+				local currentSpeed = 0
+				local state = humanoid:GetState()
+				if humanoid.MoveDirection.Magnitude > 0.1 and humanoid.FloorMaterial ~= Enum.Material.Air
+					and (state == Enum.HumanoidStateType.Running or state == Enum.HumanoidStateType.RunningNoPhysics) then
+					-- how fast you move against the floor
+					local velocity = rootPart.AssemblyLinearVelocity - floorVelocity()
+					currentSpeed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
+					walking = currentSpeed > 0.5
+				end
+				if walking then
 					walkSound.Volume = 0.65
 					if mode == "2015" then
 						walkSound.PlaybackSpeed = math.clamp(currentSpeed / 16, 0.2, 3)
@@ -4394,7 +4419,7 @@ task.spawn(function()
 		exclusiveWith = { "is2016AudioEnabled" },
 		onEnable      = actions.apply2015Audio,
 		onDisable     = actions.restore2015Audio,
-		helpText      = "2015 walking sound: its pitch follows your speed (speed / 16), so normal walking sounds lower, like 2015. Only one of 2015 / 2016 audio at a time. Untick for Roblox's own walking sound."
+		helpText      = "2015 walking sound: its pitch follows your speed (speed / 16), so normal walking sounds lower, like 2015. Only when you walk yourself: standing on a moving conveyor is silent. Only one of 2015 / 2016 audio at a time. Untick for Roblox's own walking sound."
 	})
 
 	createAddonRow({
@@ -4407,7 +4432,7 @@ task.spawn(function()
 		exclusiveWith = { "is2015AudioEnabled" },
 		onEnable      = actions.apply2016Audio,
 		onDisable     = actions.restore2016Audio,
-		helpText      = "2016 walking sound: its pitch follows your speed (speed / 16 x Roblox's pitch), so normal walking sounds like 2016. Only one of 2015 / 2016 audio at a time. Untick for Roblox's own walking sound."
+		helpText      = "2016 walking sound: its pitch follows your speed (speed / 16 x Roblox's pitch), so normal walking sounds like 2016. Only when you walk yourself: standing on a moving conveyor is silent. Only one of 2015 / 2016 audio at a time. Untick for Roblox's own walking sound."
 	})
 
 	createCategory("BPCategoryInterface", "interface")
