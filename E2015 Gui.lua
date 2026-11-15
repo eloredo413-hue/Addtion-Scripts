@@ -306,7 +306,8 @@ do
 		{ "\t\t\tName = 'ChatWindowContainer';\n\t\t\tSize = UDim2.new(0.3, 0, 0.25, 0);\n\t\t\tPosition = UDim2.new(0, 8, 0, 37);",
 			"\t\t\tName = 'ChatWindowContainer';\n\t\t\tSize = UDim2.new(0.3, 0, 0.25, 0);\n\t\t\tPosition = UDim2.new(0, 2, 0, 37);" },
 		-- The "To chat click here or press / key" bar is the chat script's own: along the bottom of the screen on
-		-- PC (the script reserves that strip), and none on phones. (It used to be moved under the chat box.)
+		-- PC (the script reserves that strip). It made one on phones too: see the last changes, which hide it there.
+		-- (It used to be moved under the chat box.)
 		-- "/" also works when something else took the key but no text box has focus
 		{ "if key.KeyCode == Enum.KeyCode.Slash and not proc then",
 			"if key.KeyCode == Enum.KeyCode.Slash and (not proc or not game:GetService('UserInputService'):GetFocusedTextBox()) then" },
@@ -315,6 +316,19 @@ do
 		-- need to press the Chat button
 		{ "\t\t\t\t\t\t\t\ttouchCount = touchCount + 1\n\t\t\t\t\t\t\t\tdontFadeOutOnMouseLeave = true",
 			"\t\t\t\t\t\t\t\ttouchCount = touchCount + 1\n\t\t\t\t\t\t\t\tdontFadeOutOnMouseLeave = true\n\t\t\t\t\t\t\t\tif not this.BackgroundVisible then this:FadeIn(0.25) end" },
+		-- phones: the "To chat click here" bar along the bottom shows only while you type (after pressing the
+		-- Chat button), or while Hammer stuff's "chatbar" is on (Chat Bar.lua puts BPChatBar on NewRobloxGui
+		-- and hides the Chat button then). On a PC it always shows, as before.
+		{ "local function CreateChatBarWidget(settings)",
+			"local function BPChatBarShown(widget)\n\tif not Util.IsTouchDevice() or widget.BPTyping then return true end\n\tlocal shown = false\n\tpcall(function() shown = GuiRoot:GetAttribute('BPChatBar') == true end)\n\treturn shown\nend\n\nlocal function CreateChatBarWidget(settings)" },
+		{ "\t\t\tthis.ChatBarContainer.Visible = enabled and self.FadedIn\n\t\tend\n\tend\n",
+			"\t\t\tthis.BPEnabled = enabled\n\t\t\tthis.ChatBarContainer.Visible = enabled and self.FadedIn and BPChatBarShown(this)\n\t\tend\n\tend\n\n\tfunction this:BPRefreshBar()\n\t\tif this.ChatBarContainer and this.BPEnabled ~= nil then\n\t\t\tthis.ChatBarContainer.Visible = this.BPEnabled and this.FadedIn and BPChatBarShown(this)\n\t\tend\n\tend\n" },
+		{ "\t\t\tthis.ChatBar.Visible = true\n\t\t\tthis.ChatBar:CaptureFocus()",
+			"\t\t\tthis.ChatBar.Visible = true\n\t\t\tthis.BPTyping = true\n\t\t\tthis:BPRefreshBar()\n\t\t\tthis.ChatBar:CaptureFocus()" },
+		{ "\tfunction this:OnChatBarFocusLost(enterPressed)\n\t\tif self.ChatBar then\n\t\t\tself.ChatBar.Visible = false\n",
+			"\tfunction this:OnChatBarFocusLost(enterPressed)\n\t\tif self.ChatBar then\n\t\t\tself.ChatBar.Visible = false\n\t\t\tself.BPTyping = false\n\t\t\tself:BPRefreshBar()\n" },
+		{ "\t\tthis.ChatBarContainer.Parent = GuiRoot\n",
+			"\t\tthis.ChatBarContainer.Parent = GuiRoot\n\t\tpcall(function() GuiRoot:GetAttributeChangedSignal('BPChatBar'):connect(function() this:BPRefreshBar() end) end)\n" },
 	}
 
 	-- the 2016 leaderboard, made to look like early 2015's: your name in a

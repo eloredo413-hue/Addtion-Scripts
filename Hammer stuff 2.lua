@@ -3503,8 +3503,9 @@ task.spawn(function()
 
 	------------------------------------------------------------
 	-- 23. CHAT BAR (Chat Bar.lua in this repo)
-	-- The normal 2013 GUI's chat button (on a touch screen) becomes the chat bar along the bottom it has on
-	-- a PC. Unticking gives the button back.
+	-- On a touch screen, the 2012 / 2013 GUIs' Chat button becomes the chat bar along the bottom they have
+	-- on a PC; 2015 early shows its own bar (hidden on phones while this is off) and hides its Chat button.
+	-- Unticking gives the button back. Not the 2013 mobile GUI.
 	------------------------------------------------------------
 	do
 		local CHAT_BAR_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Chat%20Bar.lua"
@@ -4469,7 +4470,7 @@ task.spawn(function()
 		stateKey      = "isChatBarEnabled",
 		onEnable      = actions.applyChatBar,
 		onDisable     = actions.restoreChatBar,
-		helpText      = "For the normal 2013 GUI on a phone or tablet: its Chat button goes and the chat bar it has on a PC is put along the bottom (\"To chat click here or press \"/\" key\"). Tap it to type. Not the 2013 mobile GUI. Untick for the button again."
+		helpText      = "For the 2012, 2013 and 2015 early GUIs on a phone or tablet: the Chat button goes and the chat bar along the bottom is shown (\"To chat click here or press \"/\" key\"), like on a PC. Tap it to type. Not the 2013 mobile GUI. Untick for the Chat button again (2015 early's bar is then hidden)."
 	})
 
 	createCategory("BPCategoryControls", "controls & performance")
