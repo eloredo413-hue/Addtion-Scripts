@@ -3,8 +3,8 @@
 -- Help tab bar):
 --   * a gap under the tab bar (18px for 2016 and older, 14px for 2017 and later); the page scrolls
 --     that much further, and on phones its page area ends above the bottom of the screen (it ran past
---     it); a page a little too tall for the room (Settings on a phone: Graphics Quality) is shrunk a
---     little so all of it shows, and on phones the page area's scroll bar strip is taken away (it cut off
+--     it); on 2016 / 2017 the Settings page scrolls further, down past its last row (Graphics Quality was
+--     cut off on phones), and on phones the page area's scroll bar strip is taken away (it cut off
 --     Resume Game and the player rows on the right)
 --   * 2017 and later: Leave / Reset Character / Resume side by side across the page, like 2023 old
 -- Loaded by the loader (Script) and by the 2021 GUI after its rejoin (the loader doesn't run in the
@@ -75,21 +75,33 @@ do
     -- bottom, most of all on phones. The scroll area is made taller by the gap, each time the menu
     -- sets it (a menu that sizes it by itself, AutomaticCanvasSize, already counts the gap).
     local canvasFix = setmetatable({}, { __mode = "k" })
-    local function fitCanvas(view, gap)
+    -- 2016 / 2017: while their Settings page is shown, the scroll area must reach this far (its last row and
+    -- some room after it); see THE SETTINGS PAGE below
+    local settingsNeed = setmetatable({}, { __mode = "k" })
+    local function roomFor(view, year, base)
+        local room = canvasRoomFor(year)
+        local need = settingsNeed[view]
+        if need then
+            local baseHeight = base.Y.Offset + base.Y.Scale * view.AbsoluteWindowSize.Y
+            room = math.max(room, math.ceil(need - baseHeight))
+        end
+        return room
+    end
+    local function fitCanvas(view, year)
         local automatic = false
         pcall(function() automatic = view.AutomaticCanvasSize ~= Enum.AutomaticSize.None end)
         if automatic then return end
         local state = canvasFix[view]
         local function grow()
             local base = state.base
-            local want = UDim2.new(base.X.Scale, base.X.Offset, base.Y.Scale, base.Y.Offset + state.gap)
+            local want = UDim2.new(base.X.Scale, base.X.Offset, base.Y.Scale, base.Y.Offset + roomFor(view, state.year, base))
             if view.CanvasSize ~= want then
                 state.ours = want
                 view.CanvasSize = want
             end
         end
         if not state then
-            state = { base = view.CanvasSize, gap = gap }
+            state = { base = view.CanvasSize, year = year }
             canvasFix[view] = state
             view:GetPropertyChangedSignal("CanvasSize"):Connect(function()
                 if view.CanvasSize == state.ours then return end -- the size set here
@@ -97,7 +109,7 @@ do
                 grow()
             end)
         end
-        state.gap = gap
+        state.year = year
         grow()
     end
 
@@ -195,12 +207,12 @@ do
     -- PHONES: the page area keeps a strip on its right for its scroll bar (12 wide), and nothing is drawn
     -- under it, so whatever reached the right edge was cut off there (Resume Game, the player rows).
     -- Phones scroll by dragging, so the strip is taken away on a touch screen with no keyboard.
-    -- THE SETTINGS PAGE on a phone is taller than the room under the tab bar, so Graphics Quality hung off
-    -- the bottom of the screen. The page is found from its rows (a label "Graphics Quality", "Camera
-    -- Mode", ...: the row is the label's frame, the page what holds the rows), whatever the menu calls its
-    -- parts, and is shrunk (UIScale, its width kept) so its last row ends above whatever cuts it off: the
-    -- page area's bottom, anything clipping it, or the bottom of the screen. It is measured with the menu
-    -- at rest (not while it slides in from the top) and again every couple of seconds.
+    -- THE SETTINGS PAGE (2016 / 2017) on a phone is taller than the room under the tab bar, and the menu
+    -- lets it scroll only as far as its own size, so Graphics Quality stayed cut off at the bottom. The page
+    -- is found from its rows (a label "Graphics Quality", "Camera Mode", ...: the row is the label's frame,
+    -- the page what holds the rows), whatever the menu calls its parts, and while it is shown the page area
+    -- scrolls down past its last row (with some room after it). Its size is left as it is (it used to be
+    -- shrunk to fit, which made it small). The other pages scroll as before.
     local UserInputService = game:GetService("UserInputService")
     local function touchOnly()
         local ok, result = pcall(function()
@@ -225,21 +237,30 @@ do
         ["graphics quality"] = true, ["graphics mode"] = true, ["camera mode"] = true,
         ["movement mode"] = true, ["volume"] = true, ["fullscreen"] = true,
     }
-    local MIN_PAGE_SCALE = 0.6
-    local SCREEN_GAP = 4
+    local SETTINGS_BOTTOM_ROOM = 30 -- room after the last row
     local settingsPages = setmetatable({}, { __mode = "k" })
-
-    -- the 2019 and 2021 menus' Settings page is already the right size: only 2018 and older are fitted
-    local function shrinkAllowed()
-        local year = topbarYear()
-        return year ~= nil and year <= 2018
-    end
 
     local function fitSettingsPage(page)
         local state = settingsPages[page]
-        if not state or not page.Parent then return end
-        local layer = page:FindFirstAncestorWhichIsA("LayerCollector")
-        if not layer then return end
+        if not state then return end
+        -- (an older version shrank the page to fit: back to its own size)
+        local uiScale = page:FindFirstChild("BPFitScale")
+        if uiScale then
+            uiScale:Destroy()
+            state.ours = UDim2.new(state.baseX, page.Size.X.Offset, page.Size.Y.Scale, page.Size.Y.Offset)
+            page.Size = state.ours
+        end
+        local view = state.view
+        if not view then return end
+        -- (the 2019 and 2021 menus get their room after the last row from canvasRoomFor)
+        local year = topbarYear()
+        if not (year and year <= 2018) then
+            if settingsNeed[view] then
+                settingsNeed[view] = nil
+                pcall(fitCanvas, view, year)
+            end
+            return
+        end
         -- the page's own height: the bottom of its lowest row (rows are placed by offsets)
         local natural = 0
         for _, row in ipairs(page:GetChildren()) do
@@ -247,67 +268,20 @@ do
                 natural = math.max(natural, row.Position.Y.Offset + row.Size.Y.Offset)
             end
         end
-        if natural <= 0 then return end
-        -- the menu slides down from above the screen when it opens: everything in it is measured from
-        -- where it comes to rest
-        local slide = 0
-        local cur = page.Parent
-        while cur and cur ~= layer do
-            if cur.Name == "SettingsShield" and cur:IsA("GuiObject") and cur.Position.Y.Scale < 0 then
-                local holder = cur.Parent
-                if holder and holder:IsA("GuiObject") then
-                    slide = holder.AbsolutePosition.Y - cur.AbsolutePosition.Y
-                end
-                break
+        -- only while it is the page on show (the menu takes the other pages out of the page area)
+        local shown = natural > 0 and page.Visible and page:IsDescendantOf(view)
+        local need = nil
+        if shown then
+            -- under the gap at the top, where the page starts, its rows, and some room after them
+            need = gapFor(year) + math.max(0, page.Position.Y.Offset) + natural + SETTINGS_BOTTOM_ROOM
+        end
+        if settingsNeed[view] ~= need then
+            settingsNeed[view] = need
+            pcall(fitCanvas, view, year)
+            if need and state.said ~= need then
+                state.said = need
+                print("[Loader] escape menu Settings page: " .. natural .. " tall; the page scrolls down past its last row")
             end
-            cur = cur.Parent
-        end
-        -- the page's top when it isn't scrolled
-        local view = page:FindFirstAncestorWhichIsA("ScrollingFrame")
-        local scrolled = view and view.CanvasPosition.Y or 0
-        local top = page.AbsolutePosition.Y + scrolled + slide
-        -- the lowest point it can be seen down to
-        local bottom = layer.AbsolutePosition.Y + layer.AbsoluteSize.Y - SCREEN_GAP
-        cur = page.Parent
-        while cur and cur ~= layer do
-            if cur:IsA("GuiObject") and (cur.ClipsDescendants or cur:IsA("ScrollingFrame")) then
-                bottom = math.min(bottom, cur.AbsolutePosition.Y + slide + cur.AbsoluteSize.Y)
-            end
-            cur = cur.Parent
-        end
-        local room = bottom - top - 2
-        local scale = 1
-        if room > 0 and room < natural and shrinkAllowed() then
-            scale = math.max(MIN_PAGE_SCALE, room / natural)
-        end
-        local uiScale = page:FindFirstChild("BPFitScale")
-        if scale == 1 and not uiScale then
-            if not state.said then
-                state.said = 100
-                print("[Loader] escape menu Settings page: " .. natural .. " tall, " .. math.floor(room)
-                    .. " of room: it fits as it is")
-            end
-            return
-        end
-        if not uiScale then
-            uiScale = Instance.new("UIScale")
-            uiScale.Name = "BPFitScale"
-            uiScale.Parent = page
-        end
-        if math.abs(uiScale.Scale - scale) > 0.0005 then uiScale.Scale = scale end
-        -- as wide as before: the page is made wider by as much as the scale makes it narrower
-        local size = page.Size
-        local want = UDim2.new(state.baseX / scale, size.X.Offset, size.Y.Scale, size.Y.Offset)
-        if page.Size ~= want then
-            state.ours = want
-            page.Size = want
-        end
-        local percent = math.floor(scale * 100 + 0.5)
-        if state.said ~= percent then
-            state.said = percent
-            print("[Loader] escape menu Settings page: " .. natural .. " tall, " .. math.floor(room)
-                .. " of room down to the screen's bottom: shown at " .. percent .. "%"
-                .. (scale <= MIN_PAGE_SCALE and " (the least it goes; the rest scrolls)" or " (all of it fits)"))
         end
     end
 
@@ -319,7 +293,8 @@ do
         local page = row and row.Parent
         if not (page and page:IsA("GuiObject") and row:IsA("GuiObject")) or settingsPages[page] then return end
         if not inOldMenu(page) then return end
-        local state = { baseX = page.Size.X.Scale }
+        local view = page:FindFirstAncestorWhichIsA("ScrollingFrame")
+        local state = { baseX = page.Size.X.Scale, view = view }
         settingsPages[page] = state
         local later = whenStill(function() fitSettingsPage(page) end, 0.2)
         page:GetPropertyChangedSignal("Size"):Connect(function()
@@ -330,7 +305,10 @@ do
         end)
         -- (when the menu has finished sliding in, not on every frame of it)
         page:GetPropertyChangedSignal("AbsolutePosition"):Connect(later)
-        local view = page:FindFirstAncestorWhichIsA("ScrollingFrame")
+        -- shown / not shown (the menu puts the page in the page area and takes it out again)
+        page:GetPropertyChangedSignal("Visible"):Connect(later)
+        page.AncestryChanged:Connect(later)
+        page.ChildAdded:Connect(later)
         print("[Loader] escape menu Settings page found (" .. page:GetFullName() .. ")")
         pcall(noStrip, view)
         pcall(fitSettingsPage, page)
@@ -354,7 +332,7 @@ do
             pad.Parent = obj
         end
         pad.PaddingTop = UDim.new(0, gapFor(year))
-        pcall(fitCanvas, obj, canvasRoomFor(year))
+        pcall(fitCanvas, obj, year)
         pcall(fitToScreen, clipper)
     end
 
@@ -368,7 +346,7 @@ do
         local existing = view:FindFirstChild("BPMenuGap")
         if existing then
             existing.PaddingTop = UDim.new(0, gapFor(year))
-            pcall(fitCanvas, view, canvasRoomFor(year))
+            pcall(fitCanvas, view, year)
             return
         end
         -- only the escape menu's (SettingsHub: its tab bar is called HubBar)
@@ -379,7 +357,7 @@ do
         pad.Name = "BPMenuGap"
         pad.PaddingTop = UDim.new(0, gapFor(year))
         pad.Parent = view
-        pcall(fitCanvas, view, canvasRoomFor(year))
+        pcall(fitCanvas, view, year)
         -- (SettingsHub's own PageView is fitted through its PageViewClipper, above)
         if not (view.Name == "PageView" and view.Parent and view.Parent.Name == "PageViewClipper") then
             pcall(fitToScreen, view)
