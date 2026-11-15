@@ -39,6 +39,7 @@ local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local SoundService = game:GetService("SoundService")
+local RunService = game:GetService("RunService")
 
 -- (loaded right after a rejoin by the 2021 / 2023 GUIs, the player may not be there yet)
 local LocalPlayer = Players.LocalPlayer
@@ -297,6 +298,19 @@ local function press(button)
 		if ok then return true end
 	end
 	return false
+end
+
+-- After a press that loads something (a GUI, an addon), the game stutters for a moment: the next press waits
+-- until it runs smoothly again (a few smooth frames in a row; at most maxWait seconds), so the loads don't
+-- pile up into one long freeze (or a crash).
+local function settle(maxWait)
+	local deadline = os.clock() + (maxWait or 3)
+	local smooth = 0
+	while os.clock() < deadline and smooth < 5 do
+		local ok, dt = pcall(function() return RunService.Heartbeat:Wait() end)
+		if not ok then task.wait(0.1) break end
+		if dt < 1 / 15 then smooth = smooth + 1 else smooth = 0 end
+	end
 end
 
 local function boxIsOn(box)
@@ -682,13 +696,13 @@ local function neutralAnswer(frame)
 	return buttons[1] and buttons[1].Text or nil
 end
 
--- the question on screen now (and its title)
-local function currentQuestion()
+-- the question on screen now (and its title); skip(frame, title) leaves out ones already answered
+local function currentQuestion(skip)
 	if not bloxyGui then return nil end
 	for _, frame in ipairs(bloxyGui:GetChildren()) do
 		if frame:IsA("Frame") and frame.Visible and frame ~= hammerPanel then
 			local title = questionTitle(frame)
-			if title then return frame, title end
+			if title and not (skip and skip(frame, title)) then return frame, title end
 		end
 	end
 	return nil
@@ -707,6 +721,15 @@ local function answerSetup(answers, files, name, firstWait)
 		table.insert(queues[step.q], step.a)
 	end
 	local fromFile = {}
+	-- A question given its last answer is never pressed again. (It used to be looked at again after 1.2
+	-- seconds: with the game busy loading what was just picked, the question was often still sliding out
+	-- then, and got a second answer, its neutral one: Bloxy then went on to its next step twice, and two
+	-- setups showed.)
+	local answered = setmetatable({}, { __mode = "k" }) -- frame -> { [title] = true }
+	local function isAnswered(frame, title)
+		local done = answered[frame]
+		return done ~= nil and done[title] == true and not (queues[title] and #queues[title] > 0)
+	end
 	task.spawn(function()
 		print(string.format("[Saved Settings] answering the setup with \"%s\"", name))
 		local given, fromSettingsCount, guessed = 0, 0, {}
@@ -717,7 +740,7 @@ local function answerSetup(answers, files, name, firstWait)
 		local lookedAgain = 0
 		while not destroyed do
 			if tookOver then stopReason = "you answered the setup yourself: the rest of it is up to you" break end
-			local frame, title = currentQuestion()
+			local frame, title = currentQuestion(isAnswered)
 			if not frame then
 				if os.clock() - idleSince > ((given == 0) and (firstWait or 20) or 12) then break end
 				task.wait(0.25)
@@ -794,6 +817,12 @@ local function answerSetup(answers, files, name, firstWait)
 					end
 					if press(btn) then given = given + 1 end
 					lastFrame, lastTitle, lastAt = frame, title, os.clock()
+					if not queues[title] or #queues[title] == 0 then
+						answered[frame] = answered[frame] or {}
+						answered[frame][title] = true
+					end
+					-- (what was picked may be loading: the next press waits for the game to run smoothly)
+					settle(3)
 				else
 					-- (its answer is put back for when it comes again)
 					queues[title] = queues[title] or {}
@@ -860,7 +889,8 @@ local function loadSettings(name)
 		else
 			table.insert(failed, shortName(boxName))
 		end
-		task.wait(0.05)
+		-- (an option may load a script: the next one waits for the game to run smoothly)
+		settle(2)
 	end
 
 	local ok = pcall(function()
