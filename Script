@@ -31,7 +31,8 @@
 --   copies of the setup and hammer settings (Saved Settings.lua)
 -- + "Skip setup" brings back More guis' topbars too (2013 mobile, 2023 old...): the pick is saved at Confirm
 -- + 2006 / 2008 / 2010: the inventory sits right on the chat bar (no gap), the green outline just inside its slot;
---   2010's "Health" text a little bigger and pure blue, like the 2010 client
+--   2010's "Health" text a little bigger and blue with a touch of cyan; 2010's player list text all one size and
+--   its Report / screenshot / camera buttons right above the chat bar, like the 2010 client
 --========================================================
 
 if getgenv().ClassicDialogCleanup then
@@ -3049,9 +3050,13 @@ end)
 --   GUI and Bloxy's own 2010: they share this inventory and chat bar. 2005 (no inventory) and 2011 (another GUI)
 --   are not touched. (An earlier copy put the bar over the inventory; with these GUIs' Global layering that hid
 --   the 2008 bar's own "To chat click here" text: a bar left like that gets its text back on top.)
--- * 2010 (the new GUI and Bloxy's own): "Health" under the health bar is a little bigger (16, was 14) and pure
---   blue, as in the 2010 client (its light blue had some green in it). Only the text: the bar stays as it was.
---   The 2006 and 2008 ones are their own and are left alone.
+-- * 2010 (the new GUI and Bloxy's own): "Health" under the health bar is as big as the player list's text (18, was
+--   14) and blue with a touch of cyan (0, 80, 255): the GUI's own (0, 100, 255) had too much green in it, pure blue
+--   too little. Only the text: the bar stays as it was. The 2006 and 2008 ones are their own and are left alone.
+-- * 2010: the player list's text all one size, as in the 2010 client (a screenshot of it): the names were 14, the
+--   numbers 18, the team rows 12 / 16 and the headers 14. All 18 now, the size of the numbers (its rows are 18 high).
+-- * 2010: the Report / screenshot / camera buttons (bottom right) moved down so the camera buttons sit right
+--   above the chat bar (2 px), as in the 2010 client (they were about 30 px above it).
 --========================================================
 if getgenv().BPChatGapCleanup then
     pcall(getgenv().BPChatGapCleanup)
@@ -3059,8 +3064,10 @@ if getgenv().BPChatGapCleanup then
 end
 do
     local conns = {}
-    local HEALTH_TEXT_SIZE = 16
-    local HEALTH_TEXT_COLOR = Color3.fromRGB(0, 0, 255)
+    local HEALTH_TEXT_SIZE = 18
+    local HEALTH_TEXT_COLOR = Color3.fromRGB(0, 80, 255)
+    local LIST_TEXT_SIZE = 18 -- 2010's player list: every text this size (the size of its numbers)
+    local PALETTE_GAP = 2      -- 2010's camera buttons this far above the chat bar
 
     local function bottomAnchored(obj)
         return obj.AnchorPoint.Y == 1 and obj.Position.Y.Scale == 1 and obj.Size.Y.Scale == 0
@@ -3125,6 +3132,10 @@ do
                 if is2010 then
                     label.TextSize = HEALTH_TEXT_SIZE
                     label.TextColor3 = HEALTH_TEXT_COLOR
+                    -- (a box the bigger text fits in, still centred under the bar)
+                    local half = frame.Size.X.Offset / 2
+                    label.Size = UDim2.new(0, 64, 0, 20)
+                    label.Position = UDim2.new(0, half - 32, 1, 3)
                 end
                 return true
             end
@@ -3132,11 +3143,69 @@ do
         return false
     end
 
+    -- 2010's player list: every text label in it the same size, kept when the list writes its own size again
+    -- (it does on every update)
+    local listLabels = setmetatable({}, { __mode = "k" })
+    local function sizeListLabel(label)
+        if listLabels[label] or not label:IsA("TextLabel") then return end
+        listLabels[label] = true
+        local function apply()
+            if label.TextSize ~= LIST_TEXT_SIZE then label.TextSize = LIST_TEXT_SIZE end
+        end
+        apply()
+        table.insert(conns, label:GetPropertyChangedSignal("TextSize"):Connect(apply))
+    end
+    -- true once the list is watched
+    local function watchList(gui)
+        local list = gui:FindFirstChild("ClassicPlayerList")
+        if not (list and list:IsA("GuiObject")) then return false end
+        for _, d in ipairs(list:GetDescendants()) do sizeListLabel(d) end
+        table.insert(conns, list.DescendantAdded:Connect(function(d) pcall(sizeListLabel, d) end))
+        return true
+    end
+
+    -- 2010's Report / screenshot / camera group (RightPalette, held by its bottom edge): moved down so its camera
+    -- buttons sit PALETTE_GAP above the chat bar. true once placed (or not this GUI's layout)
+    local function movePalette(gui)
+        local palette = gui:FindFirstChild("RightPalette")
+        local bar = gui:FindFirstChild("ClassicBottomChatBar")
+        if not (palette and bar) then return false end
+        local camera = palette:FindFirstChild("CameraPanel")
+        if not camera then return false end
+        if not (palette:IsA("GuiObject") and bar:IsA("GuiObject") and camera:IsA("GuiObject")) then return true end
+        if not (bottomAnchored(palette) and bottomAnchored(bar) and bar.Position.Y.Offset == 0) then return true end
+        -- (the empty room under the camera buttons, inside the group)
+        local slack = palette.Size.Y.Offset - (camera.Position.Y.Offset + camera.Size.Y.Offset)
+        local want = -(bar.Size.Y.Offset + PALETTE_GAP) + slack
+        local p = palette.Position
+        if p.Y.Offset ~= want then palette.Position = UDim2.new(p.X.Scale, p.X.Offset, 1, want) end
+        return true
+    end
+
     local function watchGui(gui)
         if gui.Name ~= "Classic2010Gui" or not gui:IsA("LayerCollector") then return end
         local gapDone, healthDone, healthWatch = false, false, nil
+        local listDone, paletteDone, paletteWatch = false, false, nil
         local function check()
             if not gapDone then gapDone = closeGap(gui) end
+            if not listDone then listDone = watchList(gui) end
+            if not paletteDone then
+                paletteDone = movePalette(gui)
+                local palette = gui:FindFirstChild("RightPalette")
+                if not paletteDone and palette and not paletteWatch then
+                    -- the group is put on screen before its camera buttons are made
+                    paletteWatch = palette.ChildAdded:Connect(function()
+                        if paletteWatch and not paletteDone then
+                            paletteDone = movePalette(gui)
+                            if paletteDone then
+                                paletteWatch:Disconnect()
+                                paletteWatch = nil
+                            end
+                        end
+                    end)
+                    table.insert(conns, paletteWatch)
+                end
+            end
             if not healthDone and not healthWatch then
                 local frame = gui:FindFirstChild("ClassicHealthFrame")
                 if frame then
@@ -3155,7 +3224,7 @@ do
                     end
                 end
             end
-            return gapDone and (healthDone or healthWatch ~= nil)
+            return gapDone and listDone and (paletteDone or paletteWatch ~= nil) and (healthDone or healthWatch ~= nil)
         end
         if check() then return end
         -- the GUI is put on screen empty and filled afterwards (the chat bar comes before the inventory)
