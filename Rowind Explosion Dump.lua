@@ -1,9 +1,12 @@
--- [[ ROWIND EXPLOSION DUMP - copy and paste, run once while in a Rowind game ]]
+-- [[ ROWIND / RETRO STUDIO EXPLOSION DUMP - copy and paste, run once while in a Rowind or Retro Studio game ]]
 -- Rowind draws its old explosions from ready-made models in its client scripts
 -- (PlayerScripts.RowindClientVisuals.Handler.Assets.Explosions, one per era). This copies that whole folder, every
 -- object and every property it has (particle textures, colours, sizes, timings...), as text that rebuilds it, so the
 -- Explosion addon can use Rowind's real 2010 / 2013 explosions. It also notes how Rowind picks one for an era, and
 -- the game's era. Nothing in the game is changed.
+-- (Addtion-Scripts) It also finds Retro Studio's explosion templates (PlayerScripts._RetroStudio.Engine.Rendering
+-- .Explosion, with its "2007", "2009" and "2012" models), which the Explosion addon's 2010 / 2013 styles copy: their
+-- emitters' exact sizes, colours and timings are in the dump.
 -- When it's done: the text is on your clipboard (if your executor can) and saved as RowindExplosions.txt in the
 -- executor's workspace folder. Paste it back in the chat.
 
@@ -14,6 +17,12 @@ local player = Players.LocalPlayer
 ----------------------------------------------------------------------------------------------------
 -- find the folder
 ----------------------------------------------------------------------------------------------------
+-- Retro Studio's: the Explosion module under Engine.Rendering, its templates are its children
+local function isRetroStudioExplosions(d)
+	return d.Name == "Explosion" and d.Parent and d.Parent.Name == "Rendering"
+		and (d:FindFirstChild("2009") or d:FindFirstChild("2012") or d:FindFirstChild("2007")) ~= nil
+end
+
 local function findExplosions()
 	local roots = {}
 	local scripts = player and player:FindFirstChildOfClass("PlayerScripts")
@@ -27,6 +36,7 @@ local function findExplosions()
 		if ok then
 			for _, d in ipairs(list) do
 				if d.Name == "Explosions" and d.Parent and d.Parent.Name == "Assets" then return d end
+				if isRetroStudioExplosions(d) then return d end
 			end
 		end
 	end
@@ -37,6 +47,7 @@ local function findExplosions()
 				if d.Name == "Explosions" then return d end
 				for _, x in ipairs(d:GetDescendants()) do
 					if x.Name == "Explosions" and x.Parent and x.Parent.Name == "Assets" then return x end
+					if isRetroStudioExplosions(x) then return x end
 				end
 			end)
 			if ok and found then return found end
@@ -177,12 +188,17 @@ end
 ----------------------------------------------------------------------------------------------------
 local folder = findExplosions()
 if not folder then
-	warn("[Rowind Explosion Dump] Rowind's Assets.Explosions folder wasn't found. Run this while in a Rowind game.")
+	warn("[Rowind Explosion Dump] Neither Rowind's Assets.Explosions folder nor Retro Studio's explosion templates were found. Run this while in a Rowind or Retro Studio game.")
 	return
 end
 
-out("-- Rowind explosions, dumped from " .. folder:GetFullName())
+out("-- old explosions, dumped from " .. folder:GetFullName())
 local okV, version = pcall(function() return ReplicatedStorage:GetAttribute("RobloxVersion") end)
+if not (okV and version) then -- Retro Studio keeps it in its PlaceSettings module
+	okV, version = pcall(function()
+		return require(ReplicatedStorage:FindFirstChild("_RetroStudio"):FindFirstChild("PlaceSettings")).RobloxVersion
+	end)
+end
 out("-- this game's RobloxVersion: " .. tostring(okV and version))
 out("-- eras in the folder: " .. (function()
 	local names = {}
