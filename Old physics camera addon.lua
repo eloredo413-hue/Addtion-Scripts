@@ -1,6 +1,10 @@
 -- [[ PHYSICS + CAMERA WIZARD STEP — with None option ]]
--- (Addtion-Scripts copy: the "Old" physics does not sink the player into the ground on landing (it copies
---  2010-2013, which had none; the 2006 physics does it). It climbs like the 2006 physics: walk into a small part and the
+-- (Addtion-Scripts copy: the "Old" physics is built on Super Nostalgia Zone's character scripts (GoofyMotion,
+--  GoofyBalance, Bounciness, RetroClimbing...), the best-known recreation of old Roblox. It does not sink the player
+--  into the ground on landing (it copies 2010-2013, which had none; the 2006 physics does it). It climbs as SNZ does:
+--  a steady climb at 70% of WalkSpeed (the old Humanoid's climbing speed), held while a rung is within reach, with
+--  no kick up every frame (which floated you up), and a step onto the top only at the real top. From SNZ too: a
+--  small bounce on every landing, and tripping over when flung faster than 200 studs a second. Walk into a small part and the
 --  character climbs it in the real Climbing state, and lets go when you stop moving or jump.
 --  R15 avatars work too: the hip height moves around the avatar's own (an R15 body stands on it; R6 legs
 --  hold an R6 body up at 0, which sank an R15 one into the floor), and the climbing check is measured
@@ -86,15 +90,19 @@ _G.__RetroMasterCleanup = cleanup
 -- (average size and height under MAX_CLIMB_PART) can be climbed while you walk into it.
 local CLIMB_BOX = Vector3.new(1, 1, 1)
 local MAX_CLIMB_PART = 3.5
-local CLIMB_UP_SPEED = 13       -- upward kick each frame while climbing
+local CLIMB_SPEED_SHARE = 0.7   -- climbing speed: 70% of WalkSpeed (11.2 at 16), the old Humanoid's (Roblox wiki, 2011;
+                                -- Super Nostalgia Zone's RetroClimbing climbs at the same speed)
+local CLIMB_REACH_UP = 2        -- studs above the climbing box: a rung there (in front of the chest) keeps a climb going
+local TOE_LIFT, TOE_HEIGHT = -0.85, 0.7 -- the toes (0.3 to 1 stud above the feet): the top rung, till you are over it
+local TRIP_SPEED = 200          -- flung faster than this (studs a second): you trip (SNZ GoofyMotion's VelocityThreshold)
 local CLIMB_PUSH_SPEED = 24     -- push into the part
 local BLOCKED_SPEED = 0.35       -- slower than this share of WalkSpeed while walking = blocked by the part
 local BLOCKED_TIME = 0.15        -- ...for this long (seconds) before a climb starts: stairs are walked up
 local GRAB_GRACE = 0.25          -- seconds the climb is held between two rungs / bricks
 local TOP_OUT_TIME = 0.4        -- seconds after the last grab in which you are still topping out
 local TOP_OUT_MIN_RISE = 1.5    -- studs climbed before the top-out hop counts
-local TOP_OUT_SPEED = 14        -- hop forward over the top
-local TOP_OUT_UP = 9            -- ...and a little up
+local TOP_OUT_SPEED = 10        -- a step forward onto the top
+local TOP_OUT_UP = 4            -- ...keeping (at least) a little of the climb's rise
 local MAX_FALL_TO_GRAB = 8      -- falling faster than this: no grabbing
 local CLIMB_SIDE_DAMP = 0.8     -- sideways speed kept each frame while climbing
 local XZ = Vector3.new(1, 0, 1)
@@ -161,6 +169,14 @@ local function setupCharacter(char)
 	climbLift.P = 1000
 	table.insert(CharacterObjects, climbLift)
 
+	-- The steady climb: holds the upward speed at the climbing speed while a rung is within reach (only up and down:
+	-- the push into the part is the lift's). SNZ's RetroClimbing "ClimbForce".
+	local climbForce = Instance.new("BodyVelocity")
+	climbForce.Name = "ClimbForce"
+	climbForce.Velocity = Vector3.zero
+	climbForce.MaxForce = Vector3.new(0, 10e6, 0)
+	table.insert(CharacterObjects, climbForce)
+
 	local climbGyro = Instance.new("BodyGyro")
 	climbGyro.Name = "ClimbGyro"
 	climbGyro.MaxTorque = Vector3.new(0, math.huge, 0)
@@ -215,6 +231,17 @@ local function setupCharacter(char)
 				humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
 			end)
 			rootPart.AssemblyLinearVelocity = Vector3.new(rootPart.AssemblyLinearVelocity.X, launchVelocity, rootPart.AssemblyLinearVelocity.Z)
+		elseif lastFallSpeed > 0 and not climbWanted and climbForce.Parent == nil then
+			-- SNZ's Bounciness: the old physics' small bounce on every landing, an upward push on the head of half
+			-- the landing speed times gravity, for a 30th of a second (not on a ladder: feet on a rung)
+			local head = char:FindFirstChild("Head")
+			if head then
+				local bounce = Instance.new("BodyForce")
+				bounce.Name = "Bounce"
+				bounce.Force = Vector3.new(0, lastFallSpeed * Workspace.Gravity / 2, 0)
+				bounce.Parent = head
+				task.delay(1 / 30, function() pcall(function() bounce:Destroy() end) end)
+			end
 		end
 		lastFallSpeed = 0
 	end))
@@ -285,6 +312,12 @@ local function setupCharacter(char)
 			pcall(function() RunService:UnbindFromRenderStep(goofyRenderName) end)
 			return
 		end
+		-- SNZ's GoofyMotion: flung faster than TRIP_SPEED, you trip (and get up again once still: FallingDown above)
+		if rootPart.AssemblyLinearVelocity.Magnitude > TRIP_SPEED and not humanoid.SeatPart
+			and humanoid:GetState() ~= Enum.HumanoidStateType.FallingDown
+			and humanoid:GetState() ~= Enum.HumanoidStateType.Ragdoll then
+			pcall(function() humanoid:ChangeState(Enum.HumanoidStateType.FallingDown) end)
+		end
 		camera = Workspace.CurrentCamera
 		if not camera then return end
 		local zoom = (camera.Focus.Position - camera.CFrame.Position).Magnitude
@@ -305,14 +338,16 @@ local function setupCharacter(char)
 
 	-- ===== 2006 climbing =====
 	-- Walk into any small part (a brick, a step, a ladder rung) and the character climbs it in
-	-- the real Climbing state: kicked upwards, pushed into the part and turned to face it. Let go
+	-- the real Climbing state: a steady climb at 70% of WalkSpeed, pushed into the part and turned to face it. Let go
 	-- (stop moving, or jump) and it drops. Big parts (floors, walls) are not climbed; a TrussPart
 	-- is climbed by the Climbing state itself.
 	local overlapParams = OverlapParams.new()
 	overlapParams.FilterDescendantsInstances = { char, Workspace.CurrentCamera }
 	overlapParams.RespectCanCollide = true
 
-	local function climbablePartAhead()
+	-- what is in a 1-stud-wide box just in front, `lift` studs above the climbing box (0: 1 to 2 studs above the
+	-- feet; CLIMB_REACH_UP: in front of the chest), `height` tall (1)
+	local function partsAhead(lift, height)
 		-- (the hip height is taken out: the Old physics squashes it after a fall, which would lower the
 		-- search box into the ground and miss the bottom of a ladder)
 		local boxCFrame
@@ -320,12 +355,16 @@ local function setupCharacter(char)
 			-- R15: the same place as on R6, 1 to 2 studs above the feet, just in front
 			local feet = rootPart.Position.Y - rootPart.Size.Y / 2 - baseHip - hipOffset
 			local ahead = rootPart.Position + rootPart.CFrame.LookVector / 2
-			boxCFrame = CFrame.new(ahead.X, feet + 1.5, ahead.Z)
+			boxCFrame = CFrame.new(ahead.X, feet + 1.5 + lift, ahead.Z)
 		else
 			local checkPos = torso.Position - Vector3.new(0, 1 + humanoid.HipHeight, 0)
-			boxCFrame = CFrame.new(checkPos + torso.CFrame.LookVector / 2) * CFrame.new(0, -0.5, 0)
+			boxCFrame = CFrame.new(checkPos + torso.CFrame.LookVector / 2) * CFrame.new(0, -0.5 + lift, 0)
 		end
-		local parts = Workspace:GetPartBoundsInBox(boxCFrame, CLIMB_BOX, overlapParams)
+		return Workspace:GetPartBoundsInBox(boxCFrame, Vector3.new(CLIMB_BOX.X, height or CLIMB_BOX.Y, CLIMB_BOX.Z), overlapParams)
+	end
+
+	local function climbablePartAhead(lift, height)
+		local parts = partsAhead(lift or 0, height)
 		for _, part in ipairs(parts) do
 			local worldSize = part.CFrame:VectorToWorldSpace(part.Size)
 			local average = (worldSize.X + worldSize.Y + worldSize.Z) / 3
@@ -407,14 +446,20 @@ local function setupCharacter(char)
 		local blocked = blockedFor >= BLOCKED_TIME or alreadyClimbing
 
 		-- (not while letting go, and not in a real fall: dropping past a wall must not grab it)
+		-- (once climbing, a rung within reach in front of the chest, or the top rung at the toes, keeps it going)
+		local inReach = climbablePartAhead(0)
+			or (alreadyClimbing and (climbablePartAhead(CLIMB_REACH_UP) or climbablePartAhead(TOE_LIFT, TOE_HEIGHT)))
 		local walkingIntoPart = moving and blocked and not releasing and velocity.Y > -MAX_FALL_TO_GRAB
-			and not cantClimbNow() and climbablePartAhead()
+			and not cantClimbNow() and inReach
 		if walkingIntoPart then
 			humanoid:ChangeState(Enum.HumanoidStateType.Climbing)
-			-- the kick sets the upward speed instead of adding to it every frame, so it can't build up
-			-- into being flung upwards
-			torso.AssemblyLinearVelocity = Vector3.new(velocity.X * CLIMB_SIDE_DAMP,
-				math.max(velocity.Y, CLIMB_UP_SPEED), velocity.Z * CLIMB_SIDE_DAMP)
+			-- the sideways speed damped as before, but no kick up (it set 13 every frame, then gravity in between,
+			-- which floated you up in hops): the climb force holds a steady climbing speed instead
+			torso.AssemblyLinearVelocity = Vector3.new(velocity.X * CLIMB_SIDE_DAMP, velocity.Y, velocity.Z * CLIMB_SIDE_DAMP)
+			climbForce.Velocity = Vector3.new(0, humanoid.WalkSpeed * CLIMB_SPEED_SHARE, 0)
+			climbForce.Parent = rootPart
+		else
+			climbForce.Parent = nil
 		end
 
 		-- Topping out: the part under your feet ran out (the top of a ladder or a ledge) while you are
@@ -428,10 +473,14 @@ local function setupCharacter(char)
 			local sinceGrab = now - lastGrab
 			if sinceGrab > TOP_OUT_TIME then
 				grabStartY = nil
-			elseif moving and not releasing and torso.Position.Y - grabStartY >= TOP_OUT_MIN_RISE then
+			elseif moving and not releasing and torso.Position.Y - grabStartY >= TOP_OUT_MIN_RISE
+				and #partsAhead(CLIMB_REACH_UP) == 0 then
+				-- (only at the real top: nothing at all in front of the chest. Between two rungs, or with the wall
+				-- still there, this shoved you into the ladder and you bounced off it)
 				local v = torso.AssemblyLinearVelocity
 				torso.AssemblyLinearVelocity = Vector3.new(moveDir.X * TOP_OUT_SPEED,
 					math.max(v.Y, TOP_OUT_UP), moveDir.Z * TOP_OUT_SPEED)
+				grabStartY = nil -- (once)
 			end
 		end
 
@@ -505,6 +554,7 @@ local function setupCharacter(char)
 	addConnection(char.ChildAdded:Connect(onToolAdded))
 
 	addConnection(humanoid.Died:Connect(function()
+		climbForce.Parent = nil
 		climbLift.Parent = nil
 		climbGyro.Parent = nil
 		BPGenv.BPClimbing = nil
