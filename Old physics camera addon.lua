@@ -2,8 +2,10 @@
 -- (Addtion-Scripts copy: the "Old" physics is built on Super Nostalgia Zone's character scripts (GoofyMotion,
 --  GoofyBalance, Bounciness, RetroClimbing...), the best-known recreation of old Roblox. It does not sink the player
 --  into the ground on landing (it copies 2010-2013, which had none; the 2006 physics does it). It climbs as SNZ does:
---  a steady climb at 70% of WalkSpeed (the old Humanoid's climbing speed), held while a rung is within reach, with
---  no kick up every frame (which floated you up), and a step onto the top only at the real top. From SNZ too: a
+--  a steady climb at 70% of WalkSpeed (the old Humanoid's climbing speed), going on while anything small is within
+--  reach in front (toes to head), stick or no stick (SNZ's RetroClimbing climbs whenever a ladder is in front: pull
+--  the stick away or jump to get off), facing the ladder the way you grabbed it, no kick up every frame (which
+--  floated you up), and a step onto the top only at the real top. R6 and R15 alike. From SNZ too: a
 --  small bounce on every landing, and tripping over when flung faster than 200 studs a second. Walk into a small part and the
 --  character climbs it in the real Climbing state, and lets go when you stop moving or jump.
 --  R15 avatars work too: the hip height moves around the avatar's own (an R15 body stands on it; R6 legs
@@ -92,10 +94,11 @@ local CLIMB_BOX = Vector3.new(1, 1, 1)
 local MAX_CLIMB_PART = 3.5
 local CLIMB_SPEED_SHARE = 0.7   -- climbing speed: 70% of WalkSpeed (11.2 at 16), the old Humanoid's (Roblox wiki, 2011;
                                 -- Super Nostalgia Zone's RetroClimbing climbs at the same speed)
-local CLIMB_REACH_UP = 2        -- studs above the climbing box: a rung there (in front of the chest) keeps a climb going
-local TOE_LIFT, TOE_HEIGHT = -0.85, 0.7 -- the toes (0.3 to 1 stud above the feet): the top rung, till you are over it
+local CLIMB_REACH_UP = 2        -- studs above the climbing box: in front of the chest (the top check)
+local REACH_LIFT, REACH_HEIGHT = 0.9, 4.2 -- while climbing: one tall box in front, from the toes to the head (0.3 to 4.5
+                                -- studs above the feet), so a gap between two rungs never ends the climb
 local TRIP_SPEED = 200          -- flung faster than this (studs a second): you trip (SNZ GoofyMotion's VelocityThreshold)
-local CLIMB_PUSH_SPEED = 24     -- push into the part
+local CLIMB_PUSH_SPEED = 12     -- push into the part (gentle: it was 24)
 local BLOCKED_SPEED = 0.35       -- slower than this share of WalkSpeed while walking = blocked by the part
 local BLOCKED_TIME = 0.15        -- ...for this long (seconds) before a climb starts: stairs are walked up
 local GRAB_GRACE = 0.25          -- seconds the climb is held between two rungs / bricks
@@ -387,9 +390,12 @@ local function setupCharacter(char)
 	-- Let go: drop out of the Climbing state and keep it off until the character has landed, so
 	-- it does not grab the part again on the way down.
 	local releasing = false
+	local climbFacing = nil -- the way you faced the ladder when you grabbed it (flat)
 	local function stopClimbing()
 		if releasing then return end
 		releasing = true
+		grabStartY, climbFacing, grabbingNow = nil, nil, false
+		climbForce.Parent = nil
 		task.spawn(function()
 			local deadline = os.clock() + 2
 			repeat
@@ -423,9 +429,6 @@ local function setupCharacter(char)
 		local moveDir = humanoid.MoveDirection
 		local moving = moveDir.Magnitude > 0.01
 
-		-- Start (and keep) climbing while walking into a small part. The kick goes on every frame
-		-- you walk into it, exactly as in the 2006 physics (while the Climbing state is switched
-		-- off after letting go, the state change does nothing but the kick still lifts you).
 		local velocity = torso.AssemblyLinearVelocity
 		local frameNow = os.clock()
 		local frameDt = math.min(frameNow - lastFrame, 0.1)
@@ -433,7 +436,7 @@ local function setupCharacter(char)
 
 		-- Stairs are walked up, not climbed: a climb only STARTS once the part has really stopped you
 		-- (you push and hardly move for BLOCKED_TIME). Going up stairs keeps you moving, so it never
-		-- does. Once climbing, or between two rungs, no such wait.
+		-- does. Once climbing, no such wait.
 		local rootV = rootPart.AssemblyLinearVelocity
 		local flatSpeed = math.sqrt(rootV.X * rootV.X + rootV.Z * rootV.Z)
 		if moving and flatSpeed < humanoid.WalkSpeed * BLOCKED_SPEED then
@@ -441,71 +444,80 @@ local function setupCharacter(char)
 		else
 			blockedFor = 0
 		end
-		local alreadyClimbing = humanoid:GetState() == Enum.HumanoidStateType.Climbing
-			or (grabStartY ~= nil and frameNow - lastGrab <= GRAB_GRACE)
-		local blocked = blockedFor >= BLOCKED_TIME or alreadyClimbing
+		local onLadder = grabStartY ~= nil and frameNow - lastGrab <= GRAB_GRACE
+		local blocked = blockedFor >= BLOCKED_TIME or onLadder
 
-		-- (not while letting go, and not in a real fall: dropping past a wall must not grab it)
-		-- (once climbing, a rung within reach in front of the chest, or the top rung at the toes, keeps it going)
-		local inReach = climbablePartAhead(0)
-			or (alreadyClimbing and (climbablePartAhead(CLIMB_REACH_UP) or climbablePartAhead(TOE_LIFT, TOE_HEIGHT)))
-		local walkingIntoPart = moving and blocked and not releasing and velocity.Y > -MAX_FALL_TO_GRAB
-			and not cantClimbNow() and inReach
-		if walkingIntoPart then
+		-- CLIMBING (as SNZ's RetroClimbing): a climb starts by walking into something small in front of the
+		-- feet (not while letting go, and not in a real fall: dropping past a wall must not grab it), and goes on
+		-- while anything small is within reach in front from the toes to the head (one tall box: a gap between two
+		-- rungs never ends it), stick or no stick, at a steady 70% of WalkSpeed. Pull the stick away from the
+		-- ladder or jump to get off. Nothing in reach at all: the top (a step onto it) or, below a wall, hanging
+		-- for a moment and then falling.
+		local inReach
+		if onLadder then
+			inReach = climbablePartAhead(REACH_LIFT, REACH_HEIGHT)
+		else
+			inReach = climbablePartAhead(0)
+		end
+		local holding = inReach and not releasing and not cantClimbNow()
+			and (onLadder or (moving and blocked and velocity.Y > -MAX_FALL_TO_GRAB))
+		if holding and onLadder and climbFacing and moveDir.Magnitude >= 0.1 and moveDir:Dot(climbFacing) < -0.3 then
+			stopClimbing() -- the stick pulled away from the ladder: let go
+			holding = false
+		end
+		local now = frameNow
+		local hanging = false
+		if holding then
+			if not grabStartY then
+				grabStartY = torso.Position.Y
+				local look = torso.CFrame.LookVector * XZ
+				climbFacing = look.Magnitude > 0.01 and look.Unit or nil
+			end
+			lastGrab = now
 			humanoid:ChangeState(Enum.HumanoidStateType.Climbing)
 			-- the sideways speed damped as before, but no kick up (it set 13 every frame, then gravity in between,
 			-- which floated you up in hops): the climb force holds a steady climbing speed instead
 			torso.AssemblyLinearVelocity = Vector3.new(velocity.X * CLIMB_SIDE_DAMP, velocity.Y, velocity.Z * CLIMB_SIDE_DAMP)
 			climbForce.Velocity = Vector3.new(0, humanoid.WalkSpeed * CLIMB_SPEED_SHARE, 0)
 			climbForce.Parent = rootPart
+		elseif onLadder and not releasing and not cantClimbNow() then
+			if torso.Position.Y - grabStartY >= TOP_OUT_MIN_RISE and #partsAhead(CLIMB_REACH_UP) == 0 then
+				-- the real top (nothing at all in front of the chest): a step onto it, the way you were facing
+				-- (SNZ steps you forward there). Between two rungs, or with the wall still there, the old hop shoved
+				-- you into the ladder and you bounced off it.
+				local v = torso.AssemblyLinearVelocity
+				local dir = climbFacing or (moveDir * XZ)
+				torso.AssemblyLinearVelocity = Vector3.new(dir.X * TOP_OUT_SPEED,
+					math.max(v.Y, TOP_OUT_UP), dir.Z * TOP_OUT_SPEED)
+				grabStartY, climbFacing = nil, nil
+				climbForce.Parent = nil
+			else
+				-- nothing within reach for a moment (a wall above, the ladder's side): hang there, then fall
+				hanging = true
+				climbForce.Velocity = Vector3.zero
+				climbForce.Parent = rootPart
+			end
 		else
+			if grabStartY and now - lastGrab > GRAB_GRACE then grabStartY, climbFacing = nil, nil end
 			climbForce.Parent = nil
 		end
 
-		-- Topping out: the part under your feet ran out (the top of a ladder or a ledge) while you are
-		-- still walking into it: hop forward over the top, so you end up standing on it instead of
-		-- sliding back down.
-		local now = os.clock()
-		if walkingIntoPart then
-			if not grabStartY then grabStartY = torso.Position.Y end
-			lastGrab = now
-		elseif grabStartY then
-			local sinceGrab = now - lastGrab
-			if sinceGrab > TOP_OUT_TIME then
-				grabStartY = nil
-			elseif moving and not releasing and torso.Position.Y - grabStartY >= TOP_OUT_MIN_RISE
-				and #partsAhead(CLIMB_REACH_UP) == 0 then
-				-- (only at the real top: nothing at all in front of the chest. Between two rungs, or with the wall
-				-- still there, this shoved you into the ladder and you bounced off it)
-				local v = torso.AssemblyLinearVelocity
-				torso.AssemblyLinearVelocity = Vector3.new(moveDir.X * TOP_OUT_SPEED,
-					math.max(v.Y, TOP_OUT_UP), moveDir.Z * TOP_OUT_SPEED)
-				grabStartY = nil -- (once)
-			end
-		end
-
-		-- Between two rungs nothing is in front of the feet for a moment: the climb is held through
-		-- that (else the state, and so the animation, drops to walking or falling on every gap).
-		local holdingGrab = walkingIntoPart
-			or (grabStartY ~= nil and moving and not releasing and now - lastGrab <= GRAB_GRACE
-				and velocity.Y > -MAX_FALL_TO_GRAB)
-		grabbingNow = holdingGrab
-		climbWanted = holdingGrab or humanoid:GetState() == Enum.HumanoidStateType.Climbing
+		grabbingNow = holding or hanging
+		climbWanted = grabbingNow or humanoid:GetState() == Enum.HumanoidStateType.Climbing
 		-- (2007 Animation.lua reads this to show its climbing pose, not its falling one)
 		BPGenv.BPClimbing = climbWanted or nil
-		climbActive = walkingIntoPart or releasing
+		climbActive = holding or releasing
 			or humanoid:GetState() == Enum.HumanoidStateType.Climbing
 
-		if humanoid:GetState() == Enum.HumanoidStateType.Climbing then
-			if moveDir.Magnitude < 0.1 then
-				stopClimbing()
-			else
-				climbLift.Parent = torso
-				climbGyro.Parent = torso
-				local pos = torso.Position
-				climbGyro.CFrame = CFrame.lookAt(pos, pos + moveDir)
-				climbLift.Velocity = moveDir * CLIMB_PUSH_SPEED
-			end
+		-- while holding on: pushed gently into the ladder and kept facing it, the way you faced it when you grabbed
+		-- it (it turned you to the stick's direction, diagonal with the camera at an angle, which took you off a
+		-- narrow ladder)
+		if grabbingNow and climbFacing then
+			climbLift.Parent = torso
+			climbGyro.Parent = torso
+			local pos = torso.Position
+			climbGyro.CFrame = CFrame.lookAt(pos, pos + climbFacing)
+			climbLift.Velocity = climbFacing * CLIMB_PUSH_SPEED
 		else
 			climbLift.Parent = nil
 			climbGyro.Parent = nil
