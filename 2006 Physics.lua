@@ -7,9 +7,10 @@
 -- R6 works exactly as before.
 -- Climbing is FWM's own, as it came: walking into something small in front of the feet climbs it (the "fly bug"
 -- ladders of old Roblox), moving the stick keeps you on it, and letting go of the stick drops you.
--- Sinking into the ground, only on a hard landing: falling faster than HARD_FALL (a fall from about 12 studs up; an
--- ordinary jump lands at about 50 studs a second and does not) lowers the body up to a stud, so the landing ends with
--- the legs in the ground, and the body rises back out within about half a second.
+-- Sinking into the ground when landing from a high place: a landing faster than HARD_FALL (a fall from about 12 studs
+-- up; an ordinary jump lands at about 50 studs a second and does not) puts the legs into the ground, from 0.4 of a
+-- stud to a whole stud the higher the fall, kept through FWM's landing bounce, held for a moment once you are back on
+-- the ground, and the body rises back out within about half a second after that.
 -- FWM: FWM's own CharacterPhysics script is switched off, also when it comes into the character after this started,
 -- and FWM's TimePeriod / ExtraUtil / Protocols are used when they are there. Run again (or the "Old" / "2007" physics
 -- picked): the earlier copy stops first.
@@ -142,17 +143,23 @@ local function setupCharacterPhysics(character)
     -- (and followed if Roblox changes it, e.g. when the body is scaled).
     local r15HipHeight = humanoid.HipHeight > 0 and humanoid.HipHeight or 2
     local lastSetHipHeight = nil
-    -- (Addtion-Scripts) SINKING INTO THE GROUND, only on a hard landing (not all the time): falling faster than
-    -- HARD_FALL lowers the body (up to a stud), so a landing from high up ends with the legs in the ground, and the
-    -- body rises back out within about half a second. The higher the fall, the deeper (nearly a stud from 30 studs
-    -- up). An ordinary jump lands at about 50 studs a second: no sink, and rising never lifts the body. Walking onto
-    -- a higher or lower floor brings it straight back up. R6: through the hip height. R15: the body is moved down on
-    -- its root joint instead (a lower hip height makes Roblox's R15 animations run faster).
-    local SINK_RATE = 20 / 3 -- studs a second the body sinks while falling faster than HARD_FALL
-    local SINK_DECAY = 0.925 -- kept each 1/60 s once back on the ground
-    local HARD_FALL = 70     -- studs a second: falling faster than this sinks you (from about 12 studs up)
+    -- (Addtion-Scripts) SINKING INTO THE GROUND when landing from a high place: a landing faster than HARD_FALL puts
+    -- the legs into the ground, the higher the fall the deeper (SINK_MIN just past HARD_FALL, SINK_MAX from about 30
+    -- studs up). It is set the moment you land, not while falling: it used to build up slowly during the fall (only
+    -- 0.2 of a stud from 15 studs up) and was spent in the air, because FWM's landing bounce throws you back up a frame
+    -- after you land. Now it is kept while that bounce has you in the air, held for a moment once you are on the
+    -- ground again, and then the body rises back out. An ordinary jump lands at about 50 studs a second: no sink.
+    -- Walking onto a higher or lower floor brings it straight back up. R6: through the hip height. R15: the body is
+    -- moved down on its root joint instead (a lower hip height makes Roblox's R15 animations run faster).
+    local HARD_FALL = 70     -- studs a second: landing faster than this sinks you (from about 12 studs up)
+    local SINK_MIN = 0.4     -- studs: the sink of a landing just past HARD_FALL
+    local SINK_MAX = 1       -- studs: the deepest sink, landing at HARD_FALL + 40 or faster (about 30 studs up)
+    local SINK_HOLD = 0.25   -- seconds the legs stay in the ground once you are on it, before rising back out
+    local SINK_KEEP = 1.5    -- seconds a hard landing's sink waits for you to be on the ground (the landing bounce)
+    local SINK_DECAY = 0.925 -- kept each 1/60 s while rising back out
     local sinkOffset = 0
     local sinkFloorY = nil
+    local peakFall, sinkHoldUntil, sinkKeepUntil = 0, 0, 0
 
     local function setHipHeight(value)
         if isR15 then
@@ -469,12 +476,29 @@ local function setupCharacterPhysics(character)
         if humanoid.Sit or humanoid.SeatPart or humanoid.Health <= 0
             or state == Enum.HumanoidStateType.Climbing or state == Enum.HumanoidStateType.Swimming then
             sinkOffset = 0
+            peakFall, sinkHoldUntil, sinkKeepUntil = 0, 0, 0
         else
+            local now = os.clock()
             local vy = rootPart.AssemblyLinearVelocity.Y
-            if vy < -HARD_FALL then
-                sinkOffset = math.max(-1, sinkOffset - SINK_RATE * dt)
-            elseif vy < -8 and sinkOffset < 0 then
-                -- (still falling: keeps what it has)
+            local airborne = humanoid.FloorMaterial == Enum.Material.Air
+                or state == Enum.HumanoidStateType.Freefall or state == Enum.HumanoidStateType.Jumping
+            if vy < -8 then
+                peakFall = math.max(peakFall, -vy) -- falling: how fast, for the landing
+            elseif peakFall > 0 then
+                -- the fall has just ended: a landing from high up puts the legs into the ground
+                if peakFall > HARD_FALL then
+                    local depth = SINK_MIN + (SINK_MAX - SINK_MIN) * math.clamp((peakFall - HARD_FALL) / 40, 0, 1)
+                    sinkOffset = math.min(sinkOffset, -depth)
+                    sinkKeepUntil = now + SINK_KEEP
+                    sinkHoldUntil = now + SINK_HOLD
+                end
+                peakFall = 0
+            end
+            if sinkOffset < 0 and now < sinkKeepUntil and airborne then
+                -- thrown back up by the landing bounce: the sink waits for you to be on the ground again
+                sinkHoldUntil = now + SINK_HOLD
+            elseif now < sinkHoldUntil then
+                -- (in the ground for a moment)
             elseif level and sinkFloorY and math.abs(level - sinkFloorY) > 0.5 then
                 sinkOffset = 0 -- walked onto a higher or lower floor
             else
