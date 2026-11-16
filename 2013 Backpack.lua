@@ -5,7 +5,8 @@
 -- GUI (touch and mouse drag; nothing is lost when a drop misses; keys 1-0 equip). Loaded by the addition script
 -- when 2013 is the topbar; the 2013 mobile GUI has it built in. It starts once per server.
 -- (Addtion-Scripts) The regular 2013 GUI is the PC one, so it gets the PC inventory and backpack on a phone too: ten
--- hotbar slots and the big backpack window (it had the 2013 mobile GUI's three slots on a phone). The hotbar sits
+-- hotbar slots and the big backpack window, as wide as the hotbar, its boxes the hotbar's size, ten across, each
+-- column above its slot (it had the 2013 mobile GUI's three slots on a phone). The hotbar sits
 -- 43 pixels up from the bottom, as the 2013 PC GUI keeps it, so the chat bar and the health bar fit under
 -- it; the window keeps as many rows (up to 4) as fit on the screen, the rest scroll.
 
@@ -53,9 +54,11 @@ do
         -- health bar fit under it)
         local LIFT = desktop and 12 or 0
         local LOADOUT_Y = -85 - LIFT
-        local CELL_SIZE = 52
-        local CELL_GAP = 2
-        local GRID_COLUMNS = desktop and 7 or 3
+        -- (the PC layout: the window is as wide as the hotbar's frame when it is open, and its boxes are the hotbar's
+        -- boxes, the same size and spacing, ten across, each column right above its hotbar slot)
+        local CELL_SIZE = desktop and SLOT_SIZE or 52
+        local CELL_GAP = desktop and (SLOT_PITCH - SLOT_SIZE) or 2
+        local GRID_COLUMNS = desktop and SLOT_COUNT or 3
         local GRID_ROWS = 2
         if desktop then
             -- as many rows as fit between the top bar and the hotbar (a phone's screen is short), at most 4
@@ -64,8 +67,13 @@ do
             local room = screenHeight - 40 - (88 + LIFT) - 32 - 15
             GRID_ROWS = math.clamp(math.floor(room / (CELL_SIZE + CELL_GAP)), 2, 4)
         end
-        -- window: the grid (14 px in from the left, 32 down), then the scroll bar
-        local PANEL_WIDTH = 14 + GRID_COLUMNS * (CELL_SIZE + CELL_GAP) - CELL_GAP + 12 + 19
+        -- window: the grid (14 px in from the left, 32 down), then the scroll bar. The PC layout's is the open hotbar
+        -- frame's width (it reaches 3% past the slots on the left and 2% on the right), lined up with it
+        local GRID_LEFT = desktop and math.floor(LOADOUT_WIDTH * 0.03 + 0.5) or 14
+        local PANEL_WIDTH = desktop and math.floor(LOADOUT_WIDTH * 1.05 + 0.5)
+            or (14 + GRID_COLUMNS * (CELL_SIZE + CELL_GAP) - CELL_GAP + 12 + 19)
+        local PANEL_X = desktop and (-LOADOUT_WIDTH / 2 - GRID_LEFT) or -PANEL_WIDTH / 2
+        local SCROLL_X = desktop and -18 or -19
         local PANEL_HEIGHT = 32 + GRID_ROWS * (CELL_SIZE + CELL_GAP)
         local PANEL_BOTTOM = -88 - LIFT
         local EQUIPPED_SCALE = 1.18
@@ -216,7 +224,7 @@ do
         panel.BorderSizePixel = 0
         panel.ClipsDescendants = true
         panel.Size = UDim2.new(0, PANEL_WIDTH, 0, 0)
-        panel.Position = UDim2.new(0.5, -PANEL_WIDTH / 2, 1, LOADOUT_Y)
+        panel.Position = UDim2.new(0.5, PANEL_X, 1, LOADOUT_Y)
         panel.Visible = false
         panel.ZIndex = 10
         panel.Parent = screenGui
@@ -225,7 +233,7 @@ do
         gridClip.Name = "GearGrid"
         gridClip.BackgroundTransparency = 1
         gridClip.ClipsDescendants = true
-        gridClip.Position = UDim2.new(0, 14, 0, 32)
+        gridClip.Position = UDim2.new(0, GRID_LEFT, 0, 32)
         gridClip.Size = UDim2.new(0, GRID_COLUMNS * (CELL_SIZE + CELL_GAP) - CELL_GAP, 0, GRID_ROWS * (CELL_SIZE + CELL_GAP))
         gridClip.ZIndex = 11
         gridClip.Parent = panel
@@ -248,7 +256,7 @@ do
         scrollTrack.Name = "ScrollTrack"
         scrollTrack.BackgroundColor3 = Color3.fromRGB(48, 48, 48)
         scrollTrack.BorderSizePixel = 0
-        scrollTrack.Position = UDim2.new(1, -19, 0, 35)
+        scrollTrack.Position = UDim2.new(1, SCROLL_X, 0, 35)
         scrollTrack.Size = UDim2.new(0, 17, 0, PANEL_HEIGHT - 45)
         scrollTrack.ZIndex = 11
         scrollTrack.Parent = panel
@@ -384,7 +392,7 @@ do
             end
 
             local size = UDim2.new(0, PANEL_WIDTH, 0, open and PANEL_HEIGHT or 0)
-            local position = UDim2.new(0.5, -PANEL_WIDTH / 2, 1, open and PANEL_BOTTOM - PANEL_HEIGHT or LOADOUT_Y)
+            local position = UDim2.new(0.5, PANEL_X, 1, open and PANEL_BOTTOM - PANEL_HEIGHT or LOADOUT_Y)
             if instant then
                 panelTween = nil
                 panelBusy = false
