@@ -1,6 +1,6 @@
 -- (Addtion-Scripts copy of the Explosion Replace Addon gist: the gist's own explosions, 2010 in the colours of the user's 2010
--- recording and with a softer glow, the 2013 one like the 2012-2014 explosion of "Evolution of Roblox Explosions"
--- (a solid orange fireball turning to black smoke),
+-- recording and with a softer glow, the 2013 one as the 2012-2013 explosion looks in the user's
+-- recordings (a see-through red-orange fireball, then a dark red ball with grey smoke),
 -- and the explosion step put on the "old particles" question before the Particles addon)
 -- [[ EXPLOSION PICKER WIZARD STEP ]]
 -- Run AFTER the main Bloxy Paradox script.
@@ -280,25 +280,30 @@ local CLASSIC_SMOKE_URL = "rbxthumb://type=Asset&id=2825829181&w=420&h=420"
 local ENGINE_SPARKLE_FALLBACK = "rbxasset://textures/particles/sparkles_main.dds"
 local function spawnRetroExplosion(pos, scale)
 	scale = (scale or 1) * 0.75
-	-- (as in the 2012-2014 part of "Evolution of Roblox Explosions": a solid orange fireball of puffy blobs, not a
-	-- glowing white one, with small yellow sparks in it, that goes dark red and then into thick black-brown smoke,
-	-- which hangs for a moment and fades. Colours read from the video. Unlit, so they look the same under any lighting)
+	-- (as the 2012-2013 explosion looks in gameplay: the user's recordings of "ROBLOX Battle" and Classic Brickbattle
+	-- Doomspire, and the 2012-2014 part of "Evolution of Roblox Explosions". A see-through red-orange fireball of round
+	-- puffs with light orange dots in it, swelling fast; then a see-through dark red ball in the middle with grey smoke
+	-- rising around it; all gone in about two seconds. Colours read from the videos. Unlit, so they look the same
+	-- under any lighting)
 	local fireballPalette = ColorSequence.new({
-		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(246, 118, 28)),
-		ColorSequenceKeypoint.new(0.3, Color3.fromRGB(238, 96, 24)),
-		ColorSequenceKeypoint.new(0.55, Color3.fromRGB(216, 77, 10)),
-		ColorSequenceKeypoint.new(0.8, Color3.fromRGB(104, 16, 1)),
-		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(40, 16, 6))
+		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(236, 92, 38)),
+		ColorSequenceKeypoint.new(0.35, Color3.fromRGB(214, 72, 32)),
+		ColorSequenceKeypoint.new(0.7, Color3.fromRGB(150, 40, 18)),
+		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(110, 26, 12))
 	})
-	local sparkPalette = ColorSequence.new({
-		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(255, 222, 130)),
-		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 165, 60)),
-		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(205, 80, 20))
+	local dotPalette = ColorSequence.new({
+		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(255, 176, 122)),
+		ColorSequenceKeypoint.new(0.6, Color3.fromRGB(250, 150, 100)),
+		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(222, 110, 70))
+	})
+	local darkPalette = ColorSequence.new({
+		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(134, 40, 16)),
+		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(112, 26, 12)),
+		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(90, 18, 8))
 	})
 	local smokePalette = ColorSequence.new({
-		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(59, 34, 26)),
-		ColorSequenceKeypoint.new(0.4, Color3.fromRGB(30, 16, 6)),
-		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(24, 18, 12))
+		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(104, 96, 96)),
+		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(92, 90, 92))
 	})
 	local attachment = Instance.new("Attachment")
 	attachment.Position = pos
@@ -308,101 +313,57 @@ local function spawnRetroExplosion(pos, scale)
 	boomSound.Volume = 1
 	boomSound.Parent = attachment
 	boomSound:Play()
-	local function makeEmit(name, sizeMult, speedRange, lifetimeRange, count)
+	-- one round-puff emitter. look = { palette, sizes {start, full, end}, transparency points, glow, zOffset, rise }
+	local function puffs(name, look, speedRange, lifetimeRange)
 		local emit = Instance.new("ParticleEmitter")
 		emit.Name = name
 		emit.Texture = CLASSIC_SMOKE_URL
-		emit.Color = fireballPalette
+		emit.Color = look.palette
 		emit.Enabled = false
-		emit.LightEmission = 0
+		emit.LightEmission = look.glow or 0
 		emit.LightInfluence = 0
-		local s = sizeMult * scale
-		-- (swells fast from a small puff to the full ball)
 		emit.Size = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, s * 0.4),
-			NumberSequenceKeypoint.new(0.15, s),
-			NumberSequenceKeypoint.new(1, s * 1.3)
+			NumberSequenceKeypoint.new(0, look.sizes[1] * scale),
+			NumberSequenceKeypoint.new(0.15, look.sizes[2] * scale),
+			NumberSequenceKeypoint.new(1, look.sizes[3] * scale)
 		})
+		local keys = {}
+		for i, k in ipairs(look.fade) do keys[i] = NumberSequenceKeypoint.new(k[1], k[2]) end
+		emit.Transparency = NumberSequence.new(keys)
 		emit.Rotation = NumberRange.new(-360, 360)
 		emit.RotSpeed = NumberRange.new(-60, 60)
-		emit.Speed = NumberRange.new(speedRange.Min * scale, speedRange.Max * scale)
-		emit.Lifetime = lifetimeRange
+		emit.Speed = NumberRange.new(speedRange[1] * scale, speedRange[2] * scale)
+		emit.Lifetime = NumberRange.new(lifetimeRange[1], lifetimeRange[2])
 		emit.EmissionDirection = Enum.NormalId.Top
 		emit.SpreadAngle = Vector2.new(360, 360)
-		-- (solid until it has gone dark, then gone)
-		emit.Transparency = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 0),
-			NumberSequenceKeypoint.new(0.7, 0),
-			NumberSequenceKeypoint.new(1, 1)
-		})
-		emit.ZOffset = 1
+		emit.Acceleration = Vector3.new(0, look.rise or 0, 0)
+		emit.ZOffset = look.z or 0
 		emit.Drag = 5
 		emit.Parent = attachment
-		return emit, count
+		return emit
 	end
-	local core, c1 = makeEmit("CoreMixed", 3.4, NumberRange.new(2, 6), NumberRange.new(0.9, 1.3), 24)
-	local outer, c2 = makeEmit("OuterMixed", 4.2, NumberRange.new(6, 12), NumberRange.new(0.8, 1.2), 28)
-	local burst, c3 = makeEmit("BurstMixed", 2.8, NumberRange.new(10, 18), NumberRange.new(0.6, 0.9), 18)
-	-- the small yellow sparks inside the fireball
-	local sparks = Instance.new("ParticleEmitter")
-	sparks.Name = "Sparks"
-	sparks.Texture = ENGINE_SPARKLE_FALLBACK
-	sparks.Color = sparkPalette
-	sparks.Enabled = false
-	sparks.LightEmission = 0.2
-	sparks.LightInfluence = 0
-	sparks.Speed = NumberRange.new(4 * scale, 14 * scale)
-	sparks.Lifetime = NumberRange.new(0.5, 1.0)
-	sparks.SpreadAngle = Vector2.new(360, 360)
-	sparks.Drag = 3
-	sparks.Size = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.5 * scale),
-		NumberSequenceKeypoint.new(1, 0)
-	})
-	sparks.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0),
-		NumberSequenceKeypoint.new(0.75, 0.15),
-		NumberSequenceKeypoint.new(1, 1)
-	})
-	sparks.ZOffset = 2
-	sparks.Parent = attachment
-	-- the thick black-brown smoke: comes up around and behind the fireball a moment after it, rises slowly and fades
-	local smoke = Instance.new("ParticleEmitter")
-	smoke.Name = "Smoke"
-	smoke.Texture = CLASSIC_SMOKE_URL
-	smoke.Color = smokePalette
-	smoke.Enabled = false
-	smoke.LightEmission = 0
-	smoke.LightInfluence = 0
-	local ss = 4.6 * scale
-	smoke.Size = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, ss * 0.8),
-		NumberSequenceKeypoint.new(1, ss * 1.8)
-	})
-	smoke.Rotation = NumberRange.new(-360, 360)
-	smoke.RotSpeed = NumberRange.new(-30, 30)
-	smoke.Speed = NumberRange.new(2 * scale, 7 * scale)
-	smoke.Lifetime = NumberRange.new(1.6, 2.4)
-	smoke.EmissionDirection = Enum.NormalId.Top
-	smoke.SpreadAngle = Vector2.new(360, 360)
-	smoke.Acceleration = Vector3.new(0, 3, 0)
-	smoke.Drag = 2
-	smoke.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.15),
-		NumberSequenceKeypoint.new(0.6, 0.25),
-		NumberSequenceKeypoint.new(1, 1)
-	})
-	smoke.ZOffset = 0
-	smoke.Parent = attachment
+	-- the fireball: see-through red-orange puffs that swell fast, then darken
+	local fire = { palette = fireballPalette, sizes = { 1.4, 3.4, 4.2 }, fade = { { 0, 0.2 }, { 0.6, 0.3 }, { 1, 1 } }, z = 1 }
+	local core = puffs("CoreMixed", fire, { 2, 6 }, { 0.6, 0.9 })
+	local outer = puffs("OuterMixed", { palette = fireballPalette, sizes = { 1.6, 4.0, 4.8 }, fade = fire.fade, z = 1 }, { 6, 12 }, { 0.5, 0.8 })
+	local burst = puffs("BurstMixed", { palette = fireballPalette, sizes = { 1.0, 2.6, 3.2 }, fade = fire.fade, z = 1 }, { 10, 18 }, { 0.4, 0.6 })
+	-- the light orange dots inside it
+	local sparks = puffs("Sparks", { palette = dotPalette, sizes = { 0.35, 0.4, 0.15 }, fade = { { 0, 0 }, { 0.75, 0.15 }, { 1, 1 } }, glow = 0.2, z = 2 }, { 4, 14 }, { 0.4, 0.8 })
+	-- after it: the see-through dark red ball in the middle, and grey smoke rising around it
+	local dark = puffs("DarkCore", { palette = darkPalette, sizes = { 2.6, 3.0, 3.4 }, fade = { { 0, 0.15 }, { 0.7, 0.3 }, { 1, 1 } }, z = 0, rise = 1 }, { 0, 1.5 }, { 1.0, 1.4 })
+	local smoke = puffs("Smoke", { palette = smokePalette, sizes = { 2.8, 3.6, 5.0 }, fade = { { 0, 0.45 }, { 0.6, 0.55 }, { 1, 1 } }, z = -1, rise = 4 }, { 2, 6 }, { 1.0, 1.6 })
 	local density = math.clamp(scale, 0.8, 2.5)
-	core:Emit(math.floor(c1 * density))
-	outer:Emit(math.floor(c2 * density))
-	burst:Emit(math.floor(c3 * density))
+	core:Emit(math.floor(22 * density))
+	outer:Emit(math.floor(26 * density))
+	burst:Emit(math.floor(18 * density))
 	sparks:Emit(math.floor(40 * density))
-	task.delay(0.25, function()
-		if smoke.Parent then smoke:Emit(math.floor(24 * density)) end
+	task.delay(0.2, function()
+		if dark.Parent then
+			dark:Emit(math.floor(6 * density))
+			smoke:Emit(math.floor(14 * density))
+		end
 	end)
-	Debris:AddItem(attachment, 3.5)
+	Debris:AddItem(attachment, 2.5)
 end
 local function processItem(item)
 	if item:IsA("Explosion") then
