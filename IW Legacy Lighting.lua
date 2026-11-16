@@ -1,6 +1,6 @@
 -- (Addtion-Scripts) Hammer stuff 2's "iw legacy lighting" loads this file; unticking calls
 -- getgenv().LegacyLightingStop(), which puts the game back as it was: colours, lighting, effects and terrain.
--- This is LegacyLighting v9 with the changes listed at the end of the comment below.
+-- This is LegacyLighting v10 with the changes listed at the end of the comment below.
 --[[
 	LEGACY 2017 LIGHTING  -  client side only
 	Only YOU see any of this: it never touches the server, so nobody else in the game sees it.
@@ -97,10 +97,10 @@ local Settings = {
 	NoPBR            = false, -- remove SurfaceAppearance (2020 shiny PBR textures). A mesh that has no plain texture turns flat-coloured
 
 	-- respawning
-	NoSpawnShield    = true,  -- hide the shimmer of the spawn shield (ForceField) that a game puts on a character after it
+	NoSpawnShield    = false,  -- hide the shimmer of the spawn shield (ForceField) that a game puts on a character after it
 	                          -- respawns. It makes the body shiny and pale until the shield runs out. You stay protected
-	RestartOnRespawn = {2, 6, 12}, -- after YOU respawn the script restarts itself at these moments (seconds after you
-	                          -- spawn), exactly like pressing execute again each time. Three numbers = three restarts.
+	RestartOnRespawn = {1},   -- after YOU respawn the script restarts itself once, this many seconds after you spawn,
+	                          -- exactly like pressing execute again. More numbers = more restarts, e.g. {2, 6, 12}.
 	                          -- Each restart rescans the whole map. {} = never restart
 }
 
@@ -336,7 +336,26 @@ local function paleFactor(real)
 	local top = math.max(real.R, real.G, real.B)
 	return 1 - strength * math.clamp((top - 0.45) / 0.55, 0, 1)
 end
-local paleHandles = setmetatable({}, {__mode = "k"}) -- map parts this applies to -> the guard on their colour
+local paleHandles = setmetatable({}, {__mode = "k"}) -- part -> the guard on its colour
+-- Parts of a character (anything under a model with a Humanoid) never get the pale dimming: skin and clothes keep
+-- their exact colours. A respawning character arrives part by part, and its Humanoid can arrive after its arms and
+-- legs, so "is this part of a character?" cannot be decided once when the part appears. It is checked every time
+-- a colour is written, and a part that was dimmed too early is put right when its Humanoid shows up.
+local notPale = setmetatable({}, {__mode = "k"})
+
+local function unpale(part)
+	notPale[part] = true
+	local flags = divided[part]
+	local h = paleHandles[part]
+	if h and flags and flags.real and flags.Color and (flags.pale or 1) < 0.999 then
+		local okExempt, isExempt = pcall(colorExempt, part)
+		if okExempt and not isExempt then
+			flags.pale = 1
+			local target = div(flags.real, divisor)
+			h.silently(function() part.Color = target end)
+		end
+	end
+end
 
 local function SetProp(inst, Prop)
 	if keepColours then return end -- lighting only: colours are left exactly as the game has them
@@ -358,16 +377,20 @@ local function SetProp(inst, Prop)
 
 	local isPartColor = Prop == "Color" and inst:IsA("BasePart")
 	local exempt = isPartColor and colorExempt(inst) or false
-	-- pale dimming is for the map only: a character keeps its exact skin and clothes colours
-	local paleable = isPartColor and not isWorn(inst)
 
-	-- the colour to write for a real colour; for map parts the real colour is remembered so PaleParts can be
-	-- changed later without having to guess it back
+	-- the colour to write for a real colour. For parts the real colour is remembered, so PaleParts can be
+	-- changed later (or undone for a character) without having to guess it back
 	local function darkened(real)
 		local target = div(real, divisor)
-		if isPartColor then flags.real = real end -- (Addtion-Scripts) the game's own colour, for putting it back
-		if paleable then
-			local f = paleFactor(real)
+		if isPartColor then
+			local f = 1
+			if not notPale[inst] then
+				if isWorn(inst) then
+					notPale[inst] = true
+				else
+					f = paleFactor(real)
+				end
+			end
 			flags.real, flags.pale = real, f
 			if f < 1 then target = mul(target, f) end
 		end
@@ -379,7 +402,7 @@ local function SetProp(inst, Prop)
 			inst[Prop] = darkened(inst[Prop])
 		end
 	end)
-	if paleable then paleHandles[inst] = h end
+	if isPartColor then paleHandles[inst] = h end
 
 	if isPartColor then
 		local function recheck()
@@ -388,7 +411,7 @@ local function SetProp(inst, Prop)
 				exempt = now
 				h.silently(function()
 					if now then
-						inst.Color = (paleable and flags.real) or clamp01(mul(inst.Color, divisor))
+						inst.Color = flags.real or clamp01(mul(inst.Color, divisor))
 					else
 						inst.Color = darkened(inst.Color)
 					end
@@ -417,12 +440,21 @@ local function SetProp(inst, Prop)
 
 	if not already then
 		run()
-	elseif paleable and not exempt then
-		-- darkened by an earlier run on this server: bring it to the PaleParts value in use now
+	elseif isPartColor and not exempt then
+		-- darkened by an earlier run on this server: bring it to what it should be now (the PaleParts value in
+		-- use, or no pale dimming at all for a part of a character)
 		if not flags.real then -- that run was an older version, which darkened every part the same
 			flags.real, flags.pale = clamp01(mul(inst.Color, divisor)), 1
 		end
-		if math.abs(paleFactor(flags.real) - (flags.pale or 1)) > 0.001 then
+		local want = 1
+		if not notPale[inst] then
+			if isWorn(inst) then
+				notPale[inst] = true
+			else
+				want = paleFactor(flags.real)
+			end
+		end
+		if math.abs(want - (flags.pale or 1)) > 0.001 then
 			local real = flags.real
 			h.silently(function() inst.Color = darkened(real) end)
 		end
@@ -449,7 +481,7 @@ live.refreshParts = function()
 				local inst, h = entry[1], entry[2]
 				local flags = divided[inst]
 				local real = flags and flags.real
-				if real and flags.Color then
+				if real and flags.Color and not notPale[inst] then
 					local okExempt, isExempt = pcall(colorExempt, inst)
 					local f = paleFactor(real)
 					if okExempt and not isExempt and math.abs(f - (flags.pale or 1)) > 0.001 then
@@ -896,6 +928,14 @@ local function handle(v)
 		end
 	elseif v:IsA("Light") then
 		if not keepColours then watchLamp(v) end
+	elseif v:IsA("Humanoid") then
+		-- this model is a character: any of its parts that arrived before the Humanoid lose the pale dimming
+		local model = v.Parent
+		if model and not keepColours then
+			for _, d in ipairs(model:GetDescendants()) do
+				if d:IsA("BasePart") then unpale(d) end
+			end
+		end
 	end
 	if Settings.LitSurfaceGuis then lightSurfaceGui(v) end
 end
