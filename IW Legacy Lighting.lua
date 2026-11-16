@@ -21,10 +21,10 @@
 	* Its own changes are recognised by their value (not by switching the watcher off and on), so they never
 	  set it off again: nothing gets darkened twice and the sun is never boosted twice, whatever the game does.
 	* getgenv().LegacyLightingOriginal(instance, property) gives the game's own (undarkened) value.
-	* With Bloxy's "2016 textures" picked (saved in its settings, or its stud textures showing up, also when
-	  it is picked while this runs): the retro studs (LegacyStuds) come on and Bloxy's 2016 studs are hidden;
-	  never on players or NPCs (their body, hats or the tool in their hand);
-	  stopping this gives Bloxy's back.
+	* No studs of its own are forced on. Only where Bloxy's "2016 textures" has put its stud textures (picked in
+	  the wizard, also while this runs) is each one swapped for this script's stud, made for this lighting
+	  (Bloxy's came out far too dark under it); when Bloxy's goes, this script's goes too, and stopping this
+	  gives Bloxy's back. Never on players or NPCs (their body, hats or the tool in their hand).
 	* Lamps show at night: light sources are made stronger by as much as the colours they light are darkened.
 	  Nothing glows like neon that shouldn't: textured meshes in the map are darkened too (they kept their full
 	  colour under the boosted light), and so are particles, beams and trails that take the scene's light.
@@ -32,10 +32,10 @@
 
 local Settings = {
 	LegacyIntensity  = 3,     -- the original value
-	LegacyStuds      = false, -- studs on plain parts that use the Studs surface
-	RetroStudsWith2016Textures = true, -- (Addtion-Scripts) with Bloxy's "2016 textures" picked: the studs above are
-	                          -- switched on, and Bloxy's own 2016 stud textures hidden while this runs (they come
-	                          -- back when it stops). Under this lighting Bloxy's came out far too dark.
+	LegacyStuds      = false, -- studs on every plain part that uses the Studs surface (off: none are forced on)
+	RetroStudsWith2016Textures = true, -- (Addtion-Scripts) where Bloxy's "2016 textures" puts its stud textures, each
+	                          -- is swapped for this script's (Bloxy's are hidden while this runs and come back when it
+	                          -- stops; under this lighting they came out far too dark). Nowhere else.
 	Voxel2019        = false, -- true = modern tonemapper instead of the retro one
 	LitSurfaceGuis   = true,  -- text/images on parts follow the lighting like parts do
 	NeonLight        = 1.5,   -- light given off by neon parts in the world (0 = off)
@@ -51,6 +51,13 @@ local Settings = {
 	FutureAmbientBoost = 1.7, -- ...and more shade light, so the picture does not get darker overall
 	AutoBrightness   = true,  -- weaker sun on maps built mostly from white / very pale parts, which otherwise wash out.
 	                          -- Dark and mid-coloured maps are left as they are. Set false to always use SunBoost as written
+	                          -- (Addtion-Scripts) it looks at what is around the camera every few seconds too, so a white
+	                          -- town and a dark forest in one game each get their own
+	PaleMapSun       = 0.85,  -- (Addtion-Scripts) the sun on the palest places, as a share of the game's (1 = as bright as the
+	                          -- game without this lighting). It was never below about 1.1, which still washed white maps out
+	PaleMapAmbient   = 1.0,   -- (Addtion-Scripts) the same for the shade light
+	AutoBrightnessEvery = 3,  -- (Addtion-Scripts) seconds between two looks around the camera
+	AutoBrightnessRadius = 160, -- (Addtion-Scripts) studs around the camera looked at
 	FixTexturedMeshes = true, -- redraw textured mesh hats/hair/limbs on characters so they darken too (they went white in R15 games)
 	FixWorldMeshes   = true,  -- (Addtion-Scripts: on) the same for textured meshes in the map (props, trees, furniture...),
 	                          -- which otherwise kept their full colour under the boosted light and glowed like neon
@@ -439,7 +446,7 @@ local function studTextures(part)
 	return list
 end
 
--- the studs are on with LegacyStuds, or with Bloxy's "2016 textures" (see RETRO STUDS below)
+-- studs on every Studs face only with LegacyStuds; with Bloxy's "2016 textures" only where Bloxy's are (RETRO STUDS)
 local retroStuds = Settings.LegacyStuds == true
 local studWatched = setmetatable({}, { __mode = "k" })
 
@@ -574,31 +581,16 @@ local function bloxyTextures()
 end
 
 if Settings.RetroStudsWith2016Textures and tostring(bloxyTextures()) == "2016" then
-	retroStuds = true
-	print("[LegacyLighting] Bloxy's 2016 textures are picked: retro studs on (Bloxy's 2016 studs hidden while this runs)")
+	print("[LegacyLighting] Bloxy's 2016 textures are picked: its stud textures are swapped for this lighting's")
 end
 
--- picked while this runs (its stud textures show up): the studs go on everywhere
+-- Bloxy's stud textures seen (picked while this runs, or put on a part): only noted. The swap itself is one for
+-- one, in hideBloxyStud, for the texture that showed up (no studs anywhere Bloxy has none).
+local swapNoted = false
 local function enableRetroStuds()
-	if retroStuds or stopped or not Settings.RetroStudsWith2016Textures then return end
-	retroStuds = true
-	print("[LegacyLighting] Bloxy's 2016 textures are on: retro studs on (Bloxy's 2016 studs hidden while this runs)")
-	task.spawn(function()
-		local slice = Settings.SliceTime or 0.008
-		local deadline = os.clock() + slice
-		for _, v in ipairs(workspace:GetDescendants()) do
-			if stopped then return end
-			if v:IsA("BasePart") then
-				pcall(addStuds, v)
-			elseif isBloxyStud(v) then
-				pcall(hideBloxyStud, v)
-			end
-			if os.clock() > deadline then
-				task.wait()
-				deadline = os.clock() + slice
-			end
-		end
-	end)
+	if swapNoted or stopped or not Settings.RetroStudsWith2016Textures then return end
+	swapNoted = true
+	print("[LegacyLighting] Bloxy's 2016 stud textures found: swapped for this lighting's, one for one")
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -685,6 +677,10 @@ local MESH_PROXY = "LegacyMeshProxy"
 local meshFix = setmetatable({}, { __mode = "k" })
 local meshFixCount = 0      -- on characters
 local worldMeshFixCount = 0 -- in the map
+-- (Addtion-Scripts) every textured mesh in the map that wants redrawing, redrawn or not. A big map has more than
+-- MaxWorldMeshFixes; the ones left over kept their full colour and glowed like neon wherever you went. Now the
+-- nearest ones to the camera are the redrawn ones, swapped as you move (see NEAREST MESHES below).
+local worldCandidates = setmetatable({}, { __mode = "k" })
 
 local function meshScale(part)
 	local ms = part.MeshSize
@@ -713,8 +709,9 @@ local function fixTexturedMesh(part)
 	local worn = isWorn(part)
 	if worn then
 		if meshFixCount >= (Settings.MaxMeshFixes or 800) then return end
-	elseif worldMeshFixCount >= (Settings.MaxWorldMeshFixes or 1000) then
-		return
+	else
+		worldCandidates[part] = true
+		if worldMeshFixCount >= (Settings.MaxWorldMeshFixes or 1000) then return end
 	end
 	local scale = meshScale(part)
 	if not scale then return end
@@ -746,14 +743,21 @@ local function fixTexturedMesh(part)
 	weld.Part1 = proxy
 	weld.Parent = proxy
 
-	local rec = { proxy = proxy, transparency = part.Transparency }
+	local rec = { proxy = proxy, transparency = part.Transparency, conns = {}, counted = true, worn = worn }
 	meshFix[part] = rec
 	if worn then
 		meshFixCount += 1
-		proxy.Destroying:Connect(function() meshFixCount -= 1 end)
 	else
 		worldMeshFixCount += 1
-		proxy.Destroying:Connect(function() worldMeshFixCount -= 1 end)
+	end
+	proxy.Destroying:Connect(function()
+		if not rec.counted then return end -- (already taken off the count when it was undone)
+		rec.counted = false
+		if rec.worn then meshFixCount -= 1 else worldMeshFixCount -= 1 end
+	end)
+	local function keep(c) -- (its own watchers, kept with it: undoing it, or stopping, disconnects them)
+		rec.conns[#rec.conns + 1] = c
+		return c
 	end
 	proxy.Parent = part -- the colour pass darkens the SpecialMesh's VertexColor when it appears
 
@@ -767,18 +771,77 @@ local function fixTexturedMesh(part)
 			part.Transparency = 1
 		end
 	end
-	track(part:GetPropertyChangedSignal("Transparency"):Connect(hide))
+	keep(part:GetPropertyChangedSignal("Transparency"):Connect(hide))
 	hide()
 
-	track(part:GetPropertyChangedSignal("Color"):Connect(function() proxy.Color = part.Color end))
-	track(part:GetPropertyChangedSignal("TextureID"):Connect(function() mesh.TextureId = part.TextureID end))
-	track(part:GetPropertyChangedSignal("Size"):Connect(function()
+	keep(part:GetPropertyChangedSignal("Color"):Connect(function() proxy.Color = part.Color end))
+	keep(part:GetPropertyChangedSignal("TextureID"):Connect(function() mesh.TextureId = part.TextureID end))
+	keep(part:GetPropertyChangedSignal("Size"):Connect(function()
 		local s = meshScale(part)
 		if s then
 			mesh.Scale = s
 			proxy.Size = part.Size
 		end
 	end))
+end
+
+-- a redrawn map mesh back as the game has it (it is far away now: a nearer one gets the redraw)
+local function unfixTexturedMesh(part)
+	local rec = meshFix[part]
+	if not rec then return end
+	meshFix[part] = nil
+	for _, c in ipairs(rec.conns) do pcall(function() c:Disconnect() end) end
+	if rec.counted then
+		rec.counted = false
+		if rec.worn then meshFixCount -= 1 else worldMeshFixCount -= 1 end
+	end
+	pcall(function()
+		if part.Transparency == 1 then part.Transparency = rec.transparency end
+	end)
+	pcall(function() rec.proxy:Destroy() end)
+end
+
+-- NEAREST MESHES: with more textured meshes in the map than MaxWorldMeshFixes, the redrawn ones are the nearest
+-- to the camera. Run every few seconds: far redrawn ones (well past the nearest MaxWorldMeshFixes, so nothing
+-- flickers at the edge) are undone and the near ones redrawn, at most MESH_SWAPS of each a time.
+local MESH_SWAPS = 150
+local function nearestMeshes()
+	local cap = Settings.MaxWorldMeshFixes or 1000
+	local cam = workspace.CurrentCamera
+	if stopped or not cam then return end
+	local camPos = cam.CFrame.Position
+	local list = {}
+	for part in pairs(worldCandidates) do
+		if part.Parent and part:IsDescendantOf(workspace) then
+			list[#list + 1] = { part = part, d = (part.Position - camPos).Magnitude }
+		else
+			worldCandidates[part] = nil
+		end
+	end
+	local swaps = 0
+	if #list > cap then
+		table.sort(list, function(a, b) return a.d < b.d end)
+		local edge = list[cap].d * 1.15 + 10
+		for i = #list, cap + 1, -1 do
+			local e = list[i]
+			if e.d <= edge then break end
+			if meshFix[e.part] then
+				unfixTexturedMesh(e.part)
+				swaps += 1
+				if swaps >= MESH_SWAPS then break end
+			end
+		end
+	end
+	local fixed = 0
+	for i = 1, math.min(#list, cap) do
+		local part = list[i].part
+		if not meshFix[part] then
+			if worldMeshFixCount >= cap then break end
+			pcall(fixTexturedMesh, part)
+			fixed += 1
+			if fixed >= MESH_SWAPS then break end
+		end
+	end
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -931,7 +994,12 @@ local function handle(v)
 	elseif class == "Shirt" or class == "Pants" then
 		SetProp(v, "Color3")
 	elseif class == "SurfaceAppearance" then
-		if Settings.NoPBR then
+		-- (Addtion-Scripts) a Roblox client whose SurfaceAppearance has no Color to darken: the shiny texture took
+		-- the whole boost and glowed. Where the mesh has a plain texture of its own, that is shown instead (it gets
+		-- redrawn and darkened); otherwise it is left
+		local noTint = read(v, "Color") == nil
+		local plainTexture = v.Parent and v.Parent:IsA("MeshPart") and v.Parent.TextureID ~= ""
+		if Settings.NoPBR or (noTint and plainTexture) then
 			local part = v.Parent
 			task.defer(function() -- not while Roblox is still adding it
 				if stopped or v.Parent ~= part then return end
@@ -968,6 +1036,14 @@ local snapshot = {}
 for _, prop in ipairs(SNAPSHOT_PROPS) do
 	snapshot[prop] = read(Lighting, prop)
 end
+-- (Addtion-Scripts) the game's own values of what Hammer stuff's "voxel lighting" changes too, so that one can be on
+-- together with this and still give the game's back (see VOXEL LIGHTING TOGETHER below)
+local gameShadows = snapshot.GlobalShadows
+if genv.BPVoxelLightingOn and type(genv.BPVoxelGameValues) == "table" and genv.BPVoxelGameValues.GlobalShadows ~= nil then
+	gameShadows = genv.BPVoxelGameValues.GlobalShadows -- (voxel lighting on first: the game's own is the one it kept)
+end
+genv.LegacyLightingGameValues = { GlobalShadows = gameShadows }
+onStop(function() genv.LegacyLightingGameValues = nil end)
 
 local function setLighting(prop, value)
 	pcall(function() Lighting[prop] = value end)
@@ -1039,8 +1115,9 @@ end
 -- The game's own technology is kept in getgenv().BPGameTechnology by whichever of the two changed it first,
 -- and given back by the last one to stop.
 local function giveTechnologyBack()
-	-- (Hammer stuff's other legacy lighting still on: its old-style lighting stays, it gives it back)
-	if genv.BPLegacyLightingOn then return end
+	-- (Hammer stuff's other legacy lighting, or its voxel lighting, still on: the old-style lighting stays, and
+	-- that one gives the game's back)
+	if genv.BPLegacyLightingOn or genv.BPVoxelLightingOn then return end
 	local original = genv.BPGameTechnology
 	genv.BPGameTechnology = nil
 	if original ~= nil and readTechnology() ~= original then writeTechnology(original) end
@@ -1075,7 +1152,7 @@ end
 local boostActive = false
 local boostFactor = { Brightness = 1, Ambient = 1, OutdoorAmbient = 1 }
 local boostRec = {}
-local setAutoSun, startBoost, useBoost -- set by setupLighting
+local setAutoSun, startBoost, useBoost, paleShares -- set by setupLighting
 
 local function applyBoost(prop)
 	local b = boostRec[prop]
@@ -1096,7 +1173,19 @@ local function setupLighting()
 	setLighting("ColorShift_Bottom", Color3.new())
 	hold(Lighting, "EnvironmentDiffuseScale", 0, true)  -- 2019+: kept at 0 even if the game writes it again
 	hold(Lighting, "EnvironmentSpecularScale", 0, true)
-	setLighting("GlobalShadows", false)
+	-- (Addtion-Scripts) VOXEL LIGHTING TOGETHER: with Hammer stuff's "voxel lighting" on, its 2013 voxel shadows
+	-- stay on; it gives the game's own shadows, lighting style and technology back when it stops
+	if not genv.BPVoxelLightingOn then
+		setLighting("GlobalShadows", false)
+	else
+		-- (voxel lighting on: its shadows stay. If it is switched off before this stops, it leaves this lighting's
+		-- "no shadows", which is put back to the game's own here)
+		onStop(function()
+			if not genv.BPVoxelLightingOn and gameShadows ~= nil and read(Lighting, "GlobalShadows") == false then
+				Lighting.GlobalShadows = gameShadows
+			end
+		end)
+	end
 	setLighting("OutdoorAmbient", flat)
 	-- ClockTime is deliberately not touched: the game's own time of day (and its day/night cycle) stays in charge
 	setLighting("GeographicLatitude", 41.733)
@@ -1131,27 +1220,34 @@ local function setupLighting()
 	local intensity = Settings.LegacyIntensity
 	local baseSun = intensity * (Settings.SunBoost or 2.1)
 	local baseAmbient = intensity * (Settings.AmbientBoost or 1.2)
-	local autoFactor = 1
-	-- the sun actually used is the chosen boost times the AutoBrightness factor, but never weaker than
-	-- LegacyIntensity itself
+	local autoFactor, autoAmbient = 1, 1
+	-- the sun actually used is the chosen boost times the AutoBrightness factor, but never weaker than PaleMapSun
+	-- of the game's (the colours are divided by `divisor`, so a sun of divisor x PaleMapSun is that share). The shade
+	-- light the same way, down to PaleMapAmbient.
 	local function refreshBoost()
-		local sun = math.max(baseSun * autoFactor, math.min(baseSun, intensity))
+		local sun = math.max(baseSun * autoFactor, math.min(baseSun, divisor * (Settings.PaleMapSun or 0.85)))
+		local ambient = math.max(baseAmbient * autoAmbient, math.min(baseAmbient, divisor * (Settings.PaleMapAmbient or 1)))
 		boostFactor.Brightness = sun
-		boostFactor.Ambient = baseAmbient
-		boostFactor.OutdoorAmbient = baseAmbient
+		boostFactor.Ambient = ambient
+		boostFactor.OutdoorAmbient = ambient
 		if boostActive then
 			for prop in pairs(boostRec) do applyBoost(prop) end
 		end
-		return sun / intensity -- the SunBoost value in use
+		return sun / intensity, ambient / intensity -- the SunBoost / AmbientBoost values in use
 	end
 	refreshBoost()
 	useBoost = function(newSun, newAmbient)
 		baseSun, baseAmbient = newSun, newAmbient
 		refreshBoost()
 	end
-	setAutoSun = function(factor)
+	setAutoSun = function(factor, ambientFactor)
 		autoFactor = factor
+		autoAmbient = ambientFactor or 1
 		return refreshBoost()
+	end
+	paleShares = function()
+		-- (the factors that bring the sun / shade light down to PaleMapSun / PaleMapAmbient of the game's)
+		return divisor * (Settings.PaleMapSun or 0.85) / baseSun, divisor * (Settings.PaleMapAmbient or 1) / baseAmbient
 	end
 	startBoost = function()
 		if boostActive or stopped then return end
@@ -1170,6 +1266,16 @@ local function setupLighting()
 		if Settings.SoftLighting and StyleEnum then
 			local styleBefore = readLighting("LightingStyle")
 			local qualityBefore = readLighting("PrioritizeLightingQuality")
+			-- (with voxel lighting already on these are its values: the game's own are the ones it kept)
+			local vxGame = genv.BPVoxelGameValues
+			if genv.BPVoxelLightingOn and type(vxGame) == "table" then
+				if vxGame.LightingStyle ~= nil then styleBefore = vxGame.LightingStyle end
+				if vxGame.PrioritizeLightingQuality ~= nil then qualityBefore = vxGame.PrioritizeLightingQuality end
+			end
+			if genv.LegacyLightingGameValues then
+				genv.LegacyLightingGameValues.LightingStyle = styleBefore
+				genv.LegacyLightingGameValues.PrioritizeLightingQuality = qualityBefore
+			end
 			writeLighting("LightingStyle", StyleEnum.Soft)
 			-- A game can READ Soft / off and still RENDER Future: Jailbreak does, its old Technology setting stays in
 			-- charge until one of the new properties really changes. Writing the value a property already has changes
@@ -1188,6 +1294,7 @@ local function setupLighting()
 				end))
 			end
 			onStop(function()
+				if genv.BPVoxelLightingOn then return end -- (voxel lighting keeps Soft and gives the game's back)
 				if styleBefore ~= nil and readLighting("LightingStyle") == StyleEnum.Soft then
 					writeLighting("LightingStyle", styleBefore)
 				end
@@ -1416,6 +1523,7 @@ local function stop()
 	for i = #restores, 1, -1 do pcall(restores[i]) end -- lighting, effects, terrain, unions, signs, extras
 	for _, r in ipairs(pbrRemoved) do pcall(function() r[1].Parent = r[2] end) end
 	for part, rec in pairs(meshFix) do -- show the original meshes again
+		for _, c in ipairs(rec.conns or {}) do pcall(function() c:Disconnect() end) end
 		pcall(function() part.Transparency = rec.transparency end)
 	end
 	for _, i in ipairs(created) do pcall(function() i:Destroy() end) end
@@ -1442,16 +1550,97 @@ end
 track(workspace.DescendantAdded:Connect(safeHandle))
 print("[LegacyLighting] loading the map: the light comes up once everything is done")
 
+-- (Addtion-Scripts) AUTO BRIGHTNESS, stronger and live. Paleness 0.45 or darker: the full boost (the legacy look, as
+-- before: maps that looked right stay as they were);
+-- 0.8 or paler: the sun and shade light down to PaleMapSun / PaleMapAmbient of the game's; in between, in
+-- proportion. Worked out for the whole map once it is loaded, then every few seconds for what is around the
+-- camera (each part's real colour weighted by its size; textured meshes, see-through parts and neon left out), so
+-- the light follows where you are, eased in steps so it doesn't jump.
+local function autoFactors(mean)
+	local t = math.clamp((mean - 0.45) / 0.35, 0, 1)
+	local sunShare, ambientShare = 0.37, 0.75
+	if paleShares then
+		local ok, a, b = pcall(paleShares)
+		if ok then sunShare, ambientShare = a, b end
+	end
+	return 1 - t * (1 - math.min(sunShare, 1)), 1 - t * (1 - math.min(ambientShare, 1))
+end
+
+local function palenessOf(parts)
+	local weight, lum = 0, 0
+	for _, part in ipairs(parts) do
+		if part.Transparency <= 0.5 and not ownedSet[part] and part.Name ~= MESH_PROXY and not colorExempt(part)
+			and not (part:IsA("MeshPart") and part.TextureID ~= "") and not part:IsA("Terrain") then
+			local size = part.Size
+			local w = math.min(size.X * size.Z + size.X * size.Y + size.Y * size.Z, 20000)
+			if w >= 4 then
+				local recs = colorState[part]
+				local c = (recs and recs.Color and recs.Color.orig) or part.Color -- the game's own colour
+				weight += w
+				lum += math.min(0.3 * c.R + 0.59 * c.G + 0.11 * c.B, 1) * w
+			end
+		end
+	end
+	if weight <= 0 then return nil, 0 end
+	return lum / weight, weight
+end
+
+local nearParams
+pcall(function()
+	nearParams = OverlapParams.new()
+	nearParams.MaxParts = 4000
+	nearParams.FilterType = Enum.RaycastFilterType.Exclude
+	local chars = {}
+	for _, p in ipairs(Players:GetPlayers()) do if p.Character then chars[#chars + 1] = p.Character end end
+	nearParams.FilterDescendantsInstances = chars
+end)
+
+local function nearPaleness()
+	local cam = workspace.CurrentCamera
+	if not (cam and nearParams) then return nil, 0 end
+	local ok, parts = pcall(function()
+		return workspace:GetPartBoundsInRadius(cam.Focus.Position, Settings.AutoBrightnessRadius or 160, nearParams)
+	end)
+	if not ok or type(parts) ~= "table" then return nil, 0 end
+	return palenessOf(parts)
+end
+
+local NEAR_ENOUGH = 300 -- (studs of surface around the camera needed to go by it)
+local paleness = nil     -- the paleness the light is set for now
+
 local function lightUp()
 	if stopped or not startBoost then return end
-	if Settings.AutoBrightness and not tallyDone and tallyWeight > 0 and setAutoSun then
+	if Settings.AutoBrightness and not tallyDone and setAutoSun then
 		tallyDone = true
-		local mean = tallyLum / tallyWeight -- 0 = black map, 1 = white map
-		local factor = 1 - math.clamp((mean - 0.45) / 0.35, 0, 1) * 0.45
-		local okAuto, used = pcall(setAutoSun, factor)
-		print(string.format("[LegacyLighting] auto brightness: map paleness %.2f -> SunBoost in use %s", mean, okAuto and string.format("%.2f", used) or "unchanged (failed)"))
+		local mapMean = tallyWeight > 0 and tallyLum / tallyWeight or nil -- 0 = black map, 1 = white map
+		local near, nearWeight = nearPaleness()
+		local mean = mapMean
+		if near and nearWeight >= NEAR_ENOUGH then mean = mapMean and (near * 0.7 + mapMean * 0.3) or near end
+		if mean then
+			paleness = mean
+			local okAuto, used, usedAmbient = pcall(setAutoSun, autoFactors(mean))
+			print(string.format("[LegacyLighting] auto brightness: paleness %.2f (map %s, around you %s) -> SunBoost in use %s, AmbientBoost in use %s",
+				mean, mapMean and string.format("%.2f", mapMean) or "-", near and string.format("%.2f", near) or "-",
+				okAuto and string.format("%.4f", used) or "unchanged (failed)", okAuto and string.format("%.4f", usedAmbient) or "-"))
+		end
 	end
 	startBoost()
+	if Settings.AutoBrightness and setAutoSun then
+		task.spawn(function()
+			while not stopped do
+				task.wait(Settings.AutoBrightnessEvery or 3)
+				if stopped then return end
+				local near, nearWeight = nearPaleness()
+				if near and nearWeight >= NEAR_ENOUGH then
+					local eased = paleness and (paleness + (near - paleness) * 0.35) or near
+					if not paleness or math.abs(eased - paleness) > 0.01 then
+						paleness = eased
+						pcall(setAutoSun, autoFactors(eased))
+					end
+				end
+			end
+		end)
+	end
 end
 if type(Settings.LightUpAfter) == "number" then
 	task.delay(Settings.LightUpAfter, lightUp)
@@ -1506,6 +1695,14 @@ task.spawn(function()
 	print(string.format("[LegacyLighting] map done in %.1f s (%d objects, %d caught by the second look) | textured meshes redrawn so they darken too: %d | unions switched to their darkened colour: %d",
 		os.clock() - startedAt, count, missed, meshFixCount + worldMeshFixCount, unionFixCount))
 	lightUp()
+	if Settings.FixWorldMeshes then
+		task.spawn(function() -- (NEAREST MESHES)
+			while not stopped do
+				pcall(nearestMeshes)
+				task.wait(2.5)
+			end
+		end)
+	end
 	local extras = { "clouds hidden: " .. cloudsOff, "highlights hidden: " .. highlightsOff, "PBR textures removed: " .. #pbrRemoved }
 	for _, note in ipairs(extraNotes) do extras[#extras + 1] = note end
 	print("[LegacyLighting] 2019+ extras: " .. table.concat(extras, " | "))

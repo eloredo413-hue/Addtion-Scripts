@@ -1,13 +1,18 @@
 -- [[ PHYSICS + CAMERA WIZARD STEP — with None option ]]
 -- (Addtion-Scripts copy: three physics, one for each era, picked in the dropdown.
---  "Old" (2010-2013), as Retro Studio and Rowind have it: a plain jump that lands flat (no bounce, no sinking into the
---  ground), and ladders climbed only while the stick is held, at a steady 70% of WalkSpeed (the old Humanoid's
---  climbing speed, Roblox wiki 2011). Let go of the stick and you hang there for a moment (HANG_TIME), then drop;
---  pull the stick away or jump to get off. The climb goes on while anything small is within reach in front (toes to
---  head), facing the ladder the way you grabbed it, with a step onto the top only at the real top. Tripping over
---  when flung faster than 200 studs a second, as Super Nostalgia Zone's GoofyMotion does.
+--  "Old" (2010-2013), with Rowind's character physics for its 2011-2012 clients (its PhysicsSimulation and
+--  HumanoidRotate scripts, made to run from an executor and on R15 too): the body stands a tenth of a stud into the
+--  ground and a little higher for 1.5 s after each landing; no jumping again for half a second after landing; a
+--  landing faster than 200 studs a second springs back up at 75% of the speed; and the character is turned by a
+--  gyro, a share of the way each frame and more weakly in the air (not snapped round, and still steerable in a
+--  jump), facing the camera in first person / shift lock. Ladders are climbed only while the stick is held, at a
+--  steady 70% of WalkSpeed (the old Humanoid's climbing speed, Roblox wiki 2011), as in Retro Studio: let go of the
+--  stick and you hang there for a moment (HANG_TIME), then drop; pull the stick away or jump to get off. The climb
+--  goes on while anything small is within reach in front (toes to head), facing the ladder the way you grabbed it,
+--  with a step onto the top only at the real top.
 --  "2007": the same script, as the Old physics was first made from Super Nostalgia Zone's character scripts: the
---  small bounce on every landing (SNZ Bounciness) and sinking into the ground on landing (SNZ FloorDrag) added.
+--  small bounce on every landing (SNZ Bounciness), sinking into the ground on landing (SNZ FloorDrag) and tripping
+--  when flung faster than 200 studs a second (SNZ GoofyMotion), with Roblox's own turning.
 --  "2006": this repo's copy of FWM's (2006 Physics.lua).
 --  R6 and R15 alike: the hip height moves around the avatar's own (an R15 body stands on it), the 2007 sink moves an
 --  R15 body on its root joint, and the climbing check is measured from the feet.)
@@ -102,7 +107,7 @@ local CLIMB_SPEED_SHARE = 0.7   -- climbing speed: 70% of WalkSpeed (11.2 at 16)
 local CLIMB_REACH_UP = 2        -- studs above the climbing box: in front of the chest (the top check)
 local REACH_LIFT, REACH_HEIGHT = 0.9, 4.2 -- while climbing: one tall box in front, from the toes to the head (0.3 to 4.5
                                 -- studs above the feet), so a gap between two rungs never ends the climb
-local TRIP_SPEED = 200          -- flung faster than this (studs a second): you trip (SNZ GoofyMotion's VelocityThreshold)
+local TRIP_SPEED = 200          -- 2007 only: flung faster than this (studs a second): you trip (SNZ GoofyMotion's VelocityThreshold)
 local CLIMB_PUSH_SPEED = 12     -- push into the part (gentle: it was 24)
 local BLOCKED_SPEED = 0.35       -- slower than this share of WalkSpeed while walking = blocked by the part
 local BLOCKED_TIME = 0.15        -- ...for this long (seconds) before a climb starts: stairs are walked up
@@ -115,6 +120,17 @@ local MAX_FALL_TO_GRAB = 8      -- falling faster than this: no grabbing
 local HANG_TIME = 0.85          -- the stick let go on a ladder: you hang there this long (seconds), then drop (Retro Studio)
 local SINK_RATE = 20 / 3        -- 2007 only: studs a second the body sinks / rises while falling / rising fast (SNZ FloorDrag)
 local SINK_DECAY = 0.925        -- 2007 only: share of the sink kept each 1/60 s back on the ground
+-- Old only: Rowind's character physics for the 2011-2012 clients (its PhysicsSimulation and HumanoidRotate scripts)
+local ROWIND_SINK = -0.1        -- the body stands this far into the ground (hip height; R15: on its root joint)
+local ROWIND_LANDED = 0.025     -- ...right after a landing it stands here instead
+local ROWIND_LANDED_TIME = 1.5  -- ...for this long (seconds)
+local ROWIND_SETTLE_TIME = 0.25 -- ...then eases back down over this long
+local JUMP_COOLDOWN = 0.5       -- no jumping again for this long after landing
+local SPRING_SPEED = 200        -- landing faster than this (studs a second): springs back up...
+local SPRING_KEEP = 0.75        -- ...with this share of the speed
+local TURN_TORQUE = 2000        -- turning: the gyro's strength, so the character turns round rather than snapping
+local TURN_P_GROUND, TURN_P_AIR = 4000, 1000 -- ...and how hard it pulls, on the ground and in the air
+local TURN_SHARE = 0.2          -- ...the facing it aims for moves this share of the way each 1/60 s
 local CLIMB_SIDE_DAMP = 0.8     -- sideways speed kept each frame while climbing
 local XZ = Vector3.new(1, 0, 1)
 
@@ -217,7 +233,11 @@ local function setupCharacter(char)
 		if v.Y < -2 then lastFallSpeed = math.abs(v.Y) end
 	end))
 
-	addConnection(humanoid.StateChanged:Connect(function(_, newState)
+	-- (Old: when the last landing was, for Rowind's sink, and until when jumping is held off)
+	local landedAt = nil
+	local jumpBlockedUntil = 0
+
+	addConnection(humanoid.StateChanged:Connect(function(oldState, newState)
 		if newState ~= Enum.HumanoidStateType.Landed then return end
 		local bounceMultiplier = 1
 		local rayParams = RaycastParams.new()
@@ -254,8 +274,32 @@ local function setupCharacter(char)
 				bounce.Parent = head
 				task.delay(1 / 30, function() pcall(function() bounce:Destroy() end) end)
 			end
+		elseif not ERA_2007 and not climbWanted and climbForce.Parent == nil then
+			-- Old (Rowind's PhysicsSimulation for the 2011-2012 clients): no jumping again for half a second after
+			-- a landing (from a fall, as Rowind has it: not straight out of a jump); a landing faster than
+			-- SPRING_SPEED springs back up with 75% of the speed; any other landing stands the body a little higher
+			-- for a moment (see the hip height below)
+			if oldState ~= Enum.HumanoidStateType.Jumping then
+				jumpBlockedUntil = os.clock() + JUMP_COOLDOWN
+			end
+			if lastFallSpeed > SPRING_SPEED then
+				local v = rootPart.AssemblyLinearVelocity
+				rootPart.AssemblyLinearVelocity = Vector3.new(v.X, lastFallSpeed * SPRING_KEEP, v.Z)
+			else
+				landedAt = os.clock()
+			end
 		end
 		lastFallSpeed = 0
+	end))
+
+	-- Old: the jump held off after a landing. Not by switching the Jumping state off (that hid the phone's jump
+	-- button and could leave a jump stuck in the walking state): the jump the controls ask for is taken back
+	-- until the time is up (the controls ask again every frame while the button is held, so it jumps then).
+	addConnection(humanoid:GetPropertyChangedSignal("Jump"):Connect(function()
+		if destroyed or ERA_2007 then return end
+		if humanoid.Jump and os.clock() < jumpBlockedUntil then
+			humanoid.Jump = false
+		end
 	end))
 
 	-- (No jump lock after landing: switching the Jumping state off hid the jump button and could leave a
@@ -288,8 +332,8 @@ local function setupCharacter(char)
 	-- moves the body down or up (up to a stud), so a landing ends with the legs in the ground and the body rises back
 	-- out within about half a second. Not while sitting, climbing or swimming. R6: through the hip height. R15: the
 	-- body is moved on its root joint (LowerTorso.Root) instead, as the 2006 physics does it (a lower hip height makes
-	-- Roblox's R15 animations run faster). The Old physics (2010-2013) has none: the hip height stays the body's own
-	-- (R6: 0; R15: its own, followed if Roblox changes it).
+	-- Roblox's R15 animations run faster). The Old physics (2010-2013) has Rowind's stance instead: a tenth of a stud
+	-- into the ground, a little higher for a moment after each landing (see the render step below), the same ways.
 	local sinkOffset = 0
 	local sinkRay = RaycastParams.new()
 	sinkRay.FilterType = Enum.RaycastFilterType.Exclude
@@ -321,11 +365,12 @@ local function setupCharacter(char)
 		if current ~= want then rootJoint.C0 = want end
 		rootWritten = rootJoint.C0
 	end
-	if ERA_2007 then
-		-- stopped mid-sink: the body put back up
+	do
+		-- stopped mid-sink: the body put back up (and Roblox's own turning back on)
 		table.insert(CharacterObjects, {
 			Parent = true,
 			Destroy = function()
+				if humanoid.Parent then pcall(function() humanoid.AutoRotate = true end) end
 				if isR15 then
 					if rootJoint and rootJoint.Parent and rootBase and rootJoint.C0 == rootWritten then
 						rootJoint.C0 = rootBase
@@ -347,7 +392,26 @@ local function setupCharacter(char)
 			return
 		end
 		if not ERA_2007 then
-			hipOffset = 0
+			-- Old: Rowind's stance (the 2011-2012 clients): a tenth of a stud into the ground, a little higher for
+			-- 1.5 s after a landing, then easing back down
+			local offset = ROWIND_SINK
+			if landedAt then
+				local t = os.clock() - landedAt
+				if t < ROWIND_LANDED_TIME then
+					offset = ROWIND_LANDED
+				elseif t < ROWIND_LANDED_TIME + ROWIND_SETTLE_TIME then
+					local a = (t - ROWIND_LANDED_TIME) / ROWIND_SETTLE_TIME
+					a = 1 - (1 - a) * (1 - a) -- (eased out, as Rowind's tween)
+					offset = ROWIND_LANDED + (ROWIND_SINK - ROWIND_LANDED) * a
+				end
+			end
+			sinkOffset = offset
+			if isR15 then
+				hipOffset = 0
+				applyR15Sink()
+			else
+				hipOffset = sinkOffset
+			end
 			applyHip()
 			return
 		end
@@ -396,16 +460,73 @@ local function setupCharacter(char)
 	pcall(function() humanoid.AutoRotate = false end)
 	if camera then camera.FieldOfView = 65 end
 
+	-- ===== Old: turning, as Rowind's HumanoidRotate does it (R6 and R15) =====
+	-- The character is not snapped round to face where it walks (Roblox's own AutoRotate): a gyro turns it, a
+	-- share of the way each frame, with limited strength, and more weakly in the air, so a jump can still be
+	-- steered round but slowly (the Old physics used to switch turning off in the air altogether). In first
+	-- person or shift lock it turns to face the camera. Not while sitting, climbing, tripped and so on, and not
+	-- while walking to a clicked point (Roblox turns it then).
+	local turnGyro = Instance.new("BodyGyro")
+	turnGyro.Name = "HumanoidRotate"
+	turnGyro.D = 0
+	turnGyro.P = 3800
+	turnGyro.MaxTorque = Vector3.new(0, TURN_TORQUE, 0)
+	table.insert(CharacterObjects, turnGyro)
+	local NO_TURN = {
+		[Enum.HumanoidStateType.Dead] = true,
+		[Enum.HumanoidStateType.Ragdoll] = true,
+		[Enum.HumanoidStateType.Seated] = true,
+		[Enum.HumanoidStateType.PlatformStanding] = true,
+		[Enum.HumanoidStateType.FallingDown] = true,
+		[Enum.HumanoidStateType.Flying] = true,
+		[Enum.HumanoidStateType.Climbing] = true,
+	}
+	local isMoveTo = false
+	if not ERA_2007 then
+		addConnection(humanoid:GetPropertyChangedSignal("WalkToPoint"):Connect(function() isMoveTo = true end))
+		addConnection(humanoid:GetPropertyChangedSignal("WalkToPart"):Connect(function() isMoveTo = true end))
+		addConnection(humanoid:GetPropertyChangedSignal("MoveDirection"):Connect(function() isMoveTo = false end))
+		addConnection(humanoid.MoveToFinished:Connect(function() isMoveTo = false end))
+	end
+	local turnTime = 0
+	local function turnStep(dt, zoom)
+		turnTime = turnTime + (dt or 1 / 60)
+		if turnTime < 1 / 60 then return end -- (60 times a second at most, as Rowind)
+		local elapsed = math.min(turnTime, 0.1)
+		turnTime = turnTime % (1 / 60)
+		local state = humanoid:GetState()
+		local faceCamera = UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter or zoom <= 1.5
+		humanoid.AutoRotate = isMoveTo or state == Enum.HumanoidStateType.Climbing
+		local moveDir = humanoid.MoveDirection
+		local dir = (faceCamera and camera.CFrame.LookVector or moveDir) * XZ
+		if (moveDir.Magnitude > 0 or faceCamera) and dir.Magnitude > 0.01 and not humanoid.PlatformStand
+			and not humanoid.SeatPart and not NO_TURN[state] and not isMoveTo and climbLift.Parent == nil then
+			if turnGyro.Parent == nil then turnGyro.CFrame = rootPart.CFrame end -- (from where it faces now)
+			if not faceCamera then
+				local inAir = state == Enum.HumanoidStateType.Jumping or state == Enum.HumanoidStateType.Freefall
+				turnGyro.P = inAir and TURN_P_AIR or TURN_P_GROUND
+			end
+			local pos = rootPart.Position
+			local share = 1 - (1 - TURN_SHARE) ^ (elapsed * 60)
+			turnGyro.CFrame = turnGyro.CFrame:Lerp(CFrame.lookAt(pos, pos + dir.Unit), math.clamp(share, 0, 1))
+			turnGyro.Parent = rootPart
+			humanoid.AutoRotate = false
+		else
+			turnGyro.Parent = nil
+		end
+	end
+
 	local goofyRenderName = "RetroGoofyMotion_" .. tostring(math.random(10000, 99999))
 	table.insert(RenderNames, goofyRenderName)
 
-	RunService:BindToRenderStep(goofyRenderName, 400, function()
+	RunService:BindToRenderStep(goofyRenderName, 400, function(dt)
 		if destroyed or not char.Parent or humanoid.Health <= 0 then
 			pcall(function() RunService:UnbindFromRenderStep(goofyRenderName) end)
 			return
 		end
-		-- SNZ's GoofyMotion: flung faster than TRIP_SPEED, you trip (and get up again once still: FallingDown above)
-		if rootPart.AssemblyLinearVelocity.Magnitude > TRIP_SPEED and not humanoid.SeatPart
+		-- 2007 (SNZ's GoofyMotion): flung faster than TRIP_SPEED, you trip (and get up again once still: FallingDown
+		-- above). The Old physics springs back off a hard landing instead (Rowind, above).
+		if ERA_2007 and rootPart.AssemblyLinearVelocity.Magnitude > TRIP_SPEED and not humanoid.SeatPart
 			and humanoid:GetState() ~= Enum.HumanoidStateType.FallingDown
 			and humanoid:GetState() ~= Enum.HumanoidStateType.Ragdoll then
 			pcall(function() humanoid:ChangeState(Enum.HumanoidStateType.FallingDown) end)
@@ -413,6 +534,11 @@ local function setupCharacter(char)
 		camera = Workspace.CurrentCamera
 		if not camera then return end
 		local zoom = (camera.Focus.Position - camera.CFrame.Position).Magnitude
+		if not ERA_2007 then
+			bg.Parent = nil
+			turnStep(dt, zoom)
+			return
+		end
 		if UserGameSettings.RotationType.Name == "CameraRelative" and not humanoid.SeatPart then
 			local dir = zoom <= 1.5 and camera.CFrame.LookVector or nil
 			if dir then
