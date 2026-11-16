@@ -3811,7 +3811,8 @@ task.spawn(function()
 			-- iw legacy lighting on first: what it has set is not the game's; the game's own is what it kept
 			local iwGame = genv.LegacyLightingGameValues
 			if iwRunning() and type(iwGame) == "table" then
-				for _, prop in ipairs({ "GlobalShadows", "LightingStyle", "PrioritizeLightingQuality" }) do
+				for _, prop in ipairs({ "GlobalShadows", "LightingStyle", "PrioritizeLightingQuality",
+					"EnvironmentDiffuseScale", "EnvironmentSpecularScale" }) do
 					if iwGame[prop] ~= nil then saved[prop] = iwGame[prop] end
 				end
 			end

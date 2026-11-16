@@ -5,13 +5,8 @@
 --     no landing squash (Roblox's R15 Animate speeds the animations up when the hip height drops)
 --   * the climbing check (a small box in front of the feet) is measured from the feet, as on R6
 -- R6 works exactly as before.
--- Climbing is a steady climb at the old Humanoid's climbing speed, 70% of WalkSpeed (11.2 studs a second at 16; Roblox
--- wiki, 2011), held by a force, as Super Nostalgia Zone's RetroClimbing does it: no more kick up every frame, which
--- floated you up in hops. Once on a ladder it holds on while anything small is within reach in front from the toes to
--- the head (gaps between rungs, or a slip, no longer drop you), keeps facing the ladder the way you grabbed it (the
--- camera's angle no longer turns you off it), pushes gently into it, and lets go as FWM does when you let go of the
--- stick, but only after a moment (a thumb on a phone stick wobbles), hanging on in between. A step onto the top only at
--- the real top; a ladder you jump into is grabbed; no landing bounce or sink while on a ladder. R6 and R15 alike.
+-- Climbing is FWM's own, as it came: walking into something small in front of the feet climbs it (the "fly bug"
+-- ladders of old Roblox), moving the stick keeps you on it, and letting go of the stick drops you.
 -- Sinking into the ground, only on a hard landing: falling faster than HARD_FALL (a fall from about 12 studs up; an
 -- ordinary jump lands at about 50 studs a second and does not) lowers the body up to a stud, so the landing ends with
 -- the legs in the ground, and the body rises back out within about half a second.
@@ -27,7 +22,13 @@ local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 
 -- Fallback configuration if executed outside the original game
-local DEFAULT_TIME_PERIOD = 10 -- Adjusts physics era behavior (e.g., <1, <=14, >=17)
+-- (Addtion-Scripts) FWM's era number, used outside FWM (inside FWM the game's own TimePeriod is used). What each value
+-- turns on, from FWM's CharacterPhysics: below 1 no jumping; 6 and up the arms fling you off big parts you touch;
+-- below 11.5 the arms collide; up to 14 the jump glide, the landing tilt and the old ladder climbing (let go of the
+-- stick and you drop); 12 to 14 the tilt only half the time; above 14 a turning delay after landing; 17 and up the
+-- landing squash. 10 is 2006: every one of the 2006 things is on (fling, colliding arms, glide, the tilt on every
+-- hard landing, the old climbing) and none of the later ones. (Any value from 6 to 11 does exactly the same.)
+local DEFAULT_TIME_PERIOD = 10
 
 -- Safe reference or fallback for ExtraUtil
 local ExtraUtil
@@ -177,22 +178,6 @@ local function setupCharacterPhysics(character)
     local lastJumpTick = tick()
     local climbConnection = nil
     local fwmClimbValue = nil
-    -- (Addtion-Scripts) climbing: held between two rungs, hop over the top (as the "Old" physics does)
-    local GRAB_GRACE = 0.25       -- seconds the climb is held between two rungs / bricks
-    local TOP_OUT_TIME = 0.4      -- seconds after the last grab in which you are still topping out
-    local TOP_OUT_MIN_RISE = 1.5  -- studs climbed before the top-out hop counts
-    local TOP_OUT_SPEED = 10      -- a step forward onto the top
-    local TOP_OUT_UP = 4          -- ...keeping (at least) a little of the climb's rise
-    local MAX_FALL_TO_GRAB = 8    -- falling faster than this: no grabbing
-    local REACH_UP = 2            -- studs above the climbing box: in front of the chest (the top check)
-    local REACH_LIFT, REACH_HEIGHT = 0.9, 4.2 -- while climbing: one tall box in front, from the toes to the head (0.3 to
-                                  -- 4.5 studs above the feet), so a gap between two rungs never ends the climb
-    local CLIMB_SPEED_SHARE = 0.7 -- climbing speed: 70% of WalkSpeed, the old Humanoid's
-    local LET_GO_TIME = 0.3       -- stick let go this long (seconds) = let go of the ladder (hanging on in the meantime)
-    local CLIMB_PUSH = 12         -- push into the ladder (studs a second; it was 24)
-    local climbFacing = nil       -- the way you faced the ladder when you grabbed it (flat)
-    local lastStick = 0           -- when the stick was last pushed
-    local grabStartY, lastGrab, grabbingNow = nil, 0, false
 
     if timePeriod < 1 then
         humanoid.JumpPower = 0
@@ -210,23 +195,6 @@ local function setupCharacterPhysics(character)
         P = 1000,
     })
 
-    -- (Addtion-Scripts) the steady climb: holds the upward speed at the climbing speed while a rung is within reach
-    -- (only up and down: the push into the ladder is the climb lift's)
-    local oldClimbForce = rootPart:FindFirstChild("ClimbForce")
-    if oldClimbForce then oldClimbForce:Destroy() end
-    local climbForce = ExtraUtil.Create("BodyVelocity", {
-        Name = "ClimbForce",
-        Velocity = Vector3.new(0, 0, 0),
-        MaxForce = Vector3.new(0, 10000000, 0),
-    })
-    table.insert(activeConnections, {
-        Connected = true,
-        Disconnect = function(self)
-            self.Connected = false
-            pcall(function() climbForce:Destroy() end)
-        end,
-    })
-
     local climbGyro = ExtraUtil.Create("BodyGyro", {
         Name = "ClimbGyro",
         MaxTorque = Vector3.new(0, math.huge, 0),
@@ -239,6 +207,7 @@ local function setupCharacterPhysics(character)
         MaxForce = Vector3.new(math.huge, 0, math.huge),
         Velocity = Vector3.new(0, 0, 0),
     })
+
     -- (Addtion-Scripts) removed when this stops (run again, another physics picked, or a new character)
     table.insert(activeConnections, {
         Connected = true,
@@ -256,52 +225,36 @@ local function setupCharacterPhysics(character)
         end
     end))
 
-    -- (Addtion-Scripts) let go: once at a time, and never longer than a few seconds (it used to wait for a
-    -- landing with no end, which could leave climbing switched off, and it was started again every frame)
-    local releasing = false
     local function stopClimbing()
-        if releasing then return end
-        releasing = true
-        grabStartY, climbFacing, grabbingNow = nil, nil, false
-        task.spawn(function()
-            local deadline = os.clock() + 2
-            repeat
-                task.wait()
-                pcall(function()
-                    humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
-                    humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
-                end)
-                climbLift.Parent = nil
-                climbGyro.Parent = nil
-                climbForce.Parent = nil
-            until not humanoid.Parent or humanoid:GetState() ~= Enum.HumanoidStateType.Climbing or os.clock() > deadline
-
-            local landDeadline = os.clock() + 3
-            while humanoid.Parent and humanoid:GetState() ~= Enum.HumanoidStateType.Landed and os.clock() < landDeadline do
-                task.wait()
-            end
-            if humanoid.Parent then
-                pcall(function() humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, true) end)
-            end
-            releasing = false
-        end)
-    end
-
-    -- (Addtion-Scripts) run every frame from the main loop below: it was only hooked up when the move direction
-    -- changed, so holding the stick still on a ladder never pushed you into it and you slid off the rungs
-    -- (Addtion-Scripts) while holding on: pushed gently into the ladder and kept facing it, the way you faced it when
-    -- you grabbed it. It turned you to the stick's direction (diagonal with the camera at an angle, which took you off a
-    -- narrow ladder), pushed at 24, and let go on a single frame of a light stick (see the main loop now).
-    local function handleClimbing()
-        if grabbingNow and climbFacing then
-            climbLift.Parent = torso
-            climbGyro.Parent = torso
-            local pos = torso.Position
-            climbGyro.CFrame = CFrame.lookAt(pos, pos + climbFacing)
-            climbLift.Velocity = climbFacing * CLIMB_PUSH
-        else
+        repeat
+            task.wait()
+            humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
+            humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
             climbLift.Parent = nil
             climbGyro.Parent = nil
+        until humanoid:GetState() ~= Enum.HumanoidStateType.Climbing
+
+        while humanoid:GetState() ~= Enum.HumanoidStateType.Landed and humanoid.Parent do
+            task.wait()
+        end
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, true)
+    end
+
+    local function handleClimbing()
+        if humanoid:GetState() == Enum.HumanoidStateType.Climbing then
+            if humanoid.MoveDirection.Magnitude < 0.1 then
+                if timePeriod <= 14 then
+                    stopClimbing()
+                    return
+                end
+            else
+                climbLift.Parent = torso
+                climbGyro.Parent = torso
+                local pos = torso.Position
+                local moveDir = humanoid.MoveDirection
+                climbGyro.CFrame = CFrame.lookAt(pos, pos + moveDir)
+                climbLift.Velocity = moveDir * 24
+            end
         end
     end
 
@@ -309,27 +262,19 @@ local function setupCharacterPhysics(character)
     overlapParams.FilterDescendantsInstances = { character, workspace.CurrentCamera }
     overlapParams.RespectCanCollide = true
 
-    -- (Addtion-Scripts) what is in the 1-stud box just in front, `lift` studs above the climbing box (0: 1 to 2
-    -- studs above the feet; 2: in front of the chest)
-    local function partsAhead(lift, height)
+    local function isFlyBug()
         local boxCFrame
         if isR15 then
             -- (Addtion-Scripts) the same place as on R6: 1 to 2 studs above the feet, just in front
             local feet = rootPart.Position.Y - rootPart.Size.Y / 2 - r15HipHeight
             local ahead = rootPart.Position + rootPart.CFrame.LookVector / 2
-            boxCFrame = CFrame.new(ahead.X, feet + 1.5 + lift, ahead.Z)
+            boxCFrame = CFrame.new(ahead.X, feet + 1.5, ahead.Z)
         else
-            -- (Addtion-Scripts) the sink taken out: just after a landing the body is lower, which would put the box
-            -- into the ground and miss the bottom rung of a ladder
-            local checkPos = torso.Position - Vector3.new(0, 1 + sinkOffset, 0)
+            local checkPos = torso.Position - Vector3.new(0, 1, 0)
             torso:GetConnectedParts()
-            boxCFrame = CFrame.new(checkPos + torso.CFrame.LookVector / 2) * CFrame.new(0, -0.5 + lift, 0)
+            boxCFrame = CFrame.new(checkPos + torso.CFrame.LookVector / 2) * CFrame.new(0, -0.5, 0)
         end
-        return workspace:GetPartBoundsInBox(boxCFrame, Vector3.new(1, height or 1, 1), overlapParams)
-    end
-
-    local function isFlyBug(lift, height)
-        local parts = partsAhead(lift or 0, height)
+        local parts = workspace:GetPartBoundsInBox(boxCFrame, Vector3.new(1, 1, 1), overlapParams)
 
         for _, part in pairs(parts) do
             local worldSize = part.CFrame:VectorToWorldSpace(part.Size)
@@ -346,8 +291,14 @@ local function setupCharacterPhysics(character)
             fireProtocol("DiscWalking", false)
         end
         if humanoid:GetState() == Enum.HumanoidStateType.Climbing and torso then
-            -- (Addtion-Scripts) the push into the ladder is done every frame by the main loop now
+            if not climbConnection then
+                climbConnection = RunService.RenderStepped:Connect(handleClimbing)
+            end
         else
+            if climbConnection then
+                climbConnection:Disconnect()
+                climbConnection = nil
+            end
             if climbLift.Parent and fwmClimbValue then
                 fwmClimbValue.Value = false
                 fireProtocol("Climbing", false)
@@ -421,11 +372,6 @@ local function setupCharacterPhysics(character)
     end
 
     local function onStateChanged(_, newState)
-        if newState == Enum.HumanoidStateType.Landed
-            and (climbForce.Parent ~= nil or (grabStartY ~= nil and os.clock() - lastGrab <= GRAB_GRACE)) then
-            -- (Addtion-Scripts) feet on a rung while climbing: not a landing (no bounce, tilt or jump delay)
-            return
-        end
         if newState == Enum.HumanoidStateType.Landed then
             autoRotateTime = os.clock() + 0.25
             local velY = torso.AssemblyLinearVelocity.Y
@@ -520,7 +466,7 @@ local function setupCharacterPhysics(character)
     local function updateSink(dt)
         local state = humanoid:GetState()
         local level = floorBelow()
-        if humanoid.Sit or humanoid.SeatPart or humanoid.Health <= 0 or grabbingNow
+        if humanoid.Sit or humanoid.SeatPart or humanoid.Health <= 0
             or state == Enum.HumanoidStateType.Climbing or state == Enum.HumanoidStateType.Swimming then
             sinkOffset = 0
         else
@@ -581,76 +527,13 @@ local function setupCharacterPhysics(character)
             humanoid.AutoRotate = autoRotateTime < os.clock()
         end
 
-        -- (Addtion-Scripts) CLIMBING. A climb starts by walking into something small in front of the feet (FWM's
-        -- climbing box); it is kept while anything small is within reach in front, from the toes to the head (one
-        -- tall box: a gap between two rungs never ends it). While on: a steady climb at 70% of WalkSpeed, the stick
-        -- let go for a moment = hanging there, let go for LET_GO_TIME or pushed away from the ladder = let go (FWM
-        -- drops you when you let go), nothing in reach at all = the top (a step onto it) or, below a wall, hanging
-        -- for a moment and then falling. Not while letting go or in a real fall (dropping past a wall must not
-        -- grab it); jumping into a ladder grabs it and ends the jump's glide (the glide bounced you off it).
-        local now = os.clock()
-        local moveDir = humanoid.MoveDirection
-        local moving = moveDir.Magnitude > 0.01
-        if moveDir.Magnitude >= 0.1 then lastStick = now end
-        local onLadder = grabStartY ~= nil and now - lastGrab <= GRAB_GRACE
-        local tripped = checkIfTrippedState() or humanoid.Sit
-        local fallingFast = torso.AssemblyLinearVelocity.Y < -MAX_FALL_TO_GRAB
-        local canTrussClimb
-        if onLadder then
-            canTrussClimb = not tripped and isFlyBug(REACH_LIFT, REACH_HEIGHT)
-        else
-            canTrussClimb = not tripped and isFlyBug(0)
-        end
-        local holding = canTrussClimb and not releasing and (onLadder or (moving and not fallingFast))
-        if holding and onLadder then
-            local stickLetGo = timePeriod <= 14 and now - lastStick > LET_GO_TIME
-            local pushedAway = climbFacing ~= nil and moveDir.Magnitude >= 0.1 and moveDir:Dot(climbFacing) < -0.3
-            if stickLetGo or pushedAway then
-                stopClimbing()
-                holding = false
-            end
-        end
-        local hanging = false
-        if holding then
-            if not grabStartY then
-                grabStartY = torso.Position.Y
-                local look = torso.CFrame.LookVector * xzVector
-                climbFacing = look.Magnitude > 0.01 and look.Unit or nil
-            end
-            lastGrab = now
-            if glideVelocity.Parent ~= nil then glideVelocity.Parent = nil end
+        local canTrussClimb = isFlyBug() and not checkIfTrippedState()
+
+        if not humanoid.Sit and humanoid.MoveDirection.Magnitude > 0.01 and glideVelocity.Parent == nil and canTrussClimb then
             local damp = timePeriod <= 14 and 0.8 or 0.4
             humanoid:ChangeState(Enum.HumanoidStateType.Climbing)
-            -- (the sideways speed damped as before, but no kick up: 13 every frame, then gravity in between, floated
-            -- you up in hops)
-            local v = torso.AssemblyLinearVelocity
-            torso.AssemblyLinearVelocity = vec3.new(v.X * damp, v.Y, v.Z * damp)
-            -- the stick let go for a moment: hang there
-            local climbSpeed = (now - lastStick <= 0.1) and humanoid.WalkSpeed * CLIMB_SPEED_SHARE or 0
-            climbForce.Velocity = Vector3.new(0, climbSpeed, 0)
-            climbForce.Parent = rootPart
-        elseif onLadder and not releasing and not tripped then
-            if torso.Position.Y - grabStartY >= TOP_OUT_MIN_RISE and #partsAhead(REACH_UP) == 0 then
-                -- the real top (nothing at all in front of the chest): a step onto it, the way you were facing
-                local v = torso.AssemblyLinearVelocity
-                local dir = climbFacing or (moveDir * xzVector)
-                torso.AssemblyLinearVelocity = Vector3.new(dir.X * TOP_OUT_SPEED, math.max(v.Y, TOP_OUT_UP), dir.Z * TOP_OUT_SPEED)
-                grabStartY, climbFacing = nil, nil
-                climbForce.Parent = nil
-            else
-                -- nothing within reach for a moment (a wall above, the ladder's side): hang there, then fall
-                hanging = true
-                climbForce.Velocity = Vector3.new(0, 0, 0)
-                climbForce.Parent = rootPart
-            end
-        else
-            if grabStartY and now - lastGrab > GRAB_GRACE then grabStartY, climbFacing = nil, nil end
-            climbForce.Parent = nil
+            torso.AssemblyLinearVelocity = torso.AssemblyLinearVelocity * (xzVector * damp) + vec3.new(0, 13, 0)
         end
-        grabbingNow = holding or hanging
-        -- (2007 Animation.lua reads this to show its climbing pose, not its falling one)
-        BPGenv.BPClimbing = (grabbingNow or humanoid:GetState() == Enum.HumanoidStateType.Climbing) or nil
-        handleClimbing()
 
         currentSquash = ExtraUtil.Lerp(currentSquash, squashOffsetTarget, 0.5)
         -- (Addtion-Scripts) R15: no landing squash on the hip height. Roblox's R15 Animate plays the
@@ -728,16 +611,6 @@ local function setupCharacterPhysics(character)
         end
     end))
 
-    -- (Addtion-Scripts) the physics step can flip the state to Freefall between two frames (and the animation
-    -- with it): put Climbing back while holding on to a ladder, only while really holding on
-    table.insert(activeConnections, RunService.Heartbeat:Connect(function()
-        if not character.Parent or humanoid.Health <= 0 then return end
-        if grabbingNow and not releasing and humanoid:GetState() ~= Enum.HumanoidStateType.Climbing
-            and not checkIfTrippedState() and not humanoid.Sit then
-            pcall(function() humanoid:ChangeState(Enum.HumanoidStateType.Climbing) end)
-        end
-    end))
-
     local glideTouchConnections = {}
     local raycastParams = RaycastParams.new()
     raycastParams.FilterDescendantsInstances = { character, workspace.CurrentCamera }
@@ -806,7 +679,6 @@ local function setupCharacterPhysics(character)
     end))
 
     humanoid.Died:Once(function()
-        BPGenv.BPClimbing = nil
         cleanupConnections()
         if climbConnection then
             climbConnection:Disconnect()
@@ -829,6 +701,5 @@ local characterAddedConnection = LocalPlayer.CharacterAdded:Connect(setupCharact
 BPGenv.__Physics2006Cleanup = function()
     characterAddedConnection:Disconnect()
     cleanupConnections()
-    BPGenv.BPClimbing = nil
     BPGenv.__Physics2006Cleanup = nil
 end
