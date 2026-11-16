@@ -1,9 +1,13 @@
--- [[ 2013 BACKPACK (touch and mouse; 3 slots on phones, 10 on tablets and PC) for the regular 2013 GUI ]]
+-- [[ 2013 BACKPACK (touch and mouse; the PC layout, 10 slots, on every screen) for the regular 2013 GUI ]]
 -- The 2013 GUI (Legacy's payload) keeps its own tablet backpack on PC and tablets. It drags tools with Roblox's old
 -- Draggable property, which only switches on while the mouse is over a tool: touch does nothing, and a tool dropped
 -- outside a slot is taken off the hotbar and never seen again. This replaces it with the backpack of the 2013 mobile
 -- GUI (touch and mouse drag; nothing is lost when a drop misses; keys 1-0 equip). Loaded by the addition script
 -- when 2013 is the topbar; the 2013 mobile GUI has it built in. It starts once per server.
+-- (Addtion-Scripts) The regular 2013 GUI is the PC one, so it gets the PC inventory and backpack on a phone too: ten
+-- hotbar slots and the big backpack window (it had the 2013 mobile GUI's three slots on a phone). The hotbar sits
+-- 43 pixels up from the bottom, as the 2013 PC GUI keeps it, so the chat bar and the health bar fit under
+-- it; the window keeps as many rows (up to 4) as fit on the screen, the rest scroll.
 
 do
     local Players = game:GetService("Players")
@@ -45,15 +49,25 @@ do
         local SLOT_SIZE = 54
         local SLOT_PITCH = 60
         local LOADOUT_WIDTH = SLOT_COUNT * SLOT_PITCH
-        local LOADOUT_Y = -85
+        -- (the PC layout: the hotbar 43 px up from the bottom, like the 2013 PC GUI's own, so the chat bar and the
+        -- health bar fit under it)
+        local LIFT = desktop and 12 or 0
+        local LOADOUT_Y = -85 - LIFT
         local CELL_SIZE = 52
         local CELL_GAP = 2
         local GRID_COLUMNS = desktop and 7 or 3
-        local GRID_ROWS = desktop and 4 or 2
+        local GRID_ROWS = 2
+        if desktop then
+            -- as many rows as fit between the top bar and the hotbar (a phone's screen is short), at most 4
+            local screenHeight = 0
+            pcall(function() screenHeight = workspace.CurrentCamera.ViewportSize.Y end)
+            local room = screenHeight - 40 - (88 + LIFT) - 32 - 15
+            GRID_ROWS = math.clamp(math.floor(room / (CELL_SIZE + CELL_GAP)), 2, 4)
+        end
         -- window: the grid (14 px in from the left, 32 down), then the scroll bar
         local PANEL_WIDTH = 14 + GRID_COLUMNS * (CELL_SIZE + CELL_GAP) - CELL_GAP + 12 + 19
         local PANEL_HEIGHT = 32 + GRID_ROWS * (CELL_SIZE + CELL_GAP)
-        local PANEL_BOTTOM = -88
+        local PANEL_BOTTOM = -88 - LIFT
         local EQUIPPED_SCALE = 1.18
         local DRAG_THRESHOLD = 8
         local slideInfo = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -465,7 +479,7 @@ do
                 tab.Position = UDim2.new(0.5, -60, 1, PANEL_BOTTOM - PANEL_HEIGHT - 15)
             else
                 tab.Image = TAB_UP_IMAGE
-                tab.Position = UDim2.new(0.5, -60, 1, #filledSlots > 0 and -108 or -44)
+                tab.Position = UDim2.new(0.5, -60, 1, (#filledSlots > 0 and -108 or -44) - LIFT)
             end
 
             for index, tool in ipairs(tools) do
@@ -644,12 +658,13 @@ do
             return
         end
         legacyGui:SetAttribute("Backpack2013Started", true)
-        local ok, err = pcall(startPhoneBackpack, legacyGui, not isPhoneScreen())
+        -- (the regular 2013 GUI is the PC one: its PC inventory and backpack on every screen, a phone's too)
+        local ok, err = pcall(startPhoneBackpack, legacyGui, true)
         if not ok then
             legacyGui:SetAttribute("Backpack2013Started", nil)
             warn("[2013 backpack] did not start: " .. tostring(err))
         else
-            print("[2013 backpack] started (" .. (isPhoneScreen() and "phone" or "tablet / PC") .. ")")
+            print("[2013 backpack] started (the PC inventory and backpack, on a " .. (isPhoneScreen() and "phone" or "tablet / PC") .. ")")
         end
     end)
 end

@@ -8,6 +8,9 @@
 --     phones unless BPChatBar is set on NewRobloxGui. This sets it, and hides the Chat button
 --     ("TouchDeviceChatButton").
 -- Nothing is done for the 2013 mobile GUI or the 2011 GUI (it has its own bar), nor on a PC.
+-- While the bar shows, nothing of the GUI is left under it: on a phone the 2012 / 2013 GUIs put their Menu / Exit
+-- buttons and zoom buttons right at the bottom, and Bloxy's 2013 health bar sits 4 pixels from the bottom, all in
+-- the bar's strip. Each such thing is lifted just enough to clear the bar (and put back when the bar goes).
 -- getgenv().BPChatBar = { Enable, Disable, IsOn }
 
 local Env = (getgenv and getgenv()) or _G
@@ -123,6 +126,71 @@ local function showButtons()
 	table.clear(hiddenButtons)
 end
 
+-- LIFTING what the bar would cover: the GUI's own things along the bottom (Menu / Exit, the zoom buttons, the
+-- Backpack button) and Bloxy's health bar (Old Health Bar's follows it). Each is moved up by as much as it reaches
+-- into the bar's strip, plus 2 pixels. When something else moves it (the GUI after a new screen size, Old Gui Fix
+-- putting 2012's health bar next to its Backpack button) it is let go, and looked at again a second later: lifted
+-- from its new place only if that is still under the bar (so two scripts never keep moving the same thing).
+local lifted = setmetatable({}, { __mode = "k" }) -- thing -> { base = its own position, ours = where we put it, conn }
+local LIFT_GAP = 2
+
+local function bottomGap(obj)
+	local holder = obj:FindFirstAncestorWhichIsA("LayerCollector")
+	if not (holder and holder:IsA("GuiBase2d")) then return nil end
+	return (holder.AbsolutePosition.Y + holder.AbsoluteSize.Y) - (obj.AbsolutePosition.Y + obj.AbsoluteSize.Y), holder
+end
+
+local function liftOne(obj)
+	if lifted[obj] or not obj:IsA("GuiObject") or not obj.Visible then return end
+	local gap, holder = bottomGap(obj)
+	if not gap then return end
+	local need = BAR_HEIGHT + LIFT_GAP - gap
+	if need <= 0 then return end -- (clear of the bar already)
+	local size = obj.AbsoluteSize
+	-- only small things along the bottom: not a whole-screen frame, window or shade
+	if size.Y > holder.AbsoluteSize.Y * 0.4 or size.X > holder.AbsoluteSize.X * 0.7 or size.Y < 2 then return end
+	local rec = { base = obj.Position, need = math.ceil(need) }
+	local function ours()
+		local b = rec.base
+		return UDim2.new(b.X.Scale, b.X.Offset, b.Y.Scale, b.Y.Offset - rec.need)
+	end
+	rec.ours = ours()
+	lifted[obj] = rec
+	rec.conn = obj:GetPropertyChangedSignal("Position"):Connect(function()
+		if obj.Position == rec.ours then return end -- (our own change)
+		-- moved by something else: let go (the next look lifts it again only if it is still under the bar)
+		pcall(function() rec.conn:Disconnect() end)
+		if lifted[obj] == rec then lifted[obj] = nil end
+	end)
+	obj.Position = rec.ours
+end
+
+local function dropLifts()
+	for obj, rec in pairs(lifted) do
+		pcall(function() rec.conn:Disconnect() end)
+		pcall(function()
+			if obj.Position == rec.ours then obj.Position = rec.base end
+		end)
+	end
+	table.clear(lifted)
+end
+
+local function liftAll(legacy)
+	local controls = legacy:FindFirstChild("ControlFrame")
+	for _, parent in ipairs({ legacy, controls }) do
+		if parent then
+			for _, child in ipairs(parent:GetChildren()) do
+				if child:IsA("GuiObject") and child ~= controls then pcall(liftOne, child) end
+			end
+		end
+	end
+	for _, holder in ipairs(holders()) do
+		local healthGui = holder:FindFirstChild("CustomHealthGui")
+		local frame = healthGui and healthGui:FindFirstChild("HealthFrame")
+		if frame then pcall(liftOne, frame) end
+	end
+end
+
 local function send(text)
 	text = string.gsub(text or "", "^%s+", "")
 	text = string.gsub(text, "%s+$", "")
@@ -235,6 +303,11 @@ function api.Enable()
 				showButtons()
 			end
 			local wanted = mode == "ours"
+			if wanted then
+				pcall(liftAll, legacy)
+			else
+				dropLifts()
+			end
 			if gui and gui.Enabled ~= wanted then
 				gui.Enabled = wanted
 				if not wanted and box and box:IsFocused() then pcall(function() box:ReleaseFocus() end) end
@@ -256,6 +329,7 @@ function api.Disable()
 	table.clear(connections)
 	mark(nil)
 	showButtons()
+	dropLifts()
 	if gui then pcall(function() gui:Destroy() end) end
 	gui, hint, box = nil, nil, nil
 	print("[Chat Bar] Off: the GUI's own Chat button is back")
