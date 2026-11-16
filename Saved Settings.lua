@@ -140,6 +140,9 @@ local HAMMER_BOXES = {
 	HideMobileControlsCheckbox = "isHideMobileControlsEnabled",
 	IWLegacyLightingCheckbox = "isIWLegacyLightingEnabled",
 	VoxelLightingCheckbox = "isVoxelLightingEnabled",
+	OldMoonCheckbox = "isOldMoonEnabled",
+	Shadows2014Checkbox = "is2014ShadowsEnabled",
+	SlipperyWalkCheckbox = "isSlipperyWalkEnabled",
 	ChatBarCheckbox = "isChatBarEnabled",
 	Pre2018CameraCheckbox = "isPre2018CameraEnabled",
 }

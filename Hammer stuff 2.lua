@@ -75,6 +75,9 @@ task.spawn(function()
 		isHideMobileControlsEnabled = config.isHideMobileControlsEnabled or false,
 		isIWLegacyLightingEnabled = config.isIWLegacyLightingEnabled or false,
 		isVoxelLightingEnabled  = config.isVoxelLightingEnabled or false,
+		isOldMoonEnabled        = config.isOldMoonEnabled or false,
+		is2014ShadowsEnabled    = config.is2014ShadowsEnabled or false,
+		isSlipperyWalkEnabled   = config.isSlipperyWalkEnabled or false,
 		isChatBarEnabled        = config.isChatBarEnabled or false,
 		isPre2018CameraEnabled  = config.isPre2018CameraEnabled or false,
 		fpsCap                  = math.max(0, math.floor(tonumber(config.fpsCap) or 0)),
@@ -3753,7 +3756,9 @@ task.spawn(function()
 	-- PrioritizeLightingQuality off (where Technology is not followed any more, the newest clients' own setting for
 	-- that look), GlobalShadows on (the voxel shadows) and no environment lighting (2013 had none). The game's
 	-- colours and time of day are left alone. Untick to put back each value it changed (if the game hasn't changed
-	-- it since). Not together with legacy lighting / iw legacy lighting / remove pro (they set other lighting).
+	-- it since). Not together with legacy lighting / remove pro (they set other lighting). Together with iw legacy
+	-- lighting: its look with these shadows on; the game's own values are kept by whichever started first, and
+	-- the one that stops last gives them back (getgenv().LegacyLightingGameValues / BPVoxelGameValues).
 	------------------------------------------------------------
 	do
 		local genv = (getgenv and getgenv()) or _G
@@ -3789,16 +3794,29 @@ task.spawn(function()
 				and read("PrioritizeLightingQuality") == true
 		end
 
+		local function iwRunning()
+			return type(genv.LegacyLightingStop) == "function"
+		end
+
 		function actions.applyVoxelLighting()
 			if vxState.active then return end
 			vxState.active = true
 			vxState.written = {}
+			genv.BPVoxelLightingOn = true
 			local saved = {}
 			for _, prop in ipairs({ "Technology", "LightingStyle", "PrioritizeLightingQuality", "GlobalShadows",
 				"EnvironmentDiffuseScale", "EnvironmentSpecularScale" }) do
 				saved[prop] = read(prop)
 			end
+			-- iw legacy lighting on first: what it has set is not the game's; the game's own is what it kept
+			local iwGame = genv.LegacyLightingGameValues
+			if iwRunning() and type(iwGame) == "table" then
+				for _, prop in ipairs({ "GlobalShadows", "LightingStyle", "PrioritizeLightingQuality" }) do
+					if iwGame[prop] ~= nil then saved[prop] = iwGame[prop] end
+				end
+			end
 			vxState.saved = saved
+			genv.BPVoxelGameValues = saved
 			local report = {}
 
 			-- the technology (the game's own kept for whichever lighting option gives it back last)
@@ -3844,8 +3862,7 @@ task.spawn(function()
 					end
 				end
 			end
-			genv.BPVoxelLightingOn = true
-			print("[Voxel Lighting] On: " .. table.concat(report, "; ") .. ".")
+			print("[Voxel Lighting] On: " .. table.concat(report, "; ") .. (iwRunning() and "; together with iw legacy lighting" or "") .. ".")
 
 			-- unticked while it was starting
 			if not state.isVoxelLightingEnabled then actions.restoreVoxelLighting() end
@@ -3855,17 +3872,27 @@ task.spawn(function()
 			if not vxState.active then return end
 			vxState.active = false
 			genv.BPVoxelLightingOn = nil
+			genv.BPVoxelGameValues = nil
 			for _, c in ipairs(vxState.conns) do pcall(function() c:Disconnect() end) end
 			vxState.conns = {}
 			local saved = vxState.saved or {}
 			vxState.saved = nil
+			-- iw legacy lighting still on: its own look stays (Soft lighting, Voxel, no environment light, no shadows),
+			-- and it gives the game's values back when it stops
+			local iwOn = iwRunning()
 			-- each value put back only if it is still the one written here (the game's own changes stay)
 			for prop, value in pairs(vxState.written) do
-				if prop ~= "Technology" and saved[prop] ~= nil and read(prop) == value then
-					write(prop, saved[prop])
+				if prop ~= "Technology" and read(prop) == value then
+					if iwOn then
+						if prop == "GlobalShadows" then write(prop, false) end
+					elseif saved[prop] ~= nil then
+						write(prop, saved[prop])
+					end
 				end
 			end
-			if vxState.written.Technology ~= nil and read("Technology") == vxState.written.Technology then
+			if iwOn then
+				-- (the technology and the game's own kept in BPGameTechnology are left for it)
+			elseif vxState.written.Technology ~= nil and read("Technology") == vxState.written.Technology then
 				local original = genv.BPGameTechnology
 				if original == nil then original = saved.Technology end
 				genv.BPGameTechnology = nil
@@ -3877,6 +3904,350 @@ task.spawn(function()
 			vxState.keptGameTech = false
 			vxState.written = {}
 			print("[Voxel Lighting] Off, the game's lighting put back.")
+		end
+	end
+
+	------------------------------------------------------------
+	-- 22c. FROM ROWIND: OLD MOON, 2014 SHADOWS, SLIPPERY WALK
+	-- Rowind's own client scripts (its OldMoon, 2014CharacterShadowsTEST and SlipperyHumanoid), made to run from an
+	-- executor in any game, and on R15 too. Each one is undone by unticking.
+	------------------------------------------------------------
+	do
+		local Workspace = game:GetService("Workspace")
+
+		-- OLD MOON (Rowind's OldMoon, its pre-2014 look): Roblox's own moon is hidden (MoonAngularSize 0) and a big
+		-- faint moon picture is drawn far away opposite the sun instead, fading in at dusk (brightest 18:00 - 23:00),
+		-- out at dawn, and a faint ghost of it by day. Not shown if the game's sky hides the sun and moon.
+		local MOON_IMAGE = "rbxassetid://121399502791092"
+		local moonState = { active = false }
+		local MOON_AXIS = Vector3.new(-0.35, 0, 1).Unit
+
+		local function moonLook(t)
+			-- (Rowind's table for the clients up to 2013: how see-through the picture is, and how bright)
+			local clear, bright = 0.95, 12
+			if t >= 15 and t < 17.5 then
+				if t < 17 then clear = 0.95 + (t - 15) / 2 * 0.1 else clear = 1 end
+				bright = 12
+			elseif t >= 17.5 and t < 18 then
+				local a = (t - 17.5) / 0.5
+				clear, bright = 1 - a * 0.8, 12 - a * 10
+			elseif t >= 18 and t < 23 then
+				clear, bright = 0.25, 2
+			elseif t >= 23 then
+				clear, bright = 0.25 + (t - 23) * 0.8, 2
+			elseif t <= 5.83 then
+				clear, bright = 1, 2
+			elseif t < 6.16 then
+				local a = (t - 5.83) / 0.33
+				clear, bright = 1 - a * 0.1, 2 + a * 29
+			elseif t >= 12 and t < 14 then
+				clear, bright = 0.95, 30 - (t - 12) / 2 * 18
+			elseif t >= 6.16 and t < 12 then
+				clear, bright = 0.95, 30
+			end
+			return math.min(clear, 1), bright
+		end
+
+		function actions.applyOldMoon()
+			if moonState.active then return end
+			moonState.active = true
+			local conns, skies = {}, {}
+			moonState.conns, moonState.skies = conns, skies
+			local function hideMoon(sky)
+				if skies[sky] ~= nil then return end
+				local ok, size = pcall(function() return sky.MoonAngularSize end)
+				if ok then
+					skies[sky] = size
+					pcall(function() sky.MoonAngularSize = 0 end)
+				end
+			end
+			for _, c in ipairs(Lighting:GetChildren()) do
+				if c:IsA("Sky") then hideMoon(c) end
+			end
+			table.insert(conns, Lighting.ChildAdded:Connect(function(c)
+				if moonState.active and c:IsA("Sky") then hideMoon(c) end
+			end))
+
+			local part = Instance.new("Part")
+			part.Name = "BPOldMoon"
+			part.Transparency = 1
+			part.Anchored = true
+			part.CanCollide = false
+			part.CanQuery = false
+			part.CanTouch = false
+			part.CastShadow = false
+			part.Size = Vector3.new(1, 1, 1)
+			local gui = Instance.new("BillboardGui")
+			gui.Name = "Interface"
+			gui.Size = UDim2.new(1900, 0, 1900, 0)
+			gui.LightInfluence = 0
+			gui.Brightness = 12
+			gui.Enabled = false
+			gui.Parent = part
+			local img = Instance.new("ImageLabel")
+			img.Name = "Texture"
+			img.BackgroundTransparency = 1
+			img.Size = UDim2.new(1, 0, 1, 0)
+			img.Image = MOON_IMAGE
+			img.ImageTransparency = 0.95
+			img.Parent = gui
+			part:SetAttribute("BPOldMoon", true)
+			moonState.part = part
+
+			table.insert(conns, RunService.Heartbeat:Connect(function()
+				local cam = Workspace.CurrentCamera
+				if not (moonState.active and cam) then return end
+				if part.Parent ~= cam then part.Parent = cam end
+				local sky = Lighting:FindFirstChildOfClass("Sky")
+				local shown = not sky or sky.CelestialBodiesShown
+				gui.Enabled = shown
+				if not shown then return end
+				local dir = CFrame.fromAxisAngle(MOON_AXIS, -math.pi / 2) * Lighting:GetSunDirection()
+				part.CFrame = CFrame.new(cam.CFrame.Position + dir * 10000)
+				local clear, bright = moonLook(Lighting.ClockTime)
+				gui.Brightness = bright
+				img.ImageTransparency = clear
+			end))
+			print("[Old Moon] On.")
+			if not state.isOldMoonEnabled then actions.restoreOldMoon() end
+		end
+
+		function actions.restoreOldMoon()
+			if not moonState.active then return end
+			moonState.active = false
+			for _, c in ipairs(moonState.conns or {}) do pcall(function() c:Disconnect() end) end
+			if moonState.part then pcall(function() moonState.part:Destroy() end) end
+			for sky, size in pairs(moonState.skies or {}) do
+				pcall(function()
+					if sky.MoonAngularSize == 0 then sky.MoonAngularSize = size end
+				end)
+			end
+			moonState.conns, moonState.skies, moonState.part = nil, nil, nil
+			print("[Old Moon] Off, the game's moon back.")
+		end
+
+		-- 2014 SHADOWS (Rowind's 2014 character shadow test, without its Studio-only parts): each character casts a
+		-- soft dark blob instead of its own shadow, thrown away from the sun onto whatever is below (up to 27 studs),
+		-- longer the lower the sun, fainter the further it falls and on surfaces turned from the sun, none at night.
+		-- Drawn with three flat discs on top of each other (darkest in the middle), so no picture has to load.
+		-- Characters within 150 studs, the nearest 16.
+		local SHADOW_REACH = 27
+		local SHADOW_RANGE = 150
+		local MAX_SHADOWS = 16
+		local LAYERS = { 1, 0.78, 0.56 }  -- sizes of the three discs
+		local shState = { active = false }
+
+		local function newDisc(scale)
+			local p = Instance.new("Part")
+			p.Name = "BP2014Shadow"
+			p.Anchored = true
+			p.CanCollide = false
+			p.CanQuery = false
+			p.CanTouch = false
+			p.CastShadow = false
+			p.Material = Enum.Material.SmoothPlastic
+			p.Color = Color3.new(0, 0, 0)
+			p.Size = Vector3.new(1, 0.02, 1)
+			p.TopSurface = Enum.SurfaceType.Smooth
+			p.BottomSurface = Enum.SurfaceType.Smooth
+			local mesh = Instance.new("SpecialMesh")
+			mesh.MeshType = Enum.MeshType.Sphere
+			mesh.Parent = p
+			p:SetAttribute("BPShadowScale", scale)
+			return p
+		end
+
+		function actions.apply2014Shadows()
+			if shState.active then return end
+			shState.active = true
+			local conns = {}
+			local casters = {}  -- character -> { discs = {...}, castShadow = { part -> before } }
+			shState.conns, shState.casters = conns, casters
+			local folder = Instance.new("Folder")
+			folder.Name = "BP2014Shadows"
+			shState.folder = folder
+			local params = RaycastParams.new()
+			params.FilterType = Enum.RaycastFilterType.Exclude
+			params.IgnoreWater = false
+
+			local function noOwnShadow(rec, part)
+				if part:IsA("BasePart") and rec.castShadow[part] == nil then
+					rec.castShadow[part] = part.CastShadow
+					pcall(function() part.CastShadow = false end)
+				end
+			end
+			local function giveBack(rec)
+				for _, d in ipairs(rec.discs) do pcall(function() d:Destroy() end) end
+				for part, before in pairs(rec.castShadow) do
+					pcall(function() if part.Parent then part.CastShadow = before end end)
+				end
+				for _, c in ipairs(rec.conns) do pcall(function() c:Disconnect() end) end
+			end
+			local function caster(char)
+				local rec = casters[char]
+				if rec then return rec end
+				rec = { discs = {}, castShadow = {}, conns = {} }
+				for _, scale in ipairs(LAYERS) do
+					local d = newDisc(scale)
+					d.Parent = folder
+					table.insert(rec.discs, d)
+				end
+				for _, d in ipairs(char:GetDescendants()) do noOwnShadow(rec, d) end
+				table.insert(rec.conns, char.DescendantAdded:Connect(function(d) noOwnShadow(rec, d) end))
+				casters[char] = rec
+				return rec
+			end
+			local function hide(rec)
+				for _, d in ipairs(rec.discs) do d.Transparency = 1 end
+			end
+
+			table.insert(conns, RunService.RenderStepped:Connect(function()
+				if not shState.active then return end
+				local cam = Workspace.CurrentCamera
+				if not cam then return end
+				if folder.Parent ~= cam then folder.Parent = cam end
+				local camPos = cam.CFrame.Position
+				-- the characters near enough, nearest first
+				local list, exclude = {}, { folder }
+				for _, plr in ipairs(Players:GetPlayers()) do
+					local char = plr.Character
+					local root = char and char:FindFirstChild("HumanoidRootPart")
+					local hum = char and char:FindFirstChildOfClass("Humanoid")
+					if root and hum and hum.Health > 0 then
+						table.insert(exclude, char)
+						local dist = (root.Position - camPos).Magnitude
+						if dist <= SHADOW_RANGE then table.insert(list, { char = char, root = root, dist = dist }) end
+					end
+				end
+				table.sort(list, function(a, b) return a.dist < b.dist end)
+				params.FilterDescendantsInstances = exclude
+				local seen = {}
+				local sun = Lighting:GetSunDirection()
+				local away = -sun
+				local stretch = math.clamp((1 - (sun.Y + 1) / 2) * 4 + 1, 1, 3) -- (long at sunset, round at noon)
+				for i = 1, math.min(#list, MAX_SHADOWS) do
+					local e = list[i]
+					local rec = caster(e.char)
+					seen[e.char] = true
+					local body = e.char:FindFirstChild("Torso") or e.char:FindFirstChild("UpperTorso") or e.root
+					local hit = sun.Y > 0.02 and Workspace:Raycast(body.Position, away * SHADOW_REACH, params) or nil
+					if not hit then
+						hide(rec)
+					else
+						local up = hit.Normal
+						local along = away - up * away:Dot(up)
+						if along.Magnitude < 0.01 then along = up:Cross(Vector3.new(1, 0, 0)) end
+						if along.Magnitude < 0.01 then along = up:Cross(Vector3.new(0, 0, 1)) end
+						along = along.Unit
+						local right = along:Cross(up)
+						local dist = (hit.Position - body.Position).Magnitude
+						local near = dist < 2.5 and dist / 2.5 or 1 - (dist - 2.5) / (SHADOW_REACH - 2.5)
+						near = math.clamp(near, 0.05, 1)
+						-- how see-through, as Rowind adds it up: fainter far away, on surfaces turned from the sun,
+						-- and when the character is see-through (first person included)
+						local clear = 0.35 + (1 - near) / 2 + (1 - (up:Dot(sun) + 1) / 2)
+						local ok, bodyClear = pcall(function()
+							return 1 - (1 - body.Transparency) * (1 - body.LocalTransparencyModifier)
+						end)
+						if ok then clear = clear + bodyClear end
+						clear = math.clamp(clear, 0, 1)
+						-- three discs on top of each other: each lets `each` of the light through, so the middle, where
+						-- all three are, lets `clear` through (each^3 = clear), and towards the edge it gets lighter
+						local each = clear ^ (1 / #LAYERS)
+						local width = 4.2 * near
+						local length = width * (1 + stretch) / 2
+						local center = hit.Position + up * 0.03 + along * (length - width) / 2
+						for _, d in ipairs(rec.discs) do
+							local scale = d:GetAttribute("BPShadowScale") or 1
+							d.Size = Vector3.new(width * scale, 0.02, length * scale)
+							d.CFrame = CFrame.fromMatrix(center, right, up)
+							d.Transparency = each
+						end
+					end
+				end
+				for char, rec in pairs(casters) do
+					if not seen[char] then
+						if char.Parent then
+							hide(rec)
+						else
+							giveBack(rec)
+							casters[char] = nil
+						end
+					end
+				end
+			end))
+			print("[2014 Shadows] On.")
+			if not state.is2014ShadowsEnabled then actions.restore2014Shadows() end
+		end
+
+		function actions.restore2014Shadows()
+			if not shState.active then return end
+			shState.active = false
+			for _, c in ipairs(shState.conns or {}) do pcall(function() c:Disconnect() end) end
+			for char, rec in pairs(shState.casters or {}) do
+				for _, d in ipairs(rec.discs) do pcall(function() d:Destroy() end) end
+				for part, before in pairs(rec.castShadow) do
+					pcall(function() if part.Parent then part.CastShadow = before end end)
+				end
+				for _, c in ipairs(rec.conns) do pcall(function() c:Disconnect() end) end
+			end
+			if shState.folder then pcall(function() shState.folder:Destroy() end) end
+			shState.conns, shState.casters, shState.folder = nil, nil, nil
+			print("[2014 Shadows] Off, characters cast their own shadows again.")
+		end
+
+		-- SLIPPERY WALK (Rowind's SlipperyHumanoid, its late 2015 - 2016 clients): let go of the stick and you slide
+		-- to a stop instead of stopping dead (each frame a quarter of the sideways speed is taken off). R6 and R15;
+		-- not while sitting (it would brake the vehicle).
+		local slState = { active = false }
+
+		local function slipperyCharacter(char)
+			if not slState.active or not char then return end
+			local root = char:WaitForChild("HumanoidRootPart", 10)
+			local hum = char:WaitForChild("Humanoid", 10)
+			if not (slState.active and root and hum) then return end
+			local old = root:FindFirstChild("BPSlippery")
+			if old then old:Destroy() end
+			local att = Instance.new("Attachment")
+			att.Name = "BPSlippery"
+			local lv = Instance.new("LinearVelocity")
+			lv.Attachment0 = att
+			lv.ForceLimitMode = Enum.ForceLimitMode.PerAxis
+			lv.MaxAxesForce = Vector3.new(10000, 0, 10000)
+			lv.VelocityConstraintMode = Enum.VelocityConstraintMode.Vector
+			lv.Parent = att
+			att.Parent = root
+			table.insert(slState.made, att)
+			table.insert(slState.conns, RunService.Heartbeat:Connect(function()
+				if not slState.active or not att.Parent then return end
+				if hum.MoveDirection.Magnitude > 0 or hum.SeatPart or hum.PlatformStand or hum.Health <= 0 then
+					lv.MaxAxesForce = Vector3.zero
+				else
+					lv.MaxAxesForce = Vector3.new(10000, 0, 10000)
+					lv.VectorVelocity = root.AssemblyLinearVelocity * Vector3.new(0.75, 0, 0.75)
+				end
+			end))
+		end
+
+		function actions.applySlipperyWalk()
+			if slState.active then return end
+			slState.active = true
+			slState.conns, slState.made = {}, {}
+			table.insert(slState.conns, player.CharacterAdded:Connect(function(char)
+				task.spawn(slipperyCharacter, char)
+			end))
+			if player.Character then task.spawn(slipperyCharacter, player.Character) end
+			print("[Slippery Walk] On.")
+			if not state.isSlipperyWalkEnabled then actions.restoreSlipperyWalk() end
+		end
+
+		function actions.restoreSlipperyWalk()
+			if not slState.active then return end
+			slState.active = false
+			for _, c in ipairs(slState.conns or {}) do pcall(function() c:Disconnect() end) end
+			for _, inst in ipairs(slState.made or {}) do pcall(function() inst:Destroy() end) end
+			slState.conns, slState.made = nil, nil
+			print("[Slippery Walk] Off.")
 		end
 	end
 
@@ -4659,6 +5030,18 @@ task.spawn(function()
 	})
 
 	createAddonRow({
+		containerName = "OldMoonContainer",
+		checkboxName  = "OldMoonCheckbox",
+		helpName      = "OldMoonHelpButton",
+		label         = "old moon",
+		yPos          = startY,
+		stateKey      = "isOldMoonEnabled",
+		onEnable      = actions.applyOldMoon,
+		onDisable     = actions.restoreOldMoon,
+		helpText      = "From Rowind: the old moon. Roblox's own moon is hidden and a big faint moon is drawn far away instead, fading in at dusk (clearest 18:00 - 23:00), out at dawn, with a faint ghost of it by day. Follows the game's clock. Not shown if the game's sky hides the sun and moon. The moon picture is Rowind's: if it doesn't load in a game, nothing shows. Untick to put the game's moon back."
+	})
+
+	createAddonRow({
 		containerName = "RemoveProContainer",
 		checkboxName  = "RemoveProCheckbox",
 		helpName      = "RemoveProHelpButton",
@@ -4691,10 +5074,9 @@ task.spawn(function()
 		label         = "iw legacy lighting",
 		yPos          = startY,
 		stateKey      = "isIWLegacyLightingEnabled",
-		exclusiveWith = { "isVoxelLightingEnabled" },
 		onEnable      = actions.applyIWLegacyLighting,
 		onDisable     = actions.restoreIWLegacyLighting,
-		helpText      = "The 2017 legacy lighting, only on your screen: brighter light with darker colors like the old Voxel look, the game's bloom / atmosphere / sun rays off, terrain darkened, no 3D clouds or grass blades. The game's time of day keeps going. Works with classic faces, and can be on together with legacy lighting. Untick to put the game back as it was (lighting, effects, colors, terrain)."
+		helpText      = "The 2017 legacy lighting, only on your screen: brighter light with darker colors like the old Voxel look, the game's bloom / atmosphere / sun rays off, terrain darkened, no 3D clouds or grass blades. The game's time of day keeps going. Works with classic faces, and can be on together with legacy lighting or voxel lighting (with voxel lighting its shadows stay on). Untick to put the game back as it was (lighting, effects, colors, terrain)."
 	})
 
 	createAddonRow({
@@ -4704,10 +5086,22 @@ task.spawn(function()
 		label         = "voxel lighting",
 		yPos          = startY,
 		stateKey      = "isVoxelLightingEnabled",
-		exclusiveWith = { "isLegacyLightingEnabled", "isIWLegacyLightingEnabled", "isRemoveProEnabled" },
+		exclusiveWith = { "isLegacyLightingEnabled", "isRemoveProEnabled" },
 		onEnable      = actions.applyVoxelLighting,
 		onDisable     = actions.restoreVoxelLighting,
-		helpText      = "2013 voxel lighting (as in Retro Studio's 2013 places), only on your screen: light and shadows worked out on a 4-stud grid, so shadows are soft and blocky with a blob under every character, no sharp shadows and no shine. The game's colors and time of day stay. Needs an executor that can set hidden properties for the full effect. Not together with legacy lighting, iw legacy lighting or remove pro. Hammer stuff's \"no shadows\" turns its shadows off. Untick to put the game's lighting back."
+		helpText      = "2013 voxel lighting (as in Retro Studio's 2013 places), only on your screen: light and shadows worked out on a 4-stud grid, so shadows are soft and blocky with a blob under every character, no sharp shadows and no shine. The game's colors and time of day stay. Needs an executor that can set hidden properties for the full effect. Can be on together with iw legacy lighting (its look with these shadows). Not together with legacy lighting or remove pro. Hammer stuff's \"no shadows\" turns its shadows off. Untick to put the game's lighting back."
+	})
+
+	createAddonRow({
+		containerName = "Shadows2014Container",
+		checkboxName  = "Shadows2014Checkbox",
+		helpName      = "Shadows2014HelpButton",
+		label         = "2014 shadows",
+		yPos          = startY,
+		stateKey      = "is2014ShadowsEnabled",
+		onEnable      = actions.apply2014Shadows,
+		onDisable     = actions.restore2014Shadows,
+		helpText      = "From Rowind's 2014 character shadow test: each character casts a soft dark blob instead of its own shadow, thrown away from the sun onto the ground or whatever is below (up to 27 studs), longer when the sun is low, fainter the further it falls, none at night. Goes well with voxel lighting. Characters within 150 studs (the nearest 16). Untick to give characters their own shadows back."
 	})
 
 	createAddonRow({
@@ -4991,6 +5385,18 @@ task.spawn(function()
 		helpText      = "The camera zoom from before the 2018 camera update: no gliding, the camera jumps straight to the new distance (and back when a wall is no longer in the way), with the old step for each scroll click. Works with Roblox's own camera, not a game's custom one. Untick for the normal zoom."
 	})
 
+	createAddonRow({
+		containerName = "SlipperyWalkContainer",
+		checkboxName  = "SlipperyWalkCheckbox",
+		helpName      = "SlipperyWalkHelpButton",
+		label         = "slippery walk",
+		yPos          = startY,
+		stateKey      = "isSlipperyWalkEnabled",
+		onEnable      = actions.applySlipperyWalk,
+		onDisable     = actions.restoreSlipperyWalk,
+		helpText      = "From Rowind (its late 2015 - 2016 physics): let go of the stick and you slide to a stop instead of stopping dead. Works on R6 and R15, with any of the physics. Not while sitting. Untick to stop dead again."
+	})
+
 	-- the FPS cap: its tick box, then a number box (the "?" after it); the label shows the frame rate now
 	createAddonRow({
 		containerName = "FpsCapContainer",
@@ -5243,11 +5649,13 @@ task.spawn(function()
 	if state.isChatBarEnabled then task.spawn(actions.applyChatBar) end
 	if state.isPre2018CameraEnabled then task.spawn(actions.applyPre2018Camera) end
 	if state.isIWLegacyLightingEnabled then task.spawn(actions.applyIWLegacyLighting) end
-	if state.isVoxelLightingEnabled and not (state.isLegacyLightingEnabled or state.isIWLegacyLightingEnabled
-		or state.isRemoveProEnabled) then
+	if state.isVoxelLightingEnabled and not (state.isLegacyLightingEnabled or state.isRemoveProEnabled) then
 		task.spawn(actions.applyVoxelLighting)
 	end
 	if state.is2013DynamicEnabled then task.spawn(actions.apply2013Dynamic) end
+	if state.isOldMoonEnabled then task.spawn(actions.applyOldMoon) end
+	if state.is2014ShadowsEnabled then task.spawn(actions.apply2014Shadows) end
+	if state.isSlipperyWalkEnabled then task.spawn(actions.applySlipperyWalk) end
 	if state.is2015AudioEnabled then task.spawn(actions.apply2015Audio)
 	elseif state.is2016AudioEnabled then task.spawn(actions.apply2016Audio) end
 
