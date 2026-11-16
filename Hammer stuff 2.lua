@@ -74,6 +74,7 @@ task.spawn(function()
 		isFpsCapEnabled         = config.isFpsCapEnabled or false,
 		isHideMobileControlsEnabled = config.isHideMobileControlsEnabled or false,
 		isIWLegacyLightingEnabled = config.isIWLegacyLightingEnabled or false,
+		isVoxelLightingEnabled  = config.isVoxelLightingEnabled or false,
 		isChatBarEnabled        = config.isChatBarEnabled or false,
 		isPre2018CameraEnabled  = config.isPre2018CameraEnabled or false,
 		fpsCap                  = math.max(0, math.floor(tonumber(config.fpsCap) or 0)),
@@ -3744,6 +3745,142 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
+	-- 22b. VOXEL LIGHTING (2013)
+	-- The 2013 voxel lighting (out on 9 May 2013; Retro Studio's 2013 places run on it): light and shadow worked
+	-- out on a 4-stud grid of voxels, so the sun's shadows are soft and blocky, a blob under every character, no
+	-- crisp shadow maps and no shine. Recreated in any game, only on your screen: Lighting.Technology set to Voxel
+	-- (a hidden property: needs an executor with sethiddenproperty), LightingStyle Soft with
+	-- PrioritizeLightingQuality off (where Technology is not followed any more, the newest clients' own setting for
+	-- that look), GlobalShadows on (the voxel shadows) and no environment lighting (2013 had none). The game's
+	-- colours and time of day are left alone. Untick to put back each value it changed (if the game hasn't changed
+	-- it since). Not together with legacy lighting / iw legacy lighting / remove pro (they set other lighting).
+	------------------------------------------------------------
+	do
+		local genv = (getgenv and getgenv()) or _G
+		local vxState = { active = false, saved = nil, conns = {}, written = {}, keptGameTech = false }
+		local okStyle, StyleEnum = pcall(function() return Enum.LightingStyle end)
+		if not okStyle then StyleEnum = nil end
+
+		local function read(prop)
+			local ok, v = pcall(function() return Lighting[prop] end)
+			if ok then return v end
+			if type(gethiddenproperty) == "function" then
+				local ok2, v2 = pcall(gethiddenproperty, Lighting, prop)
+				if ok2 then return v2 end
+			end
+			return nil
+		end
+
+		-- true when the property ends up with that value
+		local function write(prop, value)
+			if read(prop) == nil then return false end -- this Roblox client doesn't have it
+			if read(prop) ~= value then
+				pcall(function() Lighting[prop] = value end)
+				if read(prop) ~= value and type(sethiddenproperty) == "function" then
+					pcall(sethiddenproperty, Lighting, prop, value)
+				end
+			end
+			vxState.written[prop] = value
+			return read(prop) == value
+		end
+
+		local function isWashed()
+			return StyleEnum ~= nil and read("LightingStyle") == StyleEnum.Realistic
+				and read("PrioritizeLightingQuality") == true
+		end
+
+		function actions.applyVoxelLighting()
+			if vxState.active then return end
+			vxState.active = true
+			vxState.written = {}
+			local saved = {}
+			for _, prop in ipairs({ "Technology", "LightingStyle", "PrioritizeLightingQuality", "GlobalShadows",
+				"EnvironmentDiffuseScale", "EnvironmentSpecularScale" }) do
+				saved[prop] = read(prop)
+			end
+			vxState.saved = saved
+			local report = {}
+
+			-- the technology (the game's own kept for whichever lighting option gives it back last)
+			local okVoxel, voxel = pcall(function() return Enum.Technology.Voxel end)
+			vxState.keptGameTech = false
+			if okVoxel and saved.Technology ~= nil then
+				if genv.BPGameTechnology == nil then
+					genv.BPGameTechnology = saved.Technology
+					vxState.keptGameTech = true
+				end
+				if write("Technology", voxel) then
+					report[#report + 1] = "technology " .. tostring(saved.Technology) .. " -> Voxel"
+				else
+					report[#report + 1] = "technology stays " .. tostring(saved.Technology) .. " (the executor refused)"
+				end
+			else
+				report[#report + 1] = "technology could not be read"
+			end
+
+			write("GlobalShadows", true)
+			write("EnvironmentDiffuseScale", 0)
+			write("EnvironmentSpecularScale", 0)
+
+			-- Soft, quality off. Writing a value a property already has changes nothing, and a game can read Soft / off
+			-- and still render Future until one of them really changes: quality is switched on and back off.
+			if StyleEnum then
+				write("LightingStyle", StyleEnum.Soft)
+				local flipped = write("PrioritizeLightingQuality", true)
+				task.wait(0.15)
+				if not vxState.active then return end
+				local off = write("PrioritizeLightingQuality", false)
+				report[#report + 1] = "soft lighting " .. ((flipped and off) and "applied" or "refused by the executor")
+				for _, prop in ipairs({ "LightingStyle", "PrioritizeLightingQuality" }) do
+					local ok, signal = pcall(function() return Lighting:GetPropertyChangedSignal(prop) end)
+					if ok and signal then
+						table.insert(vxState.conns, signal:Connect(function()
+							-- the game switched it back to the washed-out, sharp-shadowed lighting
+							if vxState.active and isWashed() then
+								write("LightingStyle", StyleEnum.Soft)
+								write("PrioritizeLightingQuality", false)
+							end
+						end))
+					end
+				end
+			end
+			genv.BPVoxelLightingOn = true
+			print("[Voxel Lighting] On: " .. table.concat(report, "; ") .. ".")
+
+			-- unticked while it was starting
+			if not state.isVoxelLightingEnabled then actions.restoreVoxelLighting() end
+		end
+
+		function actions.restoreVoxelLighting()
+			if not vxState.active then return end
+			vxState.active = false
+			genv.BPVoxelLightingOn = nil
+			for _, c in ipairs(vxState.conns) do pcall(function() c:Disconnect() end) end
+			vxState.conns = {}
+			local saved = vxState.saved or {}
+			vxState.saved = nil
+			-- each value put back only if it is still the one written here (the game's own changes stay)
+			for prop, value in pairs(vxState.written) do
+				if prop ~= "Technology" and saved[prop] ~= nil and read(prop) == value then
+					write(prop, saved[prop])
+				end
+			end
+			if vxState.written.Technology ~= nil and read("Technology") == vxState.written.Technology then
+				local original = genv.BPGameTechnology
+				if original == nil then original = saved.Technology end
+				genv.BPGameTechnology = nil
+				if original ~= nil then write("Technology", original) end
+			elseif vxState.keptGameTech and not genv.BPLegacyLightingOn
+				and type(genv.LegacyLightingStop) ~= "function" then
+				genv.BPGameTechnology = nil -- (the executor refused the change: nothing to give back)
+			end
+			vxState.keptGameTech = false
+			vxState.written = {}
+			print("[Voxel Lighting] Off, the game's lighting put back.")
+		end
+	end
+
+	------------------------------------------------------------
 	-- 23. CHAT BAR (Chat Bar.lua in this repo)
 	-- On a touch screen, the 2012 / 2013 GUIs' Chat button becomes the chat bar along the bottom they have
 	-- on a PC; 2015 early shows its own bar (hidden on phones while this is off) and hides its Chat button.
@@ -4528,6 +4665,7 @@ task.spawn(function()
 		label         = "remove pro",
 		yPos          = startY + ROW_HEIGHT,
 		stateKey      = "isRemoveProEnabled",
+		exclusiveWith = { "isVoxelLightingEnabled" },
 		onEnable      = actions.applyRemovePro,
 		onDisable     = actions.restoreRemovePro,
 		helpText      = "Removes modern post-processing (Atmosphere, Bloom, DepthOfField, etc.) and applies classic 2016-era flat lighting with Retro tonemapper. Parts are converted to SmoothPlastic. Shadows are kept. Disabling restores lighting; material changes persist."
@@ -4540,6 +4678,7 @@ task.spawn(function()
 		label         = "legacy lighting",
 		yPos          = startY + 8 * ROW_HEIGHT,
 		stateKey      = "isLegacyLightingEnabled",
+		exclusiveWith = { "isVoxelLightingEnabled" },
 		onEnable      = actions.applyLegacyLighting,
 		onDisable     = actions.restoreLegacyLighting,
 		helpText      = "2017 OldGraphics lighting: Compatibility technology, no bloom, blur, sun rays, depth of field or atmosphere, and flat grey colors. Can be on together with iw legacy lighting. Untick to put the original lighting back."
@@ -4552,9 +4691,23 @@ task.spawn(function()
 		label         = "iw legacy lighting",
 		yPos          = startY,
 		stateKey      = "isIWLegacyLightingEnabled",
+		exclusiveWith = { "isVoxelLightingEnabled" },
 		onEnable      = actions.applyIWLegacyLighting,
 		onDisable     = actions.restoreIWLegacyLighting,
 		helpText      = "The 2017 legacy lighting, only on your screen: brighter light with darker colors like the old Voxel look, the game's bloom / atmosphere / sun rays off, terrain darkened, no 3D clouds or grass blades. The game's time of day keeps going. Works with classic faces, and can be on together with legacy lighting. Untick to put the game back as it was (lighting, effects, colors, terrain)."
+	})
+
+	createAddonRow({
+		containerName = "VoxelLightingContainer",
+		checkboxName  = "VoxelLightingCheckbox",
+		helpName      = "VoxelLightingHelpButton",
+		label         = "voxel lighting",
+		yPos          = startY,
+		stateKey      = "isVoxelLightingEnabled",
+		exclusiveWith = { "isLegacyLightingEnabled", "isIWLegacyLightingEnabled", "isRemoveProEnabled" },
+		onEnable      = actions.applyVoxelLighting,
+		onDisable     = actions.restoreVoxelLighting,
+		helpText      = "2013 voxel lighting (as in Retro Studio's 2013 places), only on your screen: light and shadows worked out on a 4-stud grid, so shadows are soft and blocky with a blob under every character, no sharp shadows and no shine. The game's colors and time of day stay. Needs an executor that can set hidden properties for the full effect. Not together with legacy lighting, iw legacy lighting or remove pro. Hammer stuff's \"no shadows\" turns its shadows off. Untick to put the game's lighting back."
 	})
 
 	createAddonRow({
@@ -5090,6 +5243,10 @@ task.spawn(function()
 	if state.isChatBarEnabled then task.spawn(actions.applyChatBar) end
 	if state.isPre2018CameraEnabled then task.spawn(actions.applyPre2018Camera) end
 	if state.isIWLegacyLightingEnabled then task.spawn(actions.applyIWLegacyLighting) end
+	if state.isVoxelLightingEnabled and not (state.isLegacyLightingEnabled or state.isIWLegacyLightingEnabled
+		or state.isRemoveProEnabled) then
+		task.spawn(actions.applyVoxelLighting)
+	end
 	if state.is2013DynamicEnabled then task.spawn(actions.apply2013Dynamic) end
 	if state.is2015AudioEnabled then task.spawn(actions.apply2015Audio)
 	elseif state.is2016AudioEnabled then task.spawn(actions.apply2016Audio) end

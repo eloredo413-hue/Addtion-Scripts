@@ -1,16 +1,16 @@
 -- [[ PHYSICS + CAMERA WIZARD STEP — with None option ]]
--- (Addtion-Scripts copy: the "Old" physics is built on Super Nostalgia Zone's character scripts (GoofyMotion,
---  GoofyBalance, Bounciness, RetroClimbing...), the best-known recreation of old Roblox. It does not sink the player
---  into the ground on landing (it copies 2010-2013, which had none; the 2006 physics does it). It climbs as SNZ does:
---  a steady climb at 70% of WalkSpeed (the old Humanoid's climbing speed), going on while anything small is within
---  reach in front (toes to head), stick or no stick (SNZ's RetroClimbing climbs whenever a ladder is in front: pull
---  the stick away or jump to get off), facing the ladder the way you grabbed it, no kick up every frame (which
---  floated you up), and a step onto the top only at the real top. R6 and R15 alike. From SNZ too: a
---  small bounce on every landing, and tripping over when flung faster than 200 studs a second. Walk into a small part and the
---  character climbs it in the real Climbing state, and lets go when you stop moving or jump.
---  R15 avatars work too: the hip height moves around the avatar's own (an R15 body stands on it; R6 legs
---  hold an R6 body up at 0, which sank an R15 one into the floor), and the climbing check is measured
---  from the feet. The "2006" physics is this repo's copy (2006 Physics.lua), which also takes R15.)
+-- (Addtion-Scripts copy: three physics, one for each era, picked in the dropdown.
+--  "Old" (2010-2013), as Retro Studio and Rowind have it: a plain jump that lands flat (no bounce, no sinking into the
+--  ground), and ladders climbed only while the stick is held, at a steady 70% of WalkSpeed (the old Humanoid's
+--  climbing speed, Roblox wiki 2011). Let go of the stick and you hang there for a moment (HANG_TIME), then drop;
+--  pull the stick away or jump to get off. The climb goes on while anything small is within reach in front (toes to
+--  head), facing the ladder the way you grabbed it, with a step onto the top only at the real top. Tripping over
+--  when flung faster than 200 studs a second, as Super Nostalgia Zone's GoofyMotion does.
+--  "2007": the same script, as the Old physics was first made from Super Nostalgia Zone's character scripts: the
+--  small bounce on every landing (SNZ Bounciness) and sinking into the ground on landing (SNZ FloorDrag) added.
+--  "2006": this repo's copy of FWM's (2006 Physics.lua).
+--  R6 and R15 alike: the hip height moves around the avatar's own (an R15 body stands on it), the 2007 sink moves an
+--  R15 body on its root joint, and the climbing check is measured from the feet.)
 
 task.spawn(function()
 	local HttpService = game:GetService("HttpService")
@@ -46,8 +46,13 @@ local UserGameSettings = UserSettings():GetService("UserGameSettings")
 local LocalPlayer = Players.LocalPlayer
 if not LocalPlayer then return end
 local BPGenv = (getgenv and getgenv()) or _G
+-- Which era (the wizard sets PHYSICS_ERA): "old" = 2010-2013, as Retro Studio and Rowind have it (no sinking into the
+-- ground, no bounce on landing); "2007" = the Old physics as it was first made, with both.
+local ERA_2007 = (PHYSICS_ERA == "2007")
 
 if _G.__RetroMasterCleanup then pcall(_G.__RetroMasterCleanup) end
+-- the 2006 physics, if it was picked before: stopped, so two physics never fight over the character
+if BPGenv.__Physics2006Cleanup then pcall(BPGenv.__Physics2006Cleanup) end
 
 local Connections = {}
 local RenderNames = {}
@@ -107,6 +112,9 @@ local TOP_OUT_MIN_RISE = 1.5    -- studs climbed before the top-out hop counts
 local TOP_OUT_SPEED = 10        -- a step forward onto the top
 local TOP_OUT_UP = 4            -- ...keeping (at least) a little of the climb's rise
 local MAX_FALL_TO_GRAB = 8      -- falling faster than this: no grabbing
+local HANG_TIME = 0.85          -- the stick let go on a ladder: you hang there this long (seconds), then drop (Retro Studio)
+local SINK_RATE = 20 / 3        -- 2007 only: studs a second the body sinks / rises while falling / rising fast (SNZ FloorDrag)
+local SINK_DECAY = 0.925        -- 2007 only: share of the sink kept each 1/60 s back on the ground
 local CLIMB_SIDE_DAMP = 0.8     -- sideways speed kept each frame while climbing
 local XZ = Vector3.new(1, 0, 1)
 
@@ -187,7 +195,7 @@ local function setupCharacter(char)
 	climbGyro.D = 200
 	table.insert(CharacterObjects, climbGyro)
 
-	-- The real Climbing state is what the 2006 climbing runs on (an earlier copy of this script
+	-- The real Climbing state is what the climbing runs on (an earlier copy of this script
 	-- switched it off).
 	pcall(function()
 		humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, true)
@@ -196,7 +204,7 @@ local function setupCharacter(char)
 	-- No climb animation of our own is played any more: it was Roblox's modern one, which showed up
 	-- over whichever animation you picked in the wizard. The climbing state is kept up instead (below),
 	-- so the animation you picked plays ITS OWN climbing animation.
-	local climbWanted = false -- true while the 2006 climbing is at work
+	local climbWanted = false -- true while the climbing is at work
 	local grabbingNow = false -- a part is in front of the feet right now (this frame)
 	local blockedFor = 0      -- how long (seconds) you have been walking without getting anywhere
 	local lastFrame = os.clock()
@@ -234,9 +242,10 @@ local function setupCharacter(char)
 				humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
 			end)
 			rootPart.AssemblyLinearVelocity = Vector3.new(rootPart.AssemblyLinearVelocity.X, launchVelocity, rootPart.AssemblyLinearVelocity.Z)
-		elseif lastFallSpeed > 0 and not climbWanted and climbForce.Parent == nil then
-			-- SNZ's Bounciness: the old physics' small bounce on every landing, an upward push on the head of half
-			-- the landing speed times gravity, for a 30th of a second (not on a ladder: feet on a rung)
+		elseif ERA_2007 and lastFallSpeed > 0 and not climbWanted and climbForce.Parent == nil then
+			-- 2007 only: SNZ's Bounciness, the small bounce on every landing, an upward push on the head of half the
+			-- landing speed times gravity, for a 30th of a second (not on a ladder: feet on a rung). 2010-2013 (Retro
+			-- Studio, Rowind) lands flat: a plain jump.
 			local head = char:FindFirstChild("Head")
 			if head then
 				local bounce = Instance.new("BodyForce")
@@ -272,21 +281,101 @@ local function setupCharacter(char)
 		end
 	end))
 
-	-- true while the 2006 climbing below is at work (set there)
+	-- true while the climbing below is at work (set there)
 	local climbActive = false
 
-	-- No sinking into the ground on landing any more: the Old physics copies 2010-2013, which had none (the 2006
-	-- physics has it). The hip height is only kept at the body's own (R6: 0; R15: its own, followed if Roblox
-	-- changes it), as before.
+	-- SINKING INTO THE GROUND (2007 only), as the Old physics first had it (SNZ's FloorDrag): falling or rising fast
+	-- moves the body down or up (up to a stud), so a landing ends with the legs in the ground and the body rises back
+	-- out within about half a second. Not while sitting, climbing or swimming. R6: through the hip height. R15: the
+	-- body is moved on its root joint (LowerTorso.Root) instead, as the 2006 physics does it (a lower hip height makes
+	-- Roblox's R15 animations run faster). The Old physics (2010-2013) has none: the hip height stays the body's own
+	-- (R6: 0; R15: its own, followed if Roblox changes it).
+	local sinkOffset = 0
+	local sinkRay = RaycastParams.new()
+	sinkRay.FilterType = Enum.RaycastFilterType.Exclude
+	sinkRay.FilterDescendantsInstances = { char }
+	local function getFloorLevel()
+		local origin = rootPart.Position
+		local hit = Workspace:Raycast(origin, Vector3.new(0, -5000, 0), sinkRay)
+		if not hit then return origin.Y, 0 end
+		return hit.Position.Y, math.clamp(math.abs(hit.Position.Y - origin.Y), -1, 1)
+	end
+	local function moveTowards(value, goal, rate)
+		if value < goal then return math.min(goal, value + rate)
+		elseif value > goal then return math.max(goal, value - rate)
+		else return goal end
+	end
+
+	-- R15: the body moved on its root joint, from whatever anything else sets it to; put back when this stops
+	local rootJoint, rootBase, rootWritten = nil, nil, nil
+	local function applyR15Sink()
+		if not (rootJoint and rootJoint.Parent) then
+			local lowerTorso = char:FindFirstChild("LowerTorso")
+			rootJoint = lowerTorso and lowerTorso:FindFirstChild("Root")
+			rootBase, rootWritten = nil, nil
+			if not (rootJoint and rootJoint:IsA("Motor6D")) then rootJoint = nil return end
+		end
+		local current = rootJoint.C0
+		if rootWritten == nil or current ~= rootWritten then rootBase = current end
+		local want = rootBase + Vector3.new(0, sinkOffset, 0)
+		if current ~= want then rootJoint.C0 = want end
+		rootWritten = rootJoint.C0
+	end
+	if ERA_2007 then
+		-- stopped mid-sink: the body put back up
+		table.insert(CharacterObjects, {
+			Parent = true,
+			Destroy = function()
+				if isR15 then
+					if rootJoint and rootJoint.Parent and rootBase and rootJoint.C0 == rootWritten then
+						rootJoint.C0 = rootBase
+					end
+				elseif humanoid.Parent and lastSetHip and math.abs(humanoid.HipHeight - lastSetHip) < 0.001 then
+					humanoid.HipHeight = baseHip
+				end
+			end,
+		})
+	end
+
 	local hipRenderName = "RetroHipHeight_" .. tostring(math.random(10000, 99999))
 	table.insert(RenderNames, hipRenderName)
 
-	RunService:BindToRenderStep(hipRenderName, 390, function()
+	local lastLevel = ERA_2007 and getFloorLevel() or 0
+	RunService:BindToRenderStep(hipRenderName, 390, function(dt)
 		if destroyed or not char.Parent or humanoid.Health <= 0 then
 			pcall(function() RunService:UnbindFromRenderStep(hipRenderName) end)
 			return
 		end
-		hipOffset = 0
+		if not ERA_2007 then
+			hipOffset = 0
+			applyHip()
+			return
+		end
+		dt = math.min(0.1, dt or 1 / 60)
+		if humanoid.SeatPart or humanoid.Sit or climbActive
+			or humanoid:GetState() == Enum.HumanoidStateType.Swimming then
+			sinkOffset = 0
+			lastLevel = getFloorLevel()
+		else
+			local level, dist = getFloorLevel()
+			local yVelocity = rootPart.AssemblyLinearVelocity.Y
+			if math.abs(yVelocity) > 8 then
+				sinkOffset = moveTowards(sinkOffset, math.sign(yVelocity), SINK_RATE * dt)
+			elseif lastLevel ~= level then
+				-- walked onto a higher or lower floor (SNZ's step change; it always comes to 0)
+				sinkOffset = math.sign(lastLevel - level) * math.clamp(dist - 3, 0, 1)
+				lastLevel = level
+			else
+				sinkOffset = sinkOffset * (SINK_DECAY ^ (dt * 60))
+				if math.abs(sinkOffset) < 0.001 then sinkOffset = 0 end
+			end
+		end
+		if isR15 then
+			hipOffset = 0
+			applyR15Sink()
+		else
+			hipOffset = sinkOffset
+		end
 		applyHip()
 	end)
 
@@ -339,10 +428,11 @@ local function setupCharacter(char)
 		end
 	end)
 
-	-- ===== 2006 climbing =====
+	-- ===== Climbing (2010-2013, as Retro Studio and Rowind have it) =====
 	-- Walk into any small part (a brick, a step, a ladder rung) and the character climbs it in
-	-- the real Climbing state: a steady climb at 70% of WalkSpeed, pushed into the part and turned to face it. Let go
-	-- (stop moving, or jump) and it drops. Big parts (floors, walls) are not climbed; a TrussPart
+	-- the real Climbing state: a steady climb at 70% of WalkSpeed while the stick is held, pushed into the part and
+	-- turned to face it. Let go of the stick and it hangs there; let go for HANG_TIME (or pull the stick away, or
+	-- jump) and it drops. Nothing climbs you up on its own. Big parts (floors, walls) are not climbed; a TrussPart
 	-- is climbed by the Climbing state itself.
 	local overlapParams = OverlapParams.new()
 	overlapParams.FilterDescendantsInstances = { char, Workspace.CurrentCamera }
@@ -391,6 +481,7 @@ local function setupCharacter(char)
 	-- it does not grab the part again on the way down.
 	local releasing = false
 	local climbFacing = nil -- the way you faced the ladder when you grabbed it (flat)
+	local lastStick = 0     -- when the stick was last held
 	local function stopClimbing()
 		if releasing then return end
 		releasing = true
@@ -431,6 +522,7 @@ local function setupCharacter(char)
 
 		local velocity = torso.AssemblyLinearVelocity
 		local frameNow = os.clock()
+		if moveDir.Magnitude >= 0.1 then lastStick = frameNow end
 		local frameDt = math.min(frameNow - lastFrame, 0.1)
 		lastFrame = frameNow
 
@@ -447,12 +539,12 @@ local function setupCharacter(char)
 		local onLadder = grabStartY ~= nil and frameNow - lastGrab <= GRAB_GRACE
 		local blocked = blockedFor >= BLOCKED_TIME or onLadder
 
-		-- CLIMBING (as SNZ's RetroClimbing): a climb starts by walking into something small in front of the
-		-- feet (not while letting go, and not in a real fall: dropping past a wall must not grab it), and goes on
+		-- CLIMBING (as Retro Studio and Rowind have it): a climb starts by walking into something small in front of
+		-- the feet (not while letting go, and not in a real fall: dropping past a wall must not grab it), and goes on
 		-- while anything small is within reach in front from the toes to the head (one tall box: a gap between two
-		-- rungs never ends it), stick or no stick, at a steady 70% of WalkSpeed. Pull the stick away from the
-		-- ladder or jump to get off. Nothing in reach at all: the top (a step onto it) or, below a wall, hanging
-		-- for a moment and then falling.
+		-- rungs never ends it). Stick held: a steady climb at 70% of WalkSpeed. Stick let go: hanging there, and
+		-- after HANG_TIME dropping off. Pull the stick away from the ladder or jump to get off. Nothing in reach at
+		-- all: the top (a step onto it) or, below a wall, hanging for a moment and then falling.
 		local inReach
 		if onLadder then
 			inReach = climbablePartAhead(REACH_LIFT, REACH_HEIGHT)
@@ -461,9 +553,13 @@ local function setupCharacter(char)
 		end
 		local holding = inReach and not releasing and not cantClimbNow()
 			and (onLadder or (moving and blocked and velocity.Y > -MAX_FALL_TO_GRAB))
-		if holding and onLadder and climbFacing and moveDir.Magnitude >= 0.1 and moveDir:Dot(climbFacing) < -0.3 then
-			stopClimbing() -- the stick pulled away from the ladder: let go
-			holding = false
+		if holding and onLadder then
+			local stickLetGo = frameNow - lastStick > HANG_TIME
+			local pushedAway = climbFacing ~= nil and moveDir.Magnitude >= 0.1 and moveDir:Dot(climbFacing) < -0.3
+			if stickLetGo or pushedAway then
+				stopClimbing() -- hung there long enough, or the stick pulled away from the ladder: let go
+				holding = false
+			end
 		end
 		local now = frameNow
 		local hanging = false
@@ -478,7 +574,9 @@ local function setupCharacter(char)
 			-- the sideways speed damped as before, but no kick up (it set 13 every frame, then gravity in between,
 			-- which floated you up in hops): the climb force holds a steady climbing speed instead
 			torso.AssemblyLinearVelocity = Vector3.new(velocity.X * CLIMB_SIDE_DAMP, velocity.Y, velocity.Z * CLIMB_SIDE_DAMP)
-			climbForce.Velocity = Vector3.new(0, humanoid.WalkSpeed * CLIMB_SPEED_SHARE, 0)
+			-- climbing only while the stick is held; let go of it: hanging there
+			local climbSpeed = (frameNow - lastStick <= 0.1) and humanoid.WalkSpeed * CLIMB_SPEED_SHARE or 0
+			climbForce.Velocity = Vector3.new(0, climbSpeed, 0)
 			climbForce.Parent = rootPart
 		elseif onLadder and not releasing and not cantClimbNow() then
 			if torso.Position.Y - grabStartY >= TOP_OUT_MIN_RISE and #partsAhead(CLIMB_REACH_UP) == 0 then
@@ -550,7 +648,7 @@ local function setupCharacter(char)
 		local isClimbing = (newState == Enum.HumanoidStateType.Climbing)
 		if climbing.Value ~= isClimbing then
 			climbing.Value = isClimbing
-			if isClimbing then print("[Retro Master] Climbing (2006 climbing).") end
+			if isClimbing then print("[Retro Master] Climbing.") end
 		end
 	end))
 
@@ -572,7 +670,7 @@ local function setupCharacter(char)
 		BPGenv.BPClimbing = nil
 	end))
 
-	print("[Retro Master] Character system loaded (2006 climbing).")
+	print("[Retro Master] Character system loaded (" .. (ERA_2007 and "2007" or "2010-2013") .. " physics).")
 end
 
 if LocalPlayer.Character then task.spawn(setupCharacter, LocalPlayer.Character) end
@@ -639,8 +737,11 @@ print("[Retro Master] Full script loaded successfully.")
 		if not ok then warn("[Physics/Camera] Runtime " .. (label or "") .. ": " .. tostring(e)) end
 	end
 
+	-- One physics for each era: Old (2010-2013, as Retro Studio and Rowind have it), 2007 (the Old physics as it was
+	-- first made: sinking into the ground and bouncing on landings) and 2006 (FWM's).
 	local PHYSICS_VARIANTS = {
 		{id = "old",  label = "Old"},
+		{id = "2007", label = "2007"},
 		{id = "2006", label = "2006"},
 	}
 	local selectedVariant = "old"
@@ -656,8 +757,10 @@ print("[Retro Master] Full script loaded successfully.")
 		if variant == "2006" then
 			local src = fetchPhysics2006Script()
 			if src then runScript(src, "2006 physics") end
+		elseif variant == "2007" then
+			runScript("local PHYSICS_ERA = \"2007\"\n" .. PHYSICS_SRC, "2007 physics")
 		else
-			runScript(PHYSICS_SRC, "physics")
+			runScript("local PHYSICS_ERA = \"old\"\n" .. PHYSICS_SRC, "physics")
 		end
 	end
 
