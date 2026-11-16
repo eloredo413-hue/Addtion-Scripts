@@ -5,10 +5,12 @@
 --     no landing squash (Roblox's R15 Animate speeds the animations up when the hip height drops)
 --   * the climbing check (a small box in front of the feet) is measured from the feet, as on R6
 -- R6 works exactly as before.
--- Climbing holds on between two rungs (a rung within reach higher up keeps it going, so a ladder is climbed in one
--- go, as in 2006), keeps pushing into what you climb, hops over the top only at the real top (it used to shove you
--- into the ladder at every gap, which bounced you off), grabs a ladder you jump into (the jump's glide bounced you
--- off it), and a let-go never leaves the climbing switched off for good.
+-- Climbing is a steady climb at the old Humanoid's climbing speed, 70% of WalkSpeed (11.2 studs a second at 16; Roblox
+-- wiki, 2011), held by a force while a rung is within reach (at the feet, the chest, or the toes for the top rung),
+-- as Super Nostalgia Zone's RetroClimbing does it: no more kick up every frame, which floated you up in hops. It
+-- keeps pushing into what you climb, steps you onto the top only at the real top (it used to shove you into the
+-- ladder at every gap, which bounced you off), grabs a ladder you jump into (the jump's glide bounced you off it),
+-- and a let-go never leaves the climbing switched off for good. No landing bounce or sink while on a ladder.
 -- Sinking into the ground, as in 2006 (and as the "Old" physics does): falling lowers the body up to a stud,
 -- so a landing ends with the legs in the ground, and the body rises back out within about half a second.
 local Players = game:GetService("Players")
@@ -159,10 +161,12 @@ local function setupCharacterPhysics(character)
     local GRAB_GRACE = 0.25       -- seconds the climb is held between two rungs / bricks
     local TOP_OUT_TIME = 0.4      -- seconds after the last grab in which you are still topping out
     local TOP_OUT_MIN_RISE = 1.5  -- studs climbed before the top-out hop counts
-    local TOP_OUT_SPEED = 14      -- hop forward over the top
-    local TOP_OUT_UP = 9          -- ...and a little up
+    local TOP_OUT_SPEED = 10      -- a step forward onto the top
+    local TOP_OUT_UP = 4          -- ...keeping (at least) a little of the climb's rise
     local MAX_FALL_TO_GRAB = 8    -- falling faster than this: no grabbing
     local REACH_UP = 2            -- studs above the climbing box: a rung there (in front of the chest) keeps a climb going
+    local TOE_LIFT, TOE_HEIGHT = -0.85, 0.7 -- the toes (0.3 to 1 stud above the feet): the top rung, till you are over it
+    local CLIMB_SPEED_SHARE = 0.7 -- climbing speed: 70% of WalkSpeed, the old Humanoid's
     local grabStartY, lastGrab, grabbingNow = nil, 0, false
 
     if timePeriod < 1 then
@@ -179,6 +183,23 @@ local function setupCharacterPhysics(character)
         Velocity = Vector3.new(0, 0, 0),
         MaxForce = Vector3.new(5000, 0, 5000),
         P = 1000,
+    })
+
+    -- (Addtion-Scripts) the steady climb: holds the upward speed at the climbing speed while a rung is within reach
+    -- (only up and down: the push into the ladder is the climb lift's)
+    local oldClimbForce = rootPart:FindFirstChild("ClimbForce")
+    if oldClimbForce then oldClimbForce:Destroy() end
+    local climbForce = ExtraUtil.Create("BodyVelocity", {
+        Name = "ClimbForce",
+        Velocity = Vector3.new(0, 0, 0),
+        MaxForce = Vector3.new(0, 10000000, 0),
+    })
+    table.insert(activeConnections, {
+        Connected = true,
+        Disconnect = function(self)
+            self.Connected = false
+            pcall(function() climbForce:Destroy() end)
+        end,
     })
 
     local climbGyro = ExtraUtil.Create("BodyGyro", {
@@ -255,7 +276,7 @@ local function setupCharacterPhysics(character)
 
     -- (Addtion-Scripts) what is in the 1-stud box just in front, `lift` studs above the climbing box (0: 1 to 2
     -- studs above the feet; 2: in front of the chest)
-    local function partsAhead(lift)
+    local function partsAhead(lift, height)
         local boxCFrame
         if isR15 then
             -- (Addtion-Scripts) the same place as on R6: 1 to 2 studs above the feet, just in front
@@ -269,11 +290,11 @@ local function setupCharacterPhysics(character)
             torso:GetConnectedParts()
             boxCFrame = CFrame.new(checkPos + torso.CFrame.LookVector / 2) * CFrame.new(0, -0.5 + lift, 0)
         end
-        return workspace:GetPartBoundsInBox(boxCFrame, Vector3.new(1, 1, 1), overlapParams)
+        return workspace:GetPartBoundsInBox(boxCFrame, Vector3.new(1, height or 1, 1), overlapParams)
     end
 
-    local function isFlyBug(lift)
-        local parts = partsAhead(lift or 0)
+    local function isFlyBug(lift, height)
+        local parts = partsAhead(lift or 0, height)
 
         for _, part in pairs(parts) do
             local worldSize = part.CFrame:VectorToWorldSpace(part.Size)
@@ -365,6 +386,11 @@ local function setupCharacterPhysics(character)
     end
 
     local function onStateChanged(_, newState)
+        if newState == Enum.HumanoidStateType.Landed
+            and (climbForce.Parent ~= nil or (grabStartY ~= nil and os.clock() - lastGrab <= GRAB_GRACE)) then
+            -- (Addtion-Scripts) feet on a rung while climbing: not a landing (no bounce, tilt or jump delay)
+            return
+        end
         if newState == Enum.HumanoidStateType.Landed then
             autoRotateTime = os.clock() + 0.25
             local velY = torso.AssemblyLinearVelocity.Y
@@ -459,7 +485,7 @@ local function setupCharacterPhysics(character)
     local function updateSink(dt)
         local state = humanoid:GetState()
         local level = floorBelow()
-        if humanoid.Sit or humanoid.SeatPart or humanoid.Health <= 0
+        if humanoid.Sit or humanoid.SeatPart or humanoid.Health <= 0 or grabbingNow
             or state == Enum.HumanoidStateType.Climbing or state == Enum.HumanoidStateType.Swimming then
             sinkOffset = 0
         else
@@ -527,7 +553,8 @@ local function setupCharacterPhysics(character)
         -- (Addtion-Scripts) while climbing, a rung still within reach higher up (in front of the chest) keeps the climb
         -- going through the gap below it
         local climbingNow = grabStartY ~= nil and os.clock() - lastGrab <= GRAB_GRACE
-        local canTrussClimb = (isFlyBug(0) or (climbingNow and isFlyBug(REACH_UP))) and not checkIfTrippedState()
+        local canTrussClimb = (isFlyBug(0) or (climbingNow and (isFlyBug(REACH_UP) or isFlyBug(TOE_LIFT, TOE_HEIGHT))))
+            and not checkIfTrippedState()
 
         -- (Addtion-Scripts) not while letting go, and not in a real fall (dropping past a wall must not grab it).
         -- Jumping into something climbable (a ladder) grabs it and ends the jump's glide: the glide bounced you off it.
@@ -541,7 +568,14 @@ local function setupCharacterPhysics(character)
         if walkingIntoPart then
             local damp = timePeriod <= 14 and 0.8 or 0.4
             humanoid:ChangeState(Enum.HumanoidStateType.Climbing)
-            torso.AssemblyLinearVelocity = torso.AssemblyLinearVelocity * (xzVector * damp) + vec3.new(0, 13, 0)
+            -- (Addtion-Scripts) the sideways speed damped as before, but no kick up (13 every frame, then gravity in
+            -- between): the climb force below holds a steady climbing speed instead
+            local v = torso.AssemblyLinearVelocity
+            torso.AssemblyLinearVelocity = vec3.new(v.X * damp, v.Y, v.Z * damp)
+            climbForce.Velocity = Vector3.new(0, humanoid.WalkSpeed * CLIMB_SPEED_SHARE, 0)
+            climbForce.Parent = rootPart
+        else
+            climbForce.Parent = nil
         end
         -- (Addtion-Scripts) between two rungs nothing is in front of the feet for a moment: the climb is held through
         -- that (it used to drop you back down the ladder at every gap); the top of a ladder or a ledge: a hop
@@ -560,6 +594,7 @@ local function setupCharacterPhysics(character)
                 local v = torso.AssemblyLinearVelocity
                 local dir = humanoid.MoveDirection
                 torso.AssemblyLinearVelocity = Vector3.new(dir.X * TOP_OUT_SPEED, math.max(v.Y, TOP_OUT_UP), dir.Z * TOP_OUT_SPEED)
+                grabStartY = nil -- (once)
             end
         end
         grabbingNow = walkingIntoPart
