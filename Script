@@ -3194,4 +3194,37 @@ do
     end
 end
 
+--========================================================
+-- OLD SOUNDS: THE OOF WHEN YOU DIE
+-- Bloxy's "old sounds" swaps the character's sounds for its own (ParadoxStep, ParadoxJump, ParadoxDeath...) and
+-- removes Roblox's, so the death sound was Bloxy's (rbxassetid://17755696142), not the classic oof. The oof is
+-- Roblox's own default death sound again since 31 July 2025, and Roblox put it in the Creator Store ("Official OOF
+-- Sound Effect", asset 79348298352567): Bloxy's death sound is pointed at that. If it doesn't load, Roblox's own
+-- default death sound file is used instead (the oof again since then).
+--========================================================
+task.spawn(function()
+    local OOF = "rbxassetid://79348298352567"
+    local OOF_FALLBACK = "rbxasset://sounds/uuhhh.mp3"
+    local player = game:GetService("Players").LocalPlayer
+    if not player then return end
+    local function useOof(sound)
+        if not (sound:IsA("Sound") and sound.Name == "ParadoxDeath") then return end
+        if sound.SoundId == OOF or sound.SoundId == OOF_FALLBACK then return end
+        sound.SoundId = OOF
+        task.delay(5, function()
+            if sound.Parent and sound.SoundId == OOF and not sound.IsLoaded then
+                sound.SoundId = OOF_FALLBACK
+            end
+        end)
+    end
+    local function watch(character)
+        local root = character:WaitForChild("HumanoidRootPart", 10)
+        if not root then return end
+        for _, child in ipairs(root:GetChildren()) do pcall(useOof, child) end
+        root.ChildAdded:Connect(function(child) pcall(useOof, child) end)
+    end
+    if player.Character then task.spawn(watch, player.Character) end
+    player.CharacterAdded:Connect(watch)
+end)
+
 print("[Loader] All scripts loaded.")
