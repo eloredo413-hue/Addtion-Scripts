@@ -31,7 +31,7 @@
 --   copies of the setup and hammer settings (Saved Settings.lua)
 -- + "Skip setup" brings back More guis' topbars too (2013 mobile, 2023 old...): the pick is saved at Confirm
 -- + 2006 / 2008 / 2010: the inventory sits right on the chat bar (no gap), the green outline just inside its slot;
---   2010's "Health" text a little bigger and blue with a touch of cyan; 2010's player list text all one size and
+--   2010's "Health" text a little bigger and the medium blue of a 2010 screenshot; 2010's player list text all one size and
 --   its Report / screenshot / camera buttons right above the chat bar, like the 2010 client
 --========================================================
 
@@ -3051,8 +3051,9 @@ end)
 --   are not touched. (An earlier copy put the bar over the inventory; with these GUIs' Global layering that hid
 --   the 2008 bar's own "To chat click here" text: a bar left like that gets its text back on top.)
 -- * 2010 (the new GUI and Bloxy's own): "Health" under the health bar is as big as the player list's text (18, was
---   14) and blue with a touch of cyan (0, 80, 255): the GUI's own (0, 100, 255) had too much green in it, pure blue
---   too little. Only the text: the bar stays as it was. The 2006 and 2008 ones are their own and are left alone.
+--   14) and the colour it has in a 2010 client screenshot the user gave: a medium blue with a slight purple tint
+--   (53, 54, 172, the middle of the text's pixels there). The GUI's own (0, 100, 255) was a lighter, greener blue.
+--   Only the text: the bar stays as it was. The 2006 and 2008 ones are their own and are left alone.
 -- * 2010: the player list's text all one size, as in the 2010 client (a screenshot of it): the names were 14, the
 --   numbers 18, the team rows 12 / 16 and the headers 14. All 18 now, the size of the numbers (its rows are 18 high).
 -- * 2010: the Report / screenshot / camera buttons (bottom right) moved down so the camera buttons sit right
@@ -3065,7 +3066,7 @@ end
 do
     local conns = {}
     local HEALTH_TEXT_SIZE = 18
-    local HEALTH_TEXT_COLOR = Color3.fromRGB(0, 80, 255)
+    local HEALTH_TEXT_COLOR = Color3.fromRGB(53, 54, 172) -- (measured on the 2010 screenshot)
     local LIST_TEXT_SIZE = 18 -- 2010's player list: every text this size (the size of its numbers)
     local PALETTE_GAP = 2      -- 2010's camera buttons this far above the chat bar
 
