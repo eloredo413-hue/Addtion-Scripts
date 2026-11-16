@@ -139,6 +139,7 @@ local HAMMER_BOXES = {
 	FpsCapCheckbox = "isFpsCapEnabled",
 	HideMobileControlsCheckbox = "isHideMobileControlsEnabled",
 	IWLegacyLightingCheckbox = "isIWLegacyLightingEnabled",
+	VoxelLightingCheckbox = "isVoxelLightingEnabled",
 	ChatBarCheckbox = "isChatBarEnabled",
 	Pre2018CameraCheckbox = "isPre2018CameraEnabled",
 }
@@ -679,7 +680,7 @@ local function fromSettings(title, files)
 		if choice == "none" then return { "None" } end
 		if choice == "physics" or choice == "both" then
 			-- the dropdown shows the type picked last time, which may not be this one: open it, pick, then press
-			local label = (config.physicsVariant == "2006") and "2006" or "Old"
+			local label = ({ ["2006"] = "2006", ["2007"] = "2007" })[config.physicsVariant] or "Old"
 			return { DROPDOWN, label .. " Physics", choice == "both" and "Both" or (label .. " Physics") }
 		end
 		return nil

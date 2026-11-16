@@ -12,8 +12,12 @@
 -- camera's angle no longer turns you off it), pushes gently into it, and lets go as FWM does when you let go of the
 -- stick, but only after a moment (a thumb on a phone stick wobbles), hanging on in between. A step onto the top only at
 -- the real top; a ladder you jump into is grabbed; no landing bounce or sink while on a ladder. R6 and R15 alike.
--- Sinking into the ground, as in 2006 (and as the "Old" physics does): falling lowers the body up to a stud,
--- so a landing ends with the legs in the ground, and the body rises back out within about half a second.
+-- Sinking into the ground, only on a hard landing: falling faster than HARD_FALL (a fall from about 12 studs up; an
+-- ordinary jump lands at about 50 studs a second and does not) lowers the body up to a stud, so the landing ends with
+-- the legs in the ground, and the body rises back out within about half a second.
+-- FWM: FWM's own CharacterPhysics script is switched off, also when it comes into the character after this started,
+-- and FWM's TimePeriod / ExtraUtil / Protocols are used when they are there. Run again (or the "Old" / "2007" physics
+-- picked): the earlier copy stops first.
 local Players = game:GetService("Players")
 local BPGenv = (getgenv and getgenv()) or _G
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -74,6 +78,13 @@ end
 
 local activeConnections = {}
 
+-- (Addtion-Scripts) run again, or picked after the "Old" / "2007" physics: the earlier copy stops first, so two
+-- physics never fight over the character
+if BPGenv.__Physics2006Cleanup then pcall(BPGenv.__Physics2006Cleanup) end
+for _, env in ipairs({ _G, BPGenv }) do
+    if env.__RetroMasterCleanup then pcall(env.__RetroMasterCleanup) end
+end
+
 local function cleanupConnections()
     for i, conn in pairs(activeConnections) do
         if conn and conn.Connected then
@@ -91,6 +102,13 @@ local function setupCharacterPhysics(character)
     if existingScript and existingScript:IsA("LocalScript") then
         existingScript.Disabled = true
     end
+    -- (Addtion-Scripts) FWM's own copies its scripts into the character as it spawns, which can be after this ran:
+    -- switched off when it comes in too
+    table.insert(activeConnections, character.ChildAdded:Connect(function(child)
+        if child.Name == "CharacterPhysics" and child:IsA("LocalScript") then
+            child.Disabled = true
+        end
+    end))
 
     local timePeriod = getTimePeriod()
     local vec3 = ExtraUtil.v
@@ -123,14 +141,15 @@ local function setupCharacterPhysics(character)
     -- (and followed if Roblox changes it, e.g. when the body is scaled).
     local r15HipHeight = humanoid.HipHeight > 0 and humanoid.HipHeight or 2
     local lastSetHipHeight = nil
-    -- (Addtion-Scripts) SINKING INTO THE GROUND, as in 2006 and as the "Old" physics does it: falling fast lowers
-    -- the body (up to a stud), so a landing ends with the legs in the ground, and the body rises back out within
-    -- about half a second (rising fast lifts it a little instead). Walking onto a higher or lower floor brings it
-    -- straight back up. Unlike the Old physics, a landing lower down than where you jumped from (off a ledge)
-    -- sinks too. R6: through the hip height. R15: the body is moved down on its root joint instead (a lower hip
-    -- height makes Roblox's R15 animations run faster).
-    local SINK_RATE = 20 / 3 -- studs a second the sink moves while falling or rising fast
+    -- (Addtion-Scripts) SINKING INTO THE GROUND, only on a hard landing (not all the time): falling faster than
+    -- HARD_FALL lowers the body (up to a stud), so a landing from high up ends with the legs in the ground, and the
+    -- body rises back out within about half a second. The higher the fall, the deeper (nearly a stud from 30 studs
+    -- up). An ordinary jump lands at about 50 studs a second: no sink, and rising never lifts the body. Walking onto
+    -- a higher or lower floor brings it straight back up. R6: through the hip height. R15: the body is moved down on
+    -- its root joint instead (a lower hip height makes Roblox's R15 animations run faster).
+    local SINK_RATE = 20 / 3 -- studs a second the body sinks while falling faster than HARD_FALL
     local SINK_DECAY = 0.925 -- kept each 1/60 s once back on the ground
+    local HARD_FALL = 70     -- studs a second: falling faster than this sinks you (from about 12 studs up)
     local sinkOffset = 0
     local sinkFloorY = nil
 
@@ -219,6 +238,16 @@ local function setupCharacterPhysics(character)
         Name = "TiltStopVel",
         MaxForce = Vector3.new(math.huge, 0, math.huge),
         Velocity = Vector3.new(0, 0, 0),
+    })
+    -- (Addtion-Scripts) removed when this stops (run again, another physics picked, or a new character)
+    table.insert(activeConnections, {
+        Connected = true,
+        Disconnect = function(self)
+            self.Connected = false
+            for _, mover in ipairs({ glideVelocity, climbLift, climbGyro, tiltStopVel }) do
+                pcall(function() mover:Destroy() end)
+            end
+        end,
     })
 
     table.insert(activeConnections, humanoid:GetPropertyChangedSignal("SeatPart"):Connect(function()
@@ -496,14 +525,10 @@ local function setupCharacterPhysics(character)
             sinkOffset = 0
         else
             local vy = rootPart.AssemblyLinearVelocity.Y
-            if math.abs(vy) > 8 then
-                local goal = vy > 0 and 1 or -1
-                local step = SINK_RATE * dt
-                if sinkOffset < goal then
-                    sinkOffset = math.min(goal, sinkOffset + step)
-                else
-                    sinkOffset = math.max(goal, sinkOffset - step)
-                end
+            if vy < -HARD_FALL then
+                sinkOffset = math.max(-1, sinkOffset - SINK_RATE * dt)
+            elseif vy < -8 and sinkOffset < 0 then
+                -- (still falling: keeps what it has)
             elseif level and sinkFloorY and math.abs(level - sinkFloorY) > 0.5 then
                 sinkOffset = 0 -- walked onto a higher or lower floor
             else
@@ -798,4 +823,12 @@ end
 if LocalPlayer.Character then
     task.spawn(setupCharacterPhysics, LocalPlayer.Character)
 end
-LocalPlayer.CharacterAdded:Connect(setupCharacterPhysics)
+local characterAddedConnection = LocalPlayer.CharacterAdded:Connect(setupCharacterPhysics)
+
+-- (Addtion-Scripts) stops this copy (see the top)
+BPGenv.__Physics2006Cleanup = function()
+    characterAddedConnection:Disconnect()
+    cleanupConnections()
+    BPGenv.BPClimbing = nil
+    BPGenv.__Physics2006Cleanup = nil
+end
