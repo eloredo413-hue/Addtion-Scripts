@@ -4029,15 +4029,18 @@ task.spawn(function()
 		-- 2014 SHADOWS (Rowind's 2014 character shadow test, without its Studio-only parts): each character casts a
 		-- soft dark blob instead of its own shadow, thrown away from the sun onto whatever is below (up to 27 studs),
 		-- longer the lower the sun, fainter the further it falls and on surfaces turned from the sun, none at night.
-		-- Drawn with three flat discs on top of each other (darkest in the middle), so no picture has to load.
-		-- Characters within 150 studs, the nearest 16.
+		-- Drawn as a flat picture (three rounded frames on a SurfaceGui, darkest in the middle) on an invisible part,
+		-- so nothing that changes materials or surfaces (Hammer stuff's materials, 2009 / legacy materials, Bloxy's
+		-- textures, studs) can change how it looks; anything put on the part is taken off again. No picture has to
+		-- load. Characters within 150 studs, the nearest 16.
 		local SHADOW_REACH = 27
 		local SHADOW_RANGE = 150
 		local MAX_SHADOWS = 16
 		local LAYERS = { 1, 0.78, 0.56 }  -- sizes of the three discs
 		local shState = { active = false }
 
-		local function newDisc(scale)
+		-- one shadow: an invisible flat part whose top face carries the picture
+		local function newShadow()
 			local p = Instance.new("Part")
 			p.Name = "BP2014Shadow"
 			p.Anchored = true
@@ -4045,16 +4048,38 @@ task.spawn(function()
 			p.CanQuery = false
 			p.CanTouch = false
 			p.CastShadow = false
-			p.Material = Enum.Material.SmoothPlastic
-			p.Color = Color3.new(0, 0, 0)
-			p.Size = Vector3.new(1, 0.02, 1)
-			p.TopSurface = Enum.SurfaceType.Smooth
-			p.BottomSurface = Enum.SurfaceType.Smooth
-			local mesh = Instance.new("SpecialMesh")
-			mesh.MeshType = Enum.MeshType.Sphere
-			mesh.Parent = p
-			p:SetAttribute("BPShadowScale", scale)
-			return p
+			p.Transparency = 1
+			p.Size = Vector3.new(4, 0.05, 4)
+			p:SetAttribute("BPKeepMaterial", true)
+			local gui = Instance.new("SurfaceGui")
+			gui.Name = "Shadow"
+			gui.Face = Enum.NormalId.Top
+			gui.LightInfluence = 0
+			gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+			gui.PixelsPerStud = 25
+			gui.ClipsDescendants = true
+			gui.Parent = p
+			local frames = {}
+			for i, scale in ipairs(LAYERS) do
+				local f = Instance.new("Frame")
+				f.Name = "Layer" .. i
+				f.AnchorPoint = Vector2.new(0.5, 0.5)
+				f.Position = UDim2.new(0.5, 0, 0.5, 0)
+				f.Size = UDim2.new(scale, 0, scale, 0)
+				f.BackgroundColor3 = Color3.new(0, 0, 0)
+				f.BackgroundTransparency = 1
+				f.BorderSizePixel = 0
+				local corner = Instance.new("UICorner")
+				corner.CornerRadius = UDim.new(0.5, 0)
+				corner.Parent = f
+				f.Parent = gui
+				frames[i] = f
+			end
+			-- anything another script puts on it (a stud texture, a decal) is taken off again
+			p.ChildAdded:Connect(function(c)
+				if c ~= gui then task.defer(function() pcall(function() c:Destroy() end) end) end
+			end)
+			return { part = p, gui = gui, frames = frames, size = nil }
 		end
 
 		function actions.apply2014Shadows()
@@ -4077,7 +4102,7 @@ task.spawn(function()
 				end
 			end
 			local function giveBack(rec)
-				for _, d in ipairs(rec.discs) do pcall(function() d:Destroy() end) end
+				pcall(function() rec.shadow.part:Destroy() end)
 				for part, before in pairs(rec.castShadow) do
 					pcall(function() if part.Parent then part.CastShadow = before end end)
 				end
@@ -4086,19 +4111,15 @@ task.spawn(function()
 			local function caster(char)
 				local rec = casters[char]
 				if rec then return rec end
-				rec = { discs = {}, castShadow = {}, conns = {} }
-				for _, scale in ipairs(LAYERS) do
-					local d = newDisc(scale)
-					d.Parent = folder
-					table.insert(rec.discs, d)
-				end
+				rec = { shadow = newShadow(), castShadow = {}, conns = {} }
+				rec.shadow.part.Parent = folder
 				for _, d in ipairs(char:GetDescendants()) do noOwnShadow(rec, d) end
 				table.insert(rec.conns, char.DescendantAdded:Connect(function(d) noOwnShadow(rec, d) end))
 				casters[char] = rec
 				return rec
 			end
 			local function hide(rec)
-				for _, d in ipairs(rec.discs) do d.Transparency = 1 end
+				rec.shadow.gui.Enabled = false
 			end
 
 			table.insert(conns, RunService.RenderStepped:Connect(function()
@@ -4151,18 +4172,22 @@ task.spawn(function()
 						end)
 						if ok then clear = clear + bodyClear end
 						clear = math.clamp(clear, 0, 1)
-						-- three discs on top of each other: each lets `each` of the light through, so the middle, where
+						-- three frames on top of each other: each lets `each` of the light through, so the middle, where
 						-- all three are, lets `clear` through (each^3 = clear), and towards the edge it gets lighter
 						local each = clear ^ (1 / #LAYERS)
 						local width = 4.2 * near
 						local length = width * (1 + stretch) / 2
 						local center = hit.Position + up * 0.03 + along * (length - width) / 2
-						for _, d in ipairs(rec.discs) do
-							local scale = d:GetAttribute("BPShadowScale") or 1
-							d.Size = Vector3.new(width * scale, 0.02, length * scale)
-							d.CFrame = CFrame.fromMatrix(center, right, up)
-							d.Transparency = each
+						local sh = rec.shadow
+						-- (resized only when it really changes: a new size redraws the picture)
+						local size = sh.size
+						if not size or math.abs(size.X - width) > 0.05 or math.abs(size.Z - length) > 0.05 then
+							sh.size = Vector3.new(width, 0.05, length)
+							sh.part.Size = sh.size
 						end
+						sh.part.CFrame = CFrame.fromMatrix(center, right, up)
+						for _, f in ipairs(sh.frames) do f.BackgroundTransparency = each end
+						sh.gui.Enabled = true
 					end
 				end
 				for char, rec in pairs(casters) do
@@ -4185,7 +4210,7 @@ task.spawn(function()
 			shState.active = false
 			for _, c in ipairs(shState.conns or {}) do pcall(function() c:Disconnect() end) end
 			for char, rec in pairs(shState.casters or {}) do
-				for _, d in ipairs(rec.discs) do pcall(function() d:Destroy() end) end
+				pcall(function() rec.shadow.part:Destroy() end)
 				for part, before in pairs(rec.castShadow) do
 					pcall(function() if part.Parent then part.CastShadow = before end end)
 				end
@@ -4197,34 +4222,52 @@ task.spawn(function()
 		end
 
 		-- SLIPPERY WALK (Rowind's SlipperyHumanoid, its late 2015 - 2016 clients): let go of the stick and you slide
-		-- to a stop instead of stopping dead (each frame a quarter of the sideways speed is taken off). R6 and R15;
-		-- not while sitting (it would brake the vehicle).
+		-- to a stop instead of stopping dead: each frame (1/60 s) a quarter of the sideways speed is taken off, as
+		-- Rowind's has it. Rowind did it with a LinearVelocity, which Roblox's own humanoid (stopping you at once)
+		-- could overpower; here the slide is carried on after each physics step instead, so it shows the same with
+		-- any of the physics (Old, 2007, 2006 or none), R6 and R15. Works with the physics: not while climbing (any
+		-- of the physics' climbing too), sitting, swimming, tripped or flung, and not for a moment after a landing
+		-- (the 2006 physics' landing stop and the Old physics' spring are theirs).
 		local slState = { active = false }
+		local SLIDE_KEEP = 0.75 -- share of the sideways speed kept each 1/60 s
+		local NO_SLIDE = {
+			[Enum.HumanoidStateType.Climbing] = true,
+			[Enum.HumanoidStateType.Seated] = true,
+			[Enum.HumanoidStateType.Swimming] = true,
+			[Enum.HumanoidStateType.Ragdoll] = true,
+			[Enum.HumanoidStateType.FallingDown] = true,
+			[Enum.HumanoidStateType.PlatformStanding] = true,
+			[Enum.HumanoidStateType.Dead] = true,
+			[Enum.HumanoidStateType.Landed] = true,
+		}
+		local slGenv = (getgenv and getgenv()) or _G
 
 		local function slipperyCharacter(char)
 			if not slState.active or not char then return end
 			local root = char:WaitForChild("HumanoidRootPart", 10)
 			local hum = char:WaitForChild("Humanoid", 10)
 			if not (slState.active and root and hum) then return end
-			local old = root:FindFirstChild("BPSlippery")
-			if old then old:Destroy() end
-			local att = Instance.new("Attachment")
-			att.Name = "BPSlippery"
-			local lv = Instance.new("LinearVelocity")
-			lv.Attachment0 = att
-			lv.ForceLimitMode = Enum.ForceLimitMode.PerAxis
-			lv.MaxAxesForce = Vector3.new(10000, 0, 10000)
-			lv.VelocityConstraintMode = Enum.VelocityConstraintMode.Vector
-			lv.Parent = att
-			att.Parent = root
-			table.insert(slState.made, att)
-			table.insert(slState.conns, RunService.Heartbeat:Connect(function()
-				if not slState.active or not att.Parent then return end
-				if hum.MoveDirection.Magnitude > 0 or hum.SeatPart or hum.PlatformStand or hum.Health <= 0 then
-					lv.MaxAxesForce = Vector3.zero
+			local last = Vector3.zero   -- the sideways speed after the last frame
+			local landedAt = -1
+			table.insert(slState.conns, hum.StateChanged:Connect(function(_, new)
+				if new == Enum.HumanoidStateType.Landed then landedAt = os.clock() end
+			end))
+			table.insert(slState.conns, RunService.Heartbeat:Connect(function(dt)
+				if not slState.active or not root.Parent then return end
+				local v = root.AssemblyLinearVelocity
+				local flat = Vector3.new(v.X, 0, v.Z)
+				if hum.MoveDirection.Magnitude > 0 or hum.SeatPart or hum.PlatformStand or hum.Health <= 0
+					or NO_SLIDE[hum:GetState()] or slGenv.BPClimbing or os.clock() - landedAt < 0.1 then
+					last = flat
+					return
+				end
+				local want = last * (SLIDE_KEEP ^ (math.min(dt or 1 / 60, 0.1) * 60))
+				if want.Magnitude > 0.2 and want.Magnitude > flat.Magnitude + 0.05 and want:Dot(flat) >= 0 then
+					-- stopped harder than that (Roblox's own stop): the slide goes on
+					root.AssemblyLinearVelocity = Vector3.new(want.X, v.Y, want.Z)
+					last = want
 				else
-					lv.MaxAxesForce = Vector3.new(10000, 0, 10000)
-					lv.VectorVelocity = root.AssemblyLinearVelocity * Vector3.new(0.75, 0, 0.75)
+					last = flat
 				end
 			end))
 		end
@@ -4245,7 +4288,6 @@ task.spawn(function()
 			if not slState.active then return end
 			slState.active = false
 			for _, c in ipairs(slState.conns or {}) do pcall(function() c:Disconnect() end) end
-			for _, inst in ipairs(slState.made or {}) do pcall(function() inst:Destroy() end) end
 			slState.conns, slState.made = nil, nil
 			print("[Slippery Walk] Off.")
 		end
@@ -5394,7 +5436,7 @@ task.spawn(function()
 		stateKey      = "isSlipperyWalkEnabled",
 		onEnable      = actions.applySlipperyWalk,
 		onDisable     = actions.restoreSlipperyWalk,
-		helpText      = "From Rowind (its late 2015 - 2016 physics): let go of the stick and you slide to a stop instead of stopping dead. Works on R6 and R15, with any of the physics. Not while sitting. Untick to stop dead again."
+		helpText      = "From Rowind (its late 2015 - 2016 physics): let go of the stick and you slide to a stop instead of stopping dead. Works together with any of the physics (Old, 2007, 2006) or none, on R6 and R15; not while climbing, sitting or swimming, or just after a landing. Untick to stop dead again."
 	})
 
 	-- the FPS cap: its tick box, then a number box (the "?" after it); the label shows the frame rate now
