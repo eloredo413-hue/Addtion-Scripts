@@ -18,8 +18,9 @@
 -- November 2012 client's pictures.
 -- 2012's health bar (Bloxy's) sits next to the Backpack button, on its row, as in the 2012 client (on a phone
 -- the GUI is inside the safe area and the health bar isn't, so it was lower and apart from it).
--- On a phone it also tells the safe chat to show at the same size for the GUIs before 2014 and 2013 mobile
--- (getgenv().BPSafeChatScale, read by Better SafeChat.lua).
+-- On a phone it also tells the safe chat to show smaller (at the same size as those GUIs) with the 2006 - 2011
+-- GUIs, the ones drawn at a smaller scale; with every other GUI (2012 and later, 2013 mobile, 2005) it keeps its
+-- bigger, normal size (getgenv().BPSafeChatScale, read by Better SafeChat.lua).
 -- 2013 mobile keeps its menu's size. 2014 (which has the same menu) is left to its own fixes.
 
 local Env = (getgenv and getgenv()) or _G
@@ -31,7 +32,7 @@ local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
-local PC_SCALE = 0.7  -- the menu's size on a phone (the same as the safe chat's)
+local PC_SCALE = 0.7  -- the menu's size on a phone (also the safe chat's, with the 2006 - 2011 GUIs)
 local MENU_HEIGHT = 430 -- the 2012 / 2013 settings window's height (it should fit on the screen)
 local LIFT = 20       -- how far the menu windows are raised above everything else in the GUI (the
                       -- hotbar, backpack, chat and player list go up to ZIndex 10)
@@ -691,12 +692,12 @@ task.spawn(function()
 		for gui in pairs(watched) do
 			if gui.Parent then pcall(fixGui, gui) end
 		end
-		-- the safe chat's size: the GUIs before 2014 and 2013 mobile, on a phone
+		-- the safe chat's size on a phone: smaller only with the 2006 - 2011 GUIs (they are drawn at a smaller
+		-- scale); with every other GUI (2012 and later, 2013 mobile, 2005) its bigger, normal size
 		local pick = topbarPick()
 		local year = pick and tonumber(string.match(pick, "(20%d%d)"))
-		local mobile = pick ~= nil and string.find(pick, "mobile", 1, true) ~= nil
-		local safeChat = onPhone() and ((year ~= nil and (year < 2014 or mobile)) or oldGuiUp)
-		Env.BPSafeChatScale = safeChat and PC_SCALE or nil
+		local small = onPhone() and year ~= nil and year >= 2006 and year <= 2011
+		Env.BPSafeChatScale = small and PC_SCALE or nil
 		task.wait(3)
 	end
 end)

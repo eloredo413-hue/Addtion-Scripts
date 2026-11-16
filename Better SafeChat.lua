@@ -14,8 +14,9 @@
 ]]
 
 -- (Addtion-Scripts copy of the Better SafeChat gist, loaded by the Safe chat Hook through the loader: it can
--- be shown smaller, getgenv().BPSafeChatScale (Old Gui Fix.lua sets it on a phone for the GUIs before 2014 and
--- 2013 mobile, so the safe chat is the same size as those GUIs). The whole menu is drawn on a canvas that
+-- be shown smaller, getgenv().BPSafeChatScale (Old Gui Fix.lua sets it on a phone for the 2006 - 2011 GUIs, which
+-- are drawn at a smaller scale, so the safe chat is the same size as them; with every other GUI it is left at its
+-- bigger, normal size). The whole menu is drawn on a canvas that
 -- much bigger and zoomed down, so it all keeps its place on the screen; followed if it changes.)
 local function uiScale()
     local env = (getgenv and getgenv()) or _G
