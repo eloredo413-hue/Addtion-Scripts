@@ -1,6 +1,6 @@
 -- (Addtion-Scripts copy of the Explosion Replace Addon gist: the gist's own explosions, 2010 in the colours of the user's 2010
 -- recording and with a softer glow, the 2013 one as the 2012-2013 explosion looks in the user's
--- recordings (a see-through red-orange fireball that fades away into nothing),
+-- recordings (a see-through red-orange fireball that fades away into darkness),
 -- and the explosion step put on the "old particles" question before the Particles addon)
 -- [[ EXPLOSION PICKER WIZARD STEP ]]
 -- Run AFTER the main Bloxy Paradox script.
@@ -282,13 +282,14 @@ local function spawnRetroExplosion(pos, scale)
 	scale = (scale or 1) * 0.75
 	-- (as the 2012-2013 explosion looks in gameplay: the user's recordings of "ROBLOX Battle" and Classic Brickbattle
 	-- Doomspire, and the 2012-2014 part of "Evolution of Roblox Explosions". A see-through red-orange fireball of round
-	-- puffs with light orange dots in it, swelling fast, that fades away into nothing (no dark red ball or grey smoke
-	-- after it, as the user asked); gone in about a second. Colours read from the videos. Unlit, so they look the same
-	-- under any lighting)
+	-- puffs with light orange dots in it, swelling fast, that goes dark red and then nearly black as it fades away
+	-- (no separate dark red ball or grey smoke after it, as the user asked); gone in about a second. Colours read
+	-- from the videos. Unlit, so they look the same under any lighting)
 	local fireballPalette = ColorSequence.new({
 		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(236, 92, 38)),
 		ColorSequenceKeypoint.new(0.35, Color3.fromRGB(214, 72, 32)),
-		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(196, 62, 28))
+		ColorSequenceKeypoint.new(0.65, Color3.fromRGB(134, 36, 16)),
+		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(46, 12, 6))
 	})
 	local dotPalette = ColorSequence.new({
 		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(255, 176, 122)),
@@ -332,8 +333,9 @@ local function spawnRetroExplosion(pos, scale)
 		emit.Parent = attachment
 		return emit
 	end
-	-- the fireball: see-through red-orange puffs that swell fast, then fade away into nothing
-	local fire = { palette = fireballPalette, sizes = { 1.4, 3.4, 4.2 }, fade = { { 0, 0.2 }, { 0.4, 0.3 }, { 1, 1 } }, z = 1 }
+	-- the fireball: see-through red-orange puffs that swell fast, then darken as they fade away (kept visible long
+	-- enough to see them go dark)
+	local fire = { palette = fireballPalette, sizes = { 1.4, 3.4, 4.2 }, fade = { { 0, 0.2 }, { 0.65, 0.3 }, { 1, 1 } }, z = 1 }
 	local core = puffs("CoreMixed", fire, { 2, 6 }, { 0.6, 0.9 })
 	local outer = puffs("OuterMixed", { palette = fireballPalette, sizes = { 1.6, 4.0, 4.8 }, fade = fire.fade, z = 1 }, { 6, 12 }, { 0.5, 0.8 })
 	local burst = puffs("BurstMixed", { palette = fireballPalette, sizes = { 1.0, 2.6, 3.2 }, fade = fire.fade, z = 1 }, { 10, 18 }, { 0.4, 0.6 })
