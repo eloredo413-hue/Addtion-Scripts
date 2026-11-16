@@ -1,6 +1,6 @@
 -- (Addtion-Scripts copy of the Explosion Replace Addon gist: the gist's own explosions, 2010 in the colours of the user's 2010
 -- recording and with a softer glow, the 2013 one as the 2012-2013 explosion looks in the user's
--- recordings (a see-through red-orange fireball, then a dark red ball with grey smoke),
+-- recordings (a see-through red-orange fireball that fades away into nothing),
 -- and the explosion step put on the "old particles" question before the Particles addon)
 -- [[ EXPLOSION PICKER WIZARD STEP ]]
 -- Run AFTER the main Bloxy Paradox script.
@@ -282,28 +282,18 @@ local function spawnRetroExplosion(pos, scale)
 	scale = (scale or 1) * 0.75
 	-- (as the 2012-2013 explosion looks in gameplay: the user's recordings of "ROBLOX Battle" and Classic Brickbattle
 	-- Doomspire, and the 2012-2014 part of "Evolution of Roblox Explosions". A see-through red-orange fireball of round
-	-- puffs with light orange dots in it, swelling fast; then a see-through dark red ball in the middle with grey smoke
-	-- rising around it; all gone in about two seconds. Colours read from the videos. Unlit, so they look the same
+	-- puffs with light orange dots in it, swelling fast, that fades away into nothing (no dark red ball or grey smoke
+	-- after it, as the user asked); gone in about a second. Colours read from the videos. Unlit, so they look the same
 	-- under any lighting)
 	local fireballPalette = ColorSequence.new({
 		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(236, 92, 38)),
 		ColorSequenceKeypoint.new(0.35, Color3.fromRGB(214, 72, 32)),
-		ColorSequenceKeypoint.new(0.7, Color3.fromRGB(150, 40, 18)),
-		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(110, 26, 12))
+		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(196, 62, 28))
 	})
 	local dotPalette = ColorSequence.new({
 		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(255, 176, 122)),
 		ColorSequenceKeypoint.new(0.6, Color3.fromRGB(250, 150, 100)),
 		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(222, 110, 70))
-	})
-	local darkPalette = ColorSequence.new({
-		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(134, 40, 16)),
-		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(112, 26, 12)),
-		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(90, 18, 8))
-	})
-	local smokePalette = ColorSequence.new({
-		ColorSequenceKeypoint.new(0.0, Color3.fromRGB(104, 96, 96)),
-		ColorSequenceKeypoint.new(1.0, Color3.fromRGB(92, 90, 92))
 	})
 	local attachment = Instance.new("Attachment")
 	attachment.Position = pos
@@ -342,28 +332,19 @@ local function spawnRetroExplosion(pos, scale)
 		emit.Parent = attachment
 		return emit
 	end
-	-- the fireball: see-through red-orange puffs that swell fast, then darken
-	local fire = { palette = fireballPalette, sizes = { 1.4, 3.4, 4.2 }, fade = { { 0, 0.2 }, { 0.6, 0.3 }, { 1, 1 } }, z = 1 }
+	-- the fireball: see-through red-orange puffs that swell fast, then fade away into nothing
+	local fire = { palette = fireballPalette, sizes = { 1.4, 3.4, 4.2 }, fade = { { 0, 0.2 }, { 0.4, 0.3 }, { 1, 1 } }, z = 1 }
 	local core = puffs("CoreMixed", fire, { 2, 6 }, { 0.6, 0.9 })
 	local outer = puffs("OuterMixed", { palette = fireballPalette, sizes = { 1.6, 4.0, 4.8 }, fade = fire.fade, z = 1 }, { 6, 12 }, { 0.5, 0.8 })
 	local burst = puffs("BurstMixed", { palette = fireballPalette, sizes = { 1.0, 2.6, 3.2 }, fade = fire.fade, z = 1 }, { 10, 18 }, { 0.4, 0.6 })
 	-- the light orange dots inside it
 	local sparks = puffs("Sparks", { palette = dotPalette, sizes = { 0.35, 0.4, 0.15 }, fade = { { 0, 0 }, { 0.75, 0.15 }, { 1, 1 } }, glow = 0.2, z = 2 }, { 4, 14 }, { 0.4, 0.8 })
-	-- after it: the see-through dark red ball in the middle, and grey smoke rising around it
-	local dark = puffs("DarkCore", { palette = darkPalette, sizes = { 2.6, 3.0, 3.4 }, fade = { { 0, 0.15 }, { 0.7, 0.3 }, { 1, 1 } }, z = 0, rise = 1 }, { 0, 1.5 }, { 1.0, 1.4 })
-	local smoke = puffs("Smoke", { palette = smokePalette, sizes = { 2.8, 3.6, 5.0 }, fade = { { 0, 0.45 }, { 0.6, 0.55 }, { 1, 1 } }, z = -1, rise = 4 }, { 2, 6 }, { 1.0, 1.6 })
 	local density = math.clamp(scale, 0.8, 2.5)
 	core:Emit(math.floor(22 * density))
 	outer:Emit(math.floor(26 * density))
 	burst:Emit(math.floor(18 * density))
 	sparks:Emit(math.floor(40 * density))
-	task.delay(0.2, function()
-		if dark.Parent then
-			dark:Emit(math.floor(6 * density))
-			smoke:Emit(math.floor(14 * density))
-		end
-	end)
-	Debris:AddItem(attachment, 2.5)
+	Debris:AddItem(attachment, 1.5)
 end
 local function processItem(item)
 	if item:IsA("Explosion") then
