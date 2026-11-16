@@ -199,7 +199,7 @@ local function spawnRetroExplosion(pos, scale)
 		emit.Texture = CLASSIC_SMOKE_URL
 		emit.Color = multiColorPalette
 		emit.Enabled = false
-		emit.LightEmission = 0.35 -- (was 1: all the puffs glowing on top of each other came out nearly white)
+		emit.LightEmission = 0.5 -- (1 was too bright: all the puffs glowing on top of each other came out nearly white; 0.35 too dull)
 		emit.LightInfluence = 0
 		local s = sizeMult * scale
 		emit.Size = NumberSequence.new({
@@ -231,7 +231,7 @@ local function spawnRetroExplosion(pos, scale)
 	sparks.Texture = ENGINE_SPARKLE_FALLBACK
 	sparks.Color = sparkPalette
 	sparks.Enabled = false
-	sparks.LightEmission = 0.3 -- (was 0.8)
+	sparks.LightEmission = 0.45 -- (was 0.8, then 0.3)
 	sparks.LightInfluence = 0
 	sparks.Speed = NumberRange.new(10 * scale, 32 * scale)
 	sparks.Lifetime = NumberRange.new(0.4, 0.8)
