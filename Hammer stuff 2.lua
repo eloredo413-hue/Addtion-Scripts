@@ -4027,8 +4027,10 @@ task.spawn(function()
 		end
 
 		-- 2014 SHADOWS (Rowind's 2014 character shadow test, without its Studio-only parts): each character casts a
-		-- soft dark blob instead of its own shadow, thrown away from the sun onto whatever is below (up to 27 studs),
-		-- longer the lower the sun, fainter the further it falls and on surfaces turned from the sun, none at night.
+		-- soft dark blob instead of its own shadow, under its feet on whatever is below (up to 27 studs down) and
+		-- stretching from there away from the sun, longer the lower the sun, fainter and smaller the higher the
+		-- character is above it (a jump) and on surfaces turned from the sun, none at night. (It was put where the
+		-- body's shadow would fall, which with the sun low ended up beside the character instead of under it.)
 		-- Drawn as a flat picture (three rounded frames on a SurfaceGui, darkest in the middle) on an invisible part,
 		-- so nothing that changes materials or surfaces (Hammer stuff's materials, 2009 / legacy materials, Bloxy's
 		-- textures, studs) can change how it looks; anything put on the part is taken off again. No picture has to
@@ -4151,7 +4153,8 @@ task.spawn(function()
 					local rec = caster(e.char)
 					seen[e.char] = true
 					local body = e.char:FindFirstChild("Torso") or e.char:FindFirstChild("UpperTorso") or e.root
-					local hit = sun.Y > 0.02 and Workspace:Raycast(body.Position, away * SHADOW_REACH, params) or nil
+					-- the ground under the feet (straight down from the body)
+					local hit = sun.Y > 0.02 and Workspace:Raycast(e.root.Position, Vector3.new(0, -SHADOW_REACH, 0), params) or nil
 					if not hit then
 						hide(rec)
 					else
@@ -4161,7 +4164,7 @@ task.spawn(function()
 						if along.Magnitude < 0.01 then along = up:Cross(Vector3.new(0, 0, 1)) end
 						along = along.Unit
 						local right = along:Cross(up)
-						local dist = (hit.Position - body.Position).Magnitude
+						local dist = (hit.Position - e.root.Position).Magnitude -- (how high above it: about 3 standing)
 						local near = dist < 2.5 and dist / 2.5 or 1 - (dist - 2.5) / (SHADOW_REACH - 2.5)
 						near = math.clamp(near, 0.05, 1)
 						-- how see-through, as Rowind adds it up: fainter far away, on surfaces turned from the sun,
@@ -4177,6 +4180,7 @@ task.spawn(function()
 						local each = clear ^ (1 / #LAYERS)
 						local width = 4.2 * near
 						local length = width * (1 + stretch) / 2
+						-- round under the feet, the rest stretching away from the sun
 						local center = hit.Position + up * 0.03 + along * (length - width) / 2
 						local sh = rec.shadow
 						-- (resized only when it really changes: a new size redraws the picture)
@@ -5143,7 +5147,7 @@ task.spawn(function()
 		stateKey      = "is2014ShadowsEnabled",
 		onEnable      = actions.apply2014Shadows,
 		onDisable     = actions.restore2014Shadows,
-		helpText      = "From Rowind's 2014 character shadow test: each character casts a soft dark blob instead of its own shadow, thrown away from the sun onto the ground or whatever is below (up to 27 studs), longer when the sun is low, fainter the further it falls, none at night. Goes well with voxel lighting. Characters within 150 studs (the nearest 16). Untick to give characters their own shadows back."
+		helpText      = "From Rowind's 2014 character shadow test: each character casts a soft dark blob instead of its own shadow, under its feet on the ground or whatever is below, stretching away from the sun (longer when the sun is low), fainter and smaller the higher it is above the ground, none at night. Materials and textures don't change it. Goes well with voxel lighting. Characters within 150 studs (the nearest 16). Untick to give characters their own shadows back."
 	})
 
 	createAddonRow({

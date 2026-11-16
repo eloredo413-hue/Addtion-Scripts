@@ -5,18 +5,15 @@
 --  ground and a little higher for 1.5 s after each landing; no jumping again for half a second after landing; a
 --  landing faster than 200 studs a second springs back up at 75% of the speed; and the character is turned by a
 --  gyro, a share of the way each frame and more weakly in the air (not snapped round, and still steerable in a
---  jump), facing the camera in first person / shift lock. Ladders are climbed only while the stick is held, at a
---  steady 70% of WalkSpeed (the old Humanoid's climbing speed, Roblox wiki 2011), as in Retro Studio: let go of the
---  stick and you hang there for a moment (HANG_TIME), then drop; pull the stick away or jump to get off. The climb
---  goes on while anything small is within reach in front (toes to head), facing the ladder the way you grabbed it,
---  with a step onto the top only at the real top. TrussParts are climbed as Rowind's ClimbingSimulation does it
---  (up while you face the truss, along it with the stick).
+--  jump), facing the camera in first person / shift lock. Climbing (ladders and trusses) is Roblox's own, with
+--  nothing of this script's, as in Rowind's lighthouse (see OLD: CLIMBING below).
 --  "2007": the same script, as the Old physics was first made from Super Nostalgia Zone's character scripts: the
 --  small bounce on every landing (SNZ Bounciness), sinking into the ground on landing (SNZ FloorDrag) and tripping
---  when flung faster than 200 studs a second (SNZ GoofyMotion), with Roblox's own turning.
+--  when flung faster than 200 studs a second (SNZ GoofyMotion), with Roblox's own turning, and its own ladder
+--  climbing: only while the stick is held, at 70% of WalkSpeed; let go and you hang a moment (HANG_TIME), then drop.
 --  "2006": this repo's copy of FWM's (2006 Physics.lua).
 --  R6 and R15 alike: the hip height moves around the avatar's own (an R15 body stands on it), the 2007 sink moves an
---  R15 body on its root joint, and the climbing check is measured from the feet.)
+--  R15 body on its root joint, and the 2007 climbing check is measured from the feet.)
 
 task.spawn(function()
 	local HttpService = game:GetService("HttpService")
@@ -119,7 +116,6 @@ local TOP_OUT_SPEED = 10        -- a step forward onto the top
 local TOP_OUT_UP = 4            -- ...keeping (at least) a little of the climb's rise
 local MAX_FALL_TO_GRAB = 8      -- falling faster than this: no grabbing
 local HANG_TIME = 0.85          -- the stick let go on a ladder: you hang there this long (seconds), then drop (Retro Studio)
-local TRUSS_REACH = 1.15        -- Old only: a TrussPart this close in front of the body is climbed (Rowind's ClimbingSimulation)
 local SINK_RATE = 20 / 3        -- 2007 only: studs a second the body sinks / rises while falling / rising fast (SNZ FloorDrag)
 local SINK_DECAY = 0.925        -- 2007 only: share of the sink kept each 1/60 s back on the ground
 -- Old only: Rowind's character physics for the 2011-2012 clients (its PhysicsSimulation and HumanoidRotate scripts)
@@ -556,7 +552,13 @@ local function setupCharacter(char)
 		end
 	end)
 
-	-- ===== Climbing (2010-2013, as Retro Studio and Rowind have it) =====
+	-- ===== OLD: CLIMBING =====
+	-- The Old physics leaves climbing to Roblox's own Climbing state, ladders and trusses alike, with nothing of
+	-- this script's: that is how Rowind climbs in its lighthouse (a ladder built of parts: its newer versions remove
+	-- their ClimbingSimulation script, which only did trusses with Roblox's climbing switched off, and use Roblox's
+	-- own), and that clip is the climbing this copies. Roblox's turning takes over while climbing (as Rowind's HumanoidRotate leaves it), and the climbing
+	-- flag for the animations follows the Climbing state.
+	-- ===== 2007: climbing (the Old physics as it was first made) =====
 	-- Walk into any small part (a brick, a step, a ladder rung) and the character climbs it in
 	-- the real Climbing state: a steady climb at 70% of WalkSpeed while the stick is held, pushed into the part and
 	-- turned to face it. Let go of the stick and it hangs there; let go for HANG_TIME (or pull the stick away, or
@@ -605,32 +607,6 @@ local function setupCharacter(char)
 			or state == Enum.HumanoidStateType.Swimming
 	end
 
-	-- ===== Old: TrussParts, as Rowind's ClimbingSimulation does it (its pre-2014 clients) =====
-	-- A TrussPart within TRUSS_REACH studs straight in front of the body (a ray from it, as Rowind's) is climbed by
-	-- a velocity held on the body: up at 70% of WalkSpeed, and with the stick along the truss at the same speed, so
-	-- it can be climbed round and across. As in Rowind, it goes on up while you face the truss and stops at its
-	-- top (the ray finds nothing); jump to get off. Only TrussParts, as Rowind's: ladders built from parts are
-	-- climbed as below. Rowind switches Roblox's own Climbing state off; here it is left on (so the climbing
-	-- animation shows) and the held velocity decides the movement either way. R6 and R15.
-	local trussRay = RaycastParams.new()
-	trussRay.FilterType = Enum.RaycastFilterType.Exclude
-	trussRay.FilterDescendantsInstances = { char }
-	trussRay.IgnoreWater = true
-	trussRay.RespectCanCollide = true
-	local trussVelocity = Instance.new("BodyVelocity")
-	trussVelocity.Name = "ClimbVelocity"
-	trussVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-	table.insert(CharacterObjects, trussVelocity)
-	local TRUSS_STATES = {
-		[Enum.HumanoidStateType.Running] = true,
-		[Enum.HumanoidStateType.Freefall] = true,
-		[Enum.HumanoidStateType.Climbing] = true,
-	}
-	local function trussAhead()
-		local hit = Workspace:Raycast(rootPart.Position, rootPart.CFrame.LookVector * TRUSS_REACH, trussRay)
-		return hit ~= nil and hit.Instance ~= nil and hit.Instance:IsA("TrussPart")
-	end
-
 	-- Let go: drop out of the Climbing state and keep it off until the character has landed, so
 	-- it does not grab the part again on the way down.
 	local releasing = false
@@ -671,6 +647,15 @@ local function setupCharacter(char)
 	addConnection(RunService.RenderStepped:Connect(function()
 		if destroyed or not char.Parent or humanoid.Health <= 0 then return end
 
+		-- Old: Roblox's own climbing, nothing of this script's (see OLD: CLIMBING above); only the climbing flag
+		-- for the animations follows its Climbing state
+		if not ERA_2007 then
+			local climbingNow = humanoid:GetState() == Enum.HumanoidStateType.Climbing
+			climbWanted, climbActive = climbingNow, climbingNow
+			BPGenv.BPClimbing = climbingNow or nil
+			return
+		end
+
 		local moveDir = humanoid.MoveDirection
 		local moving = moveDir.Magnitude > 0.01
 
@@ -678,23 +663,6 @@ local function setupCharacter(char)
 		local frameNow = os.clock()
 		if moveDir.Magnitude >= 0.1 then lastStick = frameNow end
 
-		-- Old: on a TrussPart, Rowind's truss climbing (above) does it, and the ladder climbing below stands aside
-		if not ERA_2007 then
-			if not releasing and TRUSS_STATES[humanoid:GetState()] and not humanoid.Sit and trussAhead() then
-				local speed = humanoid.WalkSpeed * CLIMB_SPEED_SHARE
-				trussVelocity.Velocity = Vector3.new(moveDir.X * speed, speed, moveDir.Z * speed)
-				trussVelocity.Parent = rootPart
-				climbForce.Parent = nil
-				climbLift.Parent = nil
-				climbGyro.Parent = nil
-				grabStartY, climbFacing, grabbingNow = nil, nil, false
-				climbWanted = true
-				BPGenv.BPClimbing = true
-				climbActive = true
-				return
-			end
-			trussVelocity.Parent = nil
-		end
 		local frameDt = math.min(frameNow - lastFrame, 0.1)
 		lastFrame = frameNow
 
@@ -809,9 +777,9 @@ local function setupCharacter(char)
 		grabbingNow = false
 	end))
 
-	-- Jump lets go of whatever you are climbing.
+	-- Jump lets go of whatever you are climbing (2007; the Old physics leaves that to Roblox too).
 	addConnection(UserInputService.JumpRequest:Connect(function()
-		if destroyed then return end
+		if destroyed or not ERA_2007 then return end
 		if humanoid:GetState() == Enum.HumanoidStateType.Climbing then stopClimbing() end
 	end))
 
@@ -836,7 +804,6 @@ local function setupCharacter(char)
 	addConnection(char.ChildAdded:Connect(onToolAdded))
 
 	addConnection(humanoid.Died:Connect(function()
-		trussVelocity.Parent = nil
 		climbForce.Parent = nil
 		climbLift.Parent = nil
 		climbGyro.Parent = nil
