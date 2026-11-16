@@ -129,6 +129,7 @@ local ROWIND_LANDED = 0.025     -- ...right after a landing it stands here inste
 local ROWIND_LANDED_TIME = 1.5  -- ...for this long (seconds)
 local ROWIND_SETTLE_TIME = 0.25 -- ...then eases back down over this long
 local JUMP_COOLDOWN = 0.5       -- no jumping again for this long after landing
+local JUMP_PAUSE_2007 = 0.5     -- 2007 only: no jumping for this long after each landing (the jump button goes away meanwhile)
 local SPRING_SPEED = 200        -- landing faster than this (studs a second): springs back up...
 local SPRING_KEEP = 0.75        -- ...with this share of the speed
 local TURN_TORQUE = 2000        -- turning: the gyro's strength, so the character turns round rather than snapping
@@ -240,6 +241,51 @@ local function setupCharacter(char)
 	local landedAt = nil
 	local jumpBlockedUntil = 0
 
+	-- 2007 only: THE PAUSE AFTER A LANDING before you can jump again, as in the user's recording of the old client:
+	-- after each landing the phone's jump button goes away for about half a second, then comes back. The humanoid's
+	-- jump power is put to 0 for JUMP_PAUSE_2007 (no jump can start, and Roblox takes the jump button off while it is
+	-- 0), then the game's own is put back. If the game sets its own jump power during a pause, that is the one put
+	-- back. Put back too when this physics stops or the character goes.
+	local pauseProp, pauseSaved, pauseToken = nil, nil, nil
+	local function jumpProp()
+		local ok, use = pcall(function() return humanoid.UseJumpPower end)
+		return (ok and use == false) and "JumpHeight" or "JumpPower"
+	end
+	local function endJumpPause()
+		local prop, saved = pauseProp, pauseSaved
+		pauseProp, pauseSaved, pauseToken = nil, nil, nil
+		if prop and saved ~= nil and humanoid.Parent then
+			pcall(function() if humanoid[prop] == 0 then humanoid[prop] = saved end end)
+		end
+	end
+	local function startJumpPause()
+		if not pauseProp then
+			local prop = jumpProp()
+			local ok, current = pcall(function() return humanoid[prop] end)
+			if not ok or type(current) ~= "number" or current <= 0 then return end -- (jumping is off anyway)
+			pauseProp, pauseSaved = prop, current
+			pcall(function() humanoid[prop] = 0 end)
+		end
+		-- (a landing during a pause starts it again)
+		local token = {}
+		pauseToken = token
+		task.delay(JUMP_PAUSE_2007, function()
+			if pauseToken == token then endJumpPause() end
+		end)
+	end
+	if ERA_2007 then
+		for _, prop in ipairs({ "JumpPower", "JumpHeight" }) do
+			addConnection(humanoid:GetPropertyChangedSignal(prop):Connect(function()
+				-- the game set its own during a pause: kept as the one to put back
+				if pauseProp == prop and humanoid[prop] ~= 0 then
+					pauseSaved = humanoid[prop]
+					humanoid[prop] = 0
+				end
+			end))
+		end
+		table.insert(CharacterObjects, { Parent = true, Destroy = endJumpPause })
+	end
+
 	addConnection(humanoid.StateChanged:Connect(function(oldState, newState)
 		if newState ~= Enum.HumanoidStateType.Landed then return end
 		local bounceMultiplier = 1
@@ -292,6 +338,10 @@ local function setupCharacter(char)
 				landedAt = os.clock()
 			end
 		end
+		-- 2007: the pause before the next jump (not on a trampoline's launch, a ladder or a seat)
+		if ERA_2007 and bounceMultiplier == 1 and not climbWanted and climbForce.Parent == nil and not humanoid.SeatPart then
+			startJumpPause()
+		end
 		lastFallSpeed = 0
 	end))
 
@@ -305,8 +355,8 @@ local function setupCharacter(char)
 		end
 	end))
 
-	-- (No jump lock after landing: switching the Jumping state off hid the jump button and could leave a
-	-- jump made while walking stuck in the walking state. The 2006 physics keeps its own.)
+	-- (The Jumping state is never switched off for this: that could leave a jump made while walking stuck in the
+	-- walking state. 2007's pause uses the jump power instead, above. The 2006 physics keeps its own.)
 
 	addConnection(humanoid.StateChanged:Connect(function(_, newState)
 		if newState == Enum.HumanoidStateType.RunningNoPhysics then

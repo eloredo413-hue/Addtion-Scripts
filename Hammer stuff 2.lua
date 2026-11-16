@@ -1875,15 +1875,6 @@ task.spawn(function()
 		local CLASSIC_FACE_ID  = "rbxasset://textures/face.png"
 		local ENFORCE_INTERVAL = 0.75
 
-		local MOVEMENT_CATALOG_IDS = {
-			Idle  = "rbxassetid://107407916979702",
-			Walk  = "rbxassetid://103979922296239",
-			Run   = "rbxassetid://103979922296239",
-			Jump  = "rbxassetid://119095524735341",
-			Fall  = "rbxassetid://119095524735341",
-			Climb = "rbxassetid://132639392250396",
-		}
-
 		local AVATAR_PALETTES = {
 			{ Head = Color3.fromRGB(245,205,48),  Torso = Color3.fromRGB(163,162,165), LeftArm = Color3.fromRGB(245,205,48),  RightArm = Color3.fromRGB(245,205,48),  LeftLeg = Color3.fromRGB(164,189,71), RightLeg = Color3.fromRGB(164,189,71) },
 			{ Head = Color3.fromRGB(245,205,48),  Torso = Color3.fromRGB(224,152,147), LeftArm = Color3.fromRGB(245,205,48),  RightArm = Color3.fromRGB(245,205,48),  LeftLeg = Color3.fromRGB(224,152,147), RightLeg = Color3.fromRGB(224,152,147) },
@@ -1906,7 +1897,6 @@ task.spawn(function()
 			headModel = nil,
 			bodyModel = nil,
 			tshirtGraphic = RAW_TSHIRT_IMAGE,
-			movementIds = {},
 		}
 
 		local function now()
@@ -1948,20 +1938,6 @@ task.spawn(function()
 				end
 			end
 
-			for name, catalogId in pairs(MOVEMENT_CATALOG_IDS) do
-				avState.movementIds[name] = catalogId
-				local objs = safeGetObjects(catalogId)
-				if objs then
-					for _, obj in ipairs(objs) do
-						if obj:IsA("Animation") then
-							avState.movementIds[name] = obj.AnimationId
-						else
-							local anim = obj:FindFirstChildWhichIsA("Animation", true)
-							if anim then avState.movementIds[name] = anim.AnimationId end
-						end
-					end
-				end
-			end
 
 			avState.assetsLoaded = true
 			avState.assetsLoading = false
@@ -2209,59 +2185,54 @@ task.spawn(function()
 			end
 		end
 
-		-- (Addtion-Scripts) "Normal" picked in Bloxy's animation step (Roblox's own animations; the 2007 and Modern R6
-		-- animations of this repo save Bloxy's pick as Normal, so those are checked too)
-		local function normalAnimationsPicked()
-			local env = (getgenv and getgenv()) or _G
-			for _, name in ipairs({ "Animation2007", "ModernR6Animation" }) do
-				local api = env[name]
-				if type(api) == "table" and type(api.IsRunning) == "function" then
-					local ok, on = pcall(api.IsRunning)
-					if ok and on then return false end
-				end
-			end
-			local pick = nil
-			pcall(function()
-				if isfile and readfile and isfile("BloxyParadoxConfig.json") then
-					local cfg = HttpService:JSONDecode(readfile("BloxyParadoxConfig.json"))
-					pick = type(cfg) == "table" and type(cfg.Choices) == "table" and cfg.Choices.Anims or nil
-				end
-			end)
-			return pick == nil or string.lower(tostring(pick)) == "normal"
-		end
-
-		-- (Addtion-Scripts) the arms and legs held straight, as on a 2006 character: no swing, no tilt (the swing / the
-		-- avatar's own animations angled the arms out). After the animations every frame (Stepped), on both bodies.
+		-- (Addtion-Scripts) NO ANIMATIONS, as on a 2006 character: the arms and legs held straight and still, whatever
+		-- else would move them. Every frame, right before the physics step (Stepped, after the animations): each joint's
+		-- animation offset cleared, its angle and target angle put to 0, and its turning speed to 0, so a script that
+		-- turns the joints by angle (the old Animate scripts, the 2007 animation, Bloxy's) can't move it either. Every
+		-- animation that starts is stopped, and the character's Animate script switched off. The turning speeds are
+		-- given back when the 2006 avatar is turned off (or the character goes).
 		local STRAIGHT_JOINTS = {
-			["Right Shoulder"] = true, ["Left Shoulder"] = true, ["Right Hip"] = true, ["Left Hip"] = true,
+			["Right Shoulder"] = true, ["Left Shoulder"] = true, ["Right Hip"] = true, ["Left Hip"] = true, Neck = true,
 			RightShoulder = true, LeftShoulder = true, RightElbow = true, LeftElbow = true, RightWrist = true, LeftWrist = true,
 			RightHip = true, LeftHip = true, RightKnee = true, LeftKnee = true, RightAnkle = true, LeftAnkle = true,
+			Waist = true,
 		}
-		local function holdLimbsStraight(character, charConns, humanoid)
-			local joints = {}
+		local function holdLimbsStill(character, charConns, humanoid)
+			local joints = {} -- joint -> its own turning speed (MaxVelocity), given back afterwards
 			local function consider(m)
-				if m:IsA("Motor6D") and STRAIGHT_JOINTS[m.Name] then joints[m] = true end
+				if m:IsA("Motor6D") and STRAIGHT_JOINTS[m.Name] and joints[m] == nil then
+					local ok, speed = pcall(function() return m.MaxVelocity end)
+					joints[m] = ok and speed or false
+				end
 			end
 			for _, d in ipairs(character:GetDescendants()) do consider(d) end
 			table.insert(charConns, character.DescendantAdded:Connect(consider))
 			local identity = CFrame.new()
 			table.insert(charConns, RunService.Stepped:Connect(function()
-				if not character.Parent or humanoid.Health <= 0 then return end
+				if not character.Parent then return end
 				for m in pairs(joints) do
 					if not m.Parent then
 						joints[m] = nil
 					else
 						if m.Transform ~= identity then m.Transform = identity end
-						-- (R6 joints also turn by angle, as the old Animate scripts turned them)
-						if m.CurrentAngle ~= 0 or m.DesiredAngle ~= 0 then
-							pcall(function()
+						pcall(function()
+							if m.MaxVelocity ~= 0 then m.MaxVelocity = 0 end
+							if m.CurrentAngle ~= 0 or m.DesiredAngle ~= 0 then
 								m.DesiredAngle = 0
 								m.CurrentAngle = 0
-							end)
-						end
+							end
+						end)
 					end
 				end
 			end))
+			table.insert(charConns, {
+				Disconnect = function()
+					for m, speed in pairs(joints) do
+						if speed and m.Parent then pcall(function() m.MaxVelocity = speed end) end
+					end
+					table.clear(joints)
+				end,
+			})
 		end
 
 		local function injectClassicAnimations(character, charConns, isCurrent)
@@ -2284,86 +2255,14 @@ task.spawn(function()
 				end
 			end))
 
-			-- (Addtion-Scripts) "Normal" picked (Roblox's own animations): arms and legs straight, nothing else plays
-			if normalAnimationsPicked() then
-				pcall(function()
-					for _, t in ipairs(animator:GetPlayingAnimationTracks()) do t:Stop(0) end
-				end)
-				table.insert(charConns, animator.AnimationPlayed:Connect(function(track)
-					pcall(function() track:Stop(0) end)
-				end))
-				holdLimbsStraight(character, charConns, humanoid)
-				return
-			end
-
-			-- (Addtion-Scripts) An R6 body: the classic arm and leg swing (the retro animations below are R15 ones,
-			-- which leave an R6 body standing still). Its own animations are kept off.
-			if humanoid.RigType == Enum.HumanoidRigType.R6 then
-				pcall(function()
-					for _, t in ipairs(animator:GetPlayingAnimationTracks()) do t:Stop(0) end
-				end)
-				table.insert(charConns, animator.AnimationPlayed:Connect(function(track)
-					pcall(function() track:Stop(0) end)
-				end))
-				ClassicLimbs.drive(character, charConns)
-				return
-			end
-
-			local currentTrack, currentAnimId
-
-			local function playRetroAnim(animId, priority)
-				if not animId or not character.Parent or humanoid.Health <= 0 then return end
-				if currentAnimId == animId and currentTrack and currentTrack.IsPlaying then return end
-
-				if currentTrack then
-					pcall(function() currentTrack:Stop(0); currentTrack:Destroy() end)
-					currentTrack = nil
-				end
-
-				currentAnimId = animId
-				local animObj = Instance.new("Animation")
-				animObj.AnimationId = animId
-				local ok, track = pcall(function() return animator:LoadAnimation(animObj) end)
-				if ok and track then
-					currentTrack = track
-					currentTrack.Priority = priority or Enum.AnimationPriority.Action
-					pcall(function() currentTrack:Play(0) end)
-				end
-			end
-
-			local function stopDefaultTracks()
-				pcall(function()
-					for _, t in ipairs(animator:GetPlayingAnimationTracks()) do
-						if t ~= currentTrack then t:Stop(0) end
-					end
-				end)
-			end
-
-			stopDefaultTracks()
-
-			local ids = avState.movementIds
+			-- nothing plays, whatever animations were picked in Bloxy's step (R6 and R15 alike)
+			pcall(function()
+				for _, t in ipairs(animator:GetPlayingAnimationTracks()) do t:Stop(0) end
+			end)
 			table.insert(charConns, animator.AnimationPlayed:Connect(function(track)
-				if track ~= currentTrack then pcall(function() track:Stop(0) end) end
+				pcall(function() track:Stop(0) end)
 			end))
-			table.insert(charConns, humanoid.Running:Connect(function(speed)
-				stopDefaultTracks()
-				playRetroAnim(speed > 0.5 and ids.Walk or ids.Idle)
-			end))
-			table.insert(charConns, humanoid.Jumping:Connect(function()
-				stopDefaultTracks()
-				playRetroAnim(ids.Jump)
-			end))
-			table.insert(charConns, humanoid.FreeFalling:Connect(function()
-				stopDefaultTracks()
-				playRetroAnim(ids.Fall)
-			end))
-			table.insert(charConns, humanoid.Climbing:Connect(function(speed)
-				stopDefaultTracks()
-				playRetroAnim(ids.Climb)
-				if currentTrack then pcall(function() currentTrack:AdjustSpeed(speed / 10) end) end
-			end))
-
-			playRetroAnim(ids.Idle)
+			holdLimbsStill(character, charConns, humanoid)
 		end
 
 		local function setupPlayer(targetPlayer)
@@ -5262,7 +5161,7 @@ task.spawn(function()
 				exclusiveWith = { "isOldAvatarEnabled" },
 				onEnable      = actions.apply2006Avatar,
 				onDisable     = actions.restore2006Avatar,
-				helpText      = "Retro Suite 2006 Executor Edition: random 2006 body colors, classic head and face, sharp R6 meshes, the 2006 T-shirt badge, retro animations (the classic arm swing on R6 bodies) and sounds for all players. Removes accessories and clothing; respawn to get them back after disabling."
+				helpText      = "Retro Suite 2006 Executor Edition: random 2006 body colors, classic head and face, sharp R6 meshes, the 2006 T-shirt badge, no animations (arms and legs stay still, as in 2006) and sounds for all players. Removes accessories and clothing; respawn to get them back after disabling."
 			},
 		}
 	})
