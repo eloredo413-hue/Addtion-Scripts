@@ -449,6 +449,8 @@ end
 -- Bloxy's 2012 / 2013 GUIs: the menu above the hotbar, and a PC's size on a phone (and the safe chat's size to
 -- match): see "Old Gui Fix.lua"
 local URL_OLD_GUI_FIX = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Old%20Gui%20Fix.lua"
+-- the old red disconnect bar for the 2015 - 2019 GUIs (Legacy Disconnect.lua in this repo, see evaluateAndLoad)
+local URL_LEGACY_DISCONNECT = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Legacy%20Disconnect.lua"
 task.spawn(function()
     local _, why = loadUrl(URL_OLD_GUI_FIX, "Old Gui Fix")
     if why == "download" then warn("[Loader] Old Gui Fix.lua couldn't be downloaded") end
@@ -2776,6 +2778,7 @@ end
     end
     getgenv().BPRefreshHealthBar = function() pcall(updateOldHealthBar) end
 
+    local legacyDisconnectOn = false
     local function evaluateAndLoad()
         local era, raw = getSelectedEra()
         if confirmedVariant then
@@ -2784,6 +2787,30 @@ end
         print("[Loader] topbar choice \"" .. tostring(raw) .. "\" -> era: " .. era)
         getgenv().BloxyEra = era
         getgenv().BloxyTopbarRaw = tostring(raw)
+
+        -- LEGACY DISCONNECT MESSAGE: with the 2015 early / 2015 / 2016 / 2017 / 2019 GUIs a disconnect shows as the
+        -- old red bar under the top bar (Legacy Disconnect.lua), no box or blur. The real pick is used (More guis'
+        -- 2017 / 2019 save as "2023").
+        do
+            local pick = tostring(getgenv().BloxyTopbarPick or raw or "")
+            local year = tonumber(string.match(pick, "20%d%d") or "")
+            if year and year >= 2015 and year <= 2019 then
+                if not legacyDisconnectOn then
+                    legacyDisconnectOn = true
+                    task.spawn(function()
+                        local ok, why = loadUrl(URL_LEGACY_DISCONNECT, "Legacy Disconnect")
+                        if not ok then
+                            legacyDisconnectOn = false
+                            warn("[Loader] the legacy disconnect message didn't start: " .. tostring(why))
+                        end
+                    end)
+                end
+            elseif legacyDisconnectOn then
+                legacyDisconnectOn = false
+                local stop = getgenv().LegacyDisconnectStop
+                if type(stop) == "function" then pcall(stop) end
+            end
+        end
         pcall(updateOldHealthBar)
         -- the bubble script each era runs (none for "none", 2015 early, 2010, 2006 and 2005)
         local bubbleEra = era
