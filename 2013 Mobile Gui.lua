@@ -820,7 +820,7 @@ local function createClassicBubble(head, messageText)
     
     local width = math.clamp(absoluteTextSize.X + 22, 44, maxTextWidth + 22)
     local bodyHeight = absoluteTextSize.Y + 20
-    local tailWidth, tailHeight, tailOverlap = 18, 21, 6
+    local tailWidth, tailHeight, tailOverlap = 18, 21, 6.5 -- 6.5: the tail's sides flow out of the grey edge
     
     local billboard = Instance.new("BillboardGui")
     billboard.Name = "ClassicBubbleGui"
