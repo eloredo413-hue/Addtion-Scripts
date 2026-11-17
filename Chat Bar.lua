@@ -66,7 +66,8 @@ local function mobile2013()
 	local pick = topbarPick()
 	if pick and string.find(pick, "mobile", 1, true) then return true end
 	for _, holder in ipairs(holders()) do
-		if holder:FindFirstChild("LegacyTouchControls") or holder:FindFirstChild("LegacyMobileUI_FunctionalReplacement") then
+		-- (not LegacyTouchControls: that is Mobile Controls.lua now, which can be on with any GUI)
+		if holder:FindFirstChild("LegacyMobileUI_FunctionalReplacement") then
 			return true
 		end
 	end
