@@ -1,7 +1,8 @@
 -- (Addtion-Scripts) Hammer stuff 2's "lighting era" dropdown loads this file for its eras (2014, 2015, 2016, 2017,
 -- 2019, 2020). The year is handed over in getgenv().BPIWLightingYear before it runs (2017 when none is).
 -- Hammer stuff 2's "iw legacy lighting" (its own option) is the other file, IW Legacy Lighting.lua, left as it was;
--- the two are the same lighting script underneath, so only one of them runs at a time.
+-- the two are the same lighting script underneath, so only one of them runs at a time. With both ticked, this file
+-- runs the era with iw's overhaul (getgenv().BPIWLightingOverhaul: colours darkened, light boosted).
 -- Unticking calls getgenv().LegacyLightingStop(), which puts the game back as it was (the lighting, the game's own
 -- effects, the technology). Picking another year stops this one the same way first.
 --[[
@@ -154,7 +155,10 @@ do
 	local asked = tostring(g0.BPIWLightingYear or "2017")
 	if YEARS[asked] then YEAR = asked end
 	for key, value in pairs(YEARS[YEAR]) do Settings[key] = value end
-	g0.BPIWLightingYearRunning = YEAR
+	-- Hammer stuff's "iw legacy lighting" ticked too: the era's look with iw's overhaul, the legacy trick (every colour
+	-- darkened and the light boosted to match) instead of lighting only
+	if g0.BPIWLightingOverhaul then Settings.KeepColours = false end
+	g0.BPIWLightingYearRunning = YEAR .. (g0.BPIWLightingOverhaul and " + iw" or "")
 end
 
 local genv0 = (getgenv and getgenv()) or _G

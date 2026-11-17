@@ -1,4 +1,5 @@
--- [[ 2013 MOBILE GUI (Addtion-Scripts copy) - fix: the 2013 joystick now drives vehicles (fed into Roblox's control module); no stuck jump ]]
+-- [[ 2013 MOBILE GUI (Addtion-Scripts copy) - its joystick and jump button are now their own script (Mobile Controls.lua:
+--    "mobile controls" in Hammer stuff, for any GUI), so this GUI keeps Roblox's own touch controls ]]
 --[[
     =========================================================
     PART 1: SERVICES, SETTINGS & PRELOADING
@@ -29,7 +30,6 @@ local ChatService = game:GetService("Chat")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-local TOUCH_SHEET = "rbxasset://textures/ui/TouchControlsSheet.png"
 
 -- Disable native Roblox bubble chat safely on both chat engines
 pcall(function()
@@ -47,8 +47,7 @@ task.spawn(function()
         "rbxassetid://154646431",
         "rbxassetid://34854607",
         "rbxassetid://2582470061",
-        "rbxassetid://2582470060",
-        TOUCH_SHEET
+        "rbxassetid://2582470060"
     })
 end)
 
@@ -83,16 +82,8 @@ local function eliminateNativeMenuCompletely()
 end
 eliminateNativeMenuCompletely()
 
--- Persistent Modern Touch UI Hider (Preserves Backpack/Inventory)
-task.spawn(function()
-    while true do
-        local modernTouch = PlayerGui:FindFirstChild("TouchGui")
-        if modernTouch and modernTouch.Enabled then 
-            modernTouch.Enabled = false 
-        end
-        task.wait(0.5)
-    end
-end)
+-- (Roblox's own touch controls are no longer hidden here: the 2013 joystick and jump button are "mobile controls"
+-- in Hammer stuff, Mobile Controls.lua, which hides them while it is on)
 
 --[[
     =========================================================
@@ -107,9 +98,6 @@ local guiName = "LegacyMobileUI_FunctionalReplacement"
 if targetParent:FindFirstChild(guiName) then targetParent[guiName]:Destroy() end
 local dialogGuiName = "LegacyMobileUI_Dialog"
 if targetParent:FindFirstChild(dialogGuiName) then targetParent[dialogGuiName]:Destroy() end
-local touchGuiName = "LegacyTouchControls"
-if targetParent:FindFirstChild(touchGuiName) then targetParent[touchGuiName]:Destroy() end
-if PlayerGui:FindFirstChild(touchGuiName) then PlayerGui[touchGuiName]:Destroy() end
 
 -- Main UI
 local screenGui = Instance.new("ScreenGui")
@@ -129,261 +117,14 @@ dialogGui.DisplayOrder = 999999999
 dialogGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
 dialogGui.Parent = targetParent
 
--- Touch Controls UI (Parented to targetParent to survive resets)
-local touchScreenGui = Instance.new("ScreenGui")
-touchScreenGui.Name = touchGuiName
-touchScreenGui.ResetOnSpawn = false
-touchScreenGui.DisplayOrder = 999
-touchScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
-touchScreenGui.Parent = targetParent
-
 --[[
     =========================================================
-    PART 3: 2018 LEGACY MOBILE TOUCH CONTROLS
+    PART 3: TOUCH CONTROLS
+    The 2013 joystick and jump button (and their car driving) moved to Mobile Controls.lua, "mobile controls" in
+    Hammer stuff, so they can be used with any GUI. This GUI no longer makes them, and leaves the LegacyTouchControls
+    screen that script makes alone.
     =========================================================
 ]]
-
-local JoystickFrame = Instance.new("Frame", touchScreenGui)
-JoystickFrame.Name = "JoystickFrame"
-JoystickFrame.Size = UDim2.new(0, 90, 0, 90)
-JoystickFrame.Position = UDim2.new(0, 30, 1, -120)
-JoystickFrame.BackgroundTransparency = 1
-JoystickFrame.Active = true
-
-local JoystickBase = Instance.new("ImageLabel", JoystickFrame)
-JoystickBase.Name = "Base"
-JoystickBase.Size = UDim2.new(1, 0, 1, 0)
-JoystickBase.Image = TOUCH_SHEET
-JoystickBase.ImageRectOffset = Vector2.new(0, 0)
-JoystickBase.ImageRectSize = Vector2.new(220, 220)
-JoystickBase.BackgroundTransparency = 1
-
-local JoystickStick = Instance.new("ImageLabel", JoystickFrame)
-JoystickStick.Name = "Stick"
-JoystickStick.Size = UDim2.new(0, 42, 0, 42) 
-JoystickStick.Position = UDim2.new(0.5, 0, 0.5, 0)
-JoystickStick.AnchorPoint = Vector2.new(0.5, 0.5)
-JoystickStick.Image = TOUCH_SHEET
-JoystickStick.ImageRectOffset = Vector2.new(220, 0)
-JoystickStick.ImageRectSize = Vector2.new(111, 111)
-JoystickStick.BackgroundTransparency = 1
-JoystickStick.ZIndex = 2
-
-local JumpButton = Instance.new("ImageButton", touchScreenGui)
-JumpButton.Name = "JumpButton"
-JumpButton.Size = UDim2.new(0, 90, 0, 90)
-JumpButton.Position = UDim2.new(1, -120, 1, -120)
-JumpButton.BackgroundTransparency = 1
-JumpButton.Image = TOUCH_SHEET
-JumpButton.ImageRectOffset = Vector2.new(176, 222)
-JumpButton.ImageRectSize = Vector2.new(174, 174)
-JumpButton.Active = true
-
-local moveVector = Vector3.new(0,0,0)
-local walkSpeedFactor = 0
-local isJumpButtonDown = false
-local moveTouchObject = nil
-local jumpTouchObject = nil 
-local maxRadius = 45 
-
-JoystickFrame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.Touch and not moveTouchObject then
-        moveTouchObject = input
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if input == moveTouchObject then
-        local center = JoystickFrame.AbsolutePosition + (JoystickFrame.AbsoluteSize / 2)
-        local diff = Vector2.new(input.Position.X, input.Position.Y) - center
-        local dist = math.min(diff.Magnitude, maxRadius)
-        walkSpeedFactor = dist / maxRadius
-        local dir = diff.Magnitude > 0 and diff.Unit or Vector2.new(0,0)
-        JoystickStick.Position = UDim2.new(0.5, dir.X * dist, 0.5, dir.Y * dist)
-        moveVector = Vector3.new(dir.X, 0, dir.Y)
-        
-    elseif input == jumpTouchObject then
-        local pos = input.Position
-        local absPos = JumpButton.AbsolutePosition
-        local absSize = JumpButton.AbsoluteSize
-        
-        local isInside = (pos.X >= absPos.X and pos.X <= absPos.X + absSize.X and 
-                          pos.Y >= absPos.Y and pos.Y <= absPos.Y + absSize.Y)
-                          
-        if not isInside then
-            jumpTouchObject = nil
-            isJumpButtonDown = false
-            JumpButton.ImageRectOffset = Vector2.new(176, 222)
-        end
-    end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-    if input == moveTouchObject then
-        moveTouchObject = nil; moveVector = Vector3.new(0,0,0); walkSpeedFactor = 0
-        JoystickStick.Position = UDim2.new(0.5, 0, 0.5, 0)
-    end
-end)
-
-JumpButton.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.Touch and not jumpTouchObject then
-        jumpTouchObject = input
-        isJumpButtonDown = true
-        JumpButton.ImageRectOffset = Vector2.new(0, 222)
-    end
-end)
-
-JumpButton.InputEnded:Connect(function(input)
-    if input == jumpTouchObject then
-        jumpTouchObject = nil
-        isJumpButtonDown = false
-        JumpButton.ImageRectOffset = Vector2.new(176, 222)
-    end
-end)
-
--- VEHICLES (fix, part 1): this joystick replaces Roblox's touch controls, and it only called
--- LocalPlayer:Move(), which walks a character. A car is driven by the game's vehicle code, which reads
--- Roblox's real controls (the control module), so with only this joystick nothing happened. The joystick
--- is now fed into the control module itself: when it asks the active controller for the move vector it
--- gets this stick's. Cars (VehicleSeat or the game's own) then react exactly as to Roblox's own controls,
--- while the 2013 controls stay the ones on screen. The control module also does the walking then.
--- Nothing is swapped or hidden, so no button can be left held down by it.
-local lastConsulted = -1
-local function controlsAreFed()
-    return os.clock() - lastConsulted < 0.25
-end
-
-do
-    local controls = nil
-    local fedController = nil
-    local nextLook = 0
-
-    local function findControls()
-        if controls then return controls end
-        local ok, found = pcall(function()
-            local scripts = LocalPlayer:FindFirstChild("PlayerScripts")
-            local module = scripts and scripts:FindFirstChild("PlayerModule")
-            if not module then return nil end
-            return require(module):GetControls()
-        end)
-        if ok and type(found) == "table" then controls = found end
-        return controls
-    end
-
-    RunService.RenderStepped:Connect(function()
-        if not controls then
-            -- Roblox's controls may not exist yet: look again every two seconds
-            local now = os.clock()
-            if now < nextLook then return end
-            nextLook = now + 2
-            if not findControls() then return end
-        end
-        local controller = controls.activeController
-        if controller and controller ~= fedController then
-            -- a new active controller (touch, keyboard, ...): the stick is fed into that one too
-            pcall(function()
-                local original = controller.GetMoveVector
-                if type(original) ~= "function" then return end
-                controller.GetMoveVector = function(self, ...)
-                    if walkSpeedFactor > 0 and moveVector.Magnitude > 0 then
-                        lastConsulted = os.clock()
-                        return moveVector * walkSpeedFactor
-                    end
-                    return original(self, ...)
-                end
-                fedController = controller
-            end)
-        end
-    end)
-end
-
--- Nothing may stay held that is not: a touch that ended without this GUI hearing about it (a finger that
--- slid off, a GUI that was hidden for a moment) used to leave the jump button pressed down.
-local function releaseJump()
-    jumpTouchObject = nil
-    isJumpButtonDown = false
-    JumpButton.ImageRectOffset = Vector2.new(176, 222)
-end
-local function releaseStick()
-    moveTouchObject = nil
-    moveVector = Vector3.new(0,0,0)
-    walkSpeedFactor = 0
-    JoystickStick.Position = UDim2.new(0.5, 0, 0.5, 0)
-end
-local function touchIsOver(touch)
-    return touch.UserInputState == Enum.UserInputState.End or touch.UserInputState == Enum.UserInputState.Cancel
-end
-UserInputService.InputEnded:Connect(function(input)
-    if input == jumpTouchObject then releaseJump() end
-end)
-
-RunService.RenderStepped:Connect(function()
-    if jumpTouchObject and touchIsOver(jumpTouchObject) then releaseJump() end
-    if moveTouchObject and touchIsOver(moveTouchObject) then releaseStick() end
-
-    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-    if not hum then return end
-
-    -- (when the control module is being fed the stick, it does the moving itself)
-    if moveVector.Magnitude > 0 and not controlsAreFed() then
-        LocalPlayer:Move(moveVector * walkSpeedFactor, true)
-    end
-    
-    if isJumpButtonDown then
-        local state = hum:GetState()
-        local canJump = (hum.FloorMaterial ~= Enum.Material.Air or hum.Sit or state == Enum.HumanoidStateType.Climbing or state == Enum.HumanoidStateType.Swimming)
-        
-        if canJump then
-            hum.Jump = true
-            if state == Enum.HumanoidStateType.Climbing then
-                hum:ChangeState(Enum.HumanoidStateType.Jumping)
-            end
-        end
-    end
-end)
-
--- VEHICLES (fix, part 2, only if part 1 cannot work): when the control module is not asking for this
--- stick (a game without Roblox's control module), a VehicleSeat is driven directly: stick up = forward,
--- down = brake / reverse, left / right = steer. It runs just after Roblox's control step and only while
--- the stick is held. Letting go, or getting out, puts the throttle and steering back to 0.
-do
-    local STEP_NAME = "Legacy2013VehicleDrive"
-    local drivenSeat = nil
-
-    local function releaseSeat(seat)
-        if seat and seat.Parent then
-            pcall(function()
-                seat.ThrottleFloat = 0
-                seat.SteerFloat = 0
-            end)
-        end
-    end
-
-    pcall(function() RunService:UnbindFromRenderStep(STEP_NAME) end)
-    RunService:BindToRenderStep(STEP_NAME, Enum.RenderPriority.Input.Value + 1, function()
-        local character = LocalPlayer.Character
-        local hum = character and character:FindFirstChildOfClass("Humanoid")
-        local seat = hum and hum.SeatPart
-        if seat and not seat:IsA("VehicleSeat") then seat = nil end
-
-        if drivenSeat and drivenSeat ~= seat then
-            releaseSeat(drivenSeat)
-            drivenSeat = nil
-        end
-
-        if seat and walkSpeedFactor > 0 and not controlsAreFed() then
-            local stick = moveVector * walkSpeedFactor
-            pcall(function()
-                seat.ThrottleFloat = -stick.Z
-                seat.SteerFloat = stick.X
-            end)
-            drivenSeat = seat
-        elseif drivenSeat then
-            releaseSeat(drivenSeat)
-            drivenSeat = nil
-        end
-    end)
-end
 
 --[[
     =========================================================
