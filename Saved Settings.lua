@@ -140,7 +140,6 @@ local HAMMER_BOXES = {
 	FpsCapCheckbox = "isFpsCapEnabled",
 	HideMobileControlsCheckbox = "isHideMobileControlsEnabled",
 	MobileControlsCheckbox = "isMobileControlsEnabled",
-	OldThumbstickCheckbox = "isOldThumbstickEnabled",
 	IWLegacyLightingCheckbox = "isIWLegacyLightingEnabled",
 	-- the lighting era dropdown
 	IWLighting2014Checkbox = "isIWLighting2014Enabled",

@@ -75,7 +75,6 @@ task.spawn(function()
 		isFpsCapEnabled         = config.isFpsCapEnabled or false,
 		isHideMobileControlsEnabled = config.isHideMobileControlsEnabled or false,
 		isMobileControlsEnabled = config.isMobileControlsEnabled or false,
-		isOldThumbstickEnabled  = config.isOldThumbstickEnabled or false,
 		isIWLegacyLightingEnabled = config.isIWLegacyLightingEnabled or false, -- (the dropdown's "normal")
 		isIWLighting2014Enabled = config.isIWLighting2014Enabled or false,
 		isIWLighting2015Enabled = config.isIWLighting2015Enabled or false,
@@ -4344,8 +4343,7 @@ task.spawn(function()
 	-- The joystick and the jump button can't be seen but still work: each part of them gets a see-through
 	-- UIGradient (it hides what is drawn, and doesn't fight the controls' own fading in and out), and they
 	-- stay shown and active, so taps still reach them. Roblox's touch controls (TouchGui, also Bloxy's old
-	-- jump button on it) and Mobile Controls.lua's (LegacyTouchControls: "mobile controls" and "old thumbstick",
-	-- whose rings are outlines, UIStrokes, hidden the same way).
+	-- jump button on it) and Mobile Controls.lua's ("mobile controls", LegacyTouchControls).
 	------------------------------------------------------------
 	do
 		local TOUCH_GUIS = { TouchGui = true, LegacyTouchControls = true }
@@ -4355,7 +4353,7 @@ task.spawn(function()
 		local hidden = false
 
 		local function hideObject(obj)
-			if not (obj:IsA("GuiObject") or obj:IsA("UIStroke")) or obj:FindFirstChild(MARK) then return end
+			if not obj:IsA("GuiObject") or obj:FindFirstChild(MARK) then return end
 			local gradient = Instance.new("UIGradient")
 			gradient.Name = MARK
 			gradient.Transparency = NumberSequence.new(1)
@@ -4409,56 +4407,45 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
-	-- 21b. MOBILE CONTROLS and OLD THUMBSTICK (Mobile Controls.lua, downloaded once and kept)
-	-- "mobile controls": the 2013 mobile GUI's joystick and jump button, now for any GUI. "old thumbstick": the
-	-- old Roblox app's thumbstick and jump button, working the way it did (it moves to where you touch in the
-	-- lower-left corner; how far you push sets the speed). With both ticked the old thumbstick is shown. While
-	-- either is on, Roblox's own touch controls are hidden; "hide controls" hides these too (they still work).
-	-- One copy runs: the first tick downloads and starts it, later ticks only switch its look or stop it.
+	-- 21b. MOBILE CONTROLS (Mobile Controls.lua, downloaded once and kept)
+	-- The 2013 mobile GUI's joystick and jump button, now for any GUI. While on, Roblox's own touch controls are
+	-- hidden; "hide controls" hides these too (they still work). The first tick downloads and starts it, later
+	-- ticks only stop or start that copy.
 	------------------------------------------------------------
 	do
 		local URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Mobile%20Controls.lua"
 		local genv = (getgenv and getgenv()) or _G
 		local source = nil
 		local busy = false
-		local function desiredStyle()
-			if state.isOldThumbstickEnabled then return "old" end
-			if state.isMobileControlsEnabled then return "2013" end
-			return nil
-		end
 		local function running()
 			local api = genv.BPMobileControls
 			if type(api) == "table" and type(api.Start) == "function" and type(api.Stop) == "function" then return api end
 			return nil
 		end
 		local function follow(api)
-			local want = desiredStyle()
-			if want then
-				pcall(api.SetStyle, want)
+			if state.isMobileControlsEnabled then
+				pcall(api.Start)
 			else
 				pcall(api.Stop)
 			end
 		end
 		function actions.syncMobileControls()
-			if busy then return end -- the download in progress follows the latest ticks when it is done
+			if busy then return end -- the download in progress follows the latest tick when it is done
 			local api = running()
 			if api then
 				follow(api)
 				return
 			end
-			if not desiredStyle() then return end
+			if not state.isMobileControlsEnabled then return end
 			busy = true
 			local ok, err = pcall(function()
 				local src = source or game:HttpGet(URL)
 				local fn, compileErr = loadstring(src)
 				if not fn then error(compileErr, 0) end
 				source = src
-				local want = desiredStyle() -- (the ticks may have changed while it downloaded)
-				if not want then return end
-				genv.BPMobileControlsStyle = want
+				if not state.isMobileControlsEnabled then return end -- (unticked while it downloaded)
 				fn()
 			end)
-			genv.BPMobileControlsStyle = nil
 			busy = false
 			if not ok then
 				warn("[Addon] Mobile controls couldn't load: " .. tostring(err))
@@ -5509,7 +5496,7 @@ task.spawn(function()
 		stateKey      = "isHideMobileControlsEnabled",
 		onEnable      = actions.applyHideMobileControls,
 		onDisable     = actions.restoreHideMobileControls,
-		helpText      = "Hides the mobile joystick and jump button, but they still work: move and jump with your thumbs where they would be. Also hides mobile controls and old thumbstick. Untick to see them again."
+		helpText      = "Hides the mobile joystick and jump button, but they still work: move and jump with your thumbs where they would be. Also hides mobile controls. Untick to see them again."
 	})
 
 	createAddonRow({
@@ -5521,19 +5508,7 @@ task.spawn(function()
 		stateKey      = "isMobileControlsEnabled",
 		onEnable      = actions.syncMobileControls,
 		onDisable     = actions.syncMobileControls,
-		helpText      = "The 2013 mobile GUI's joystick and jump button, with any GUI (or none). Roblox's own touch controls are hidden while it is on. The joystick drives cars too, and holding jump keeps jumping. With old thumbstick ticked too, the old thumbstick is shown instead. Untick for Roblox's own controls again."
-	})
-
-	createAddonRow({
-		containerName = "OldThumbstickContainer",
-		checkboxName  = "OldThumbstickCheckbox",
-		helpName      = "OldThumbstickHelpButton",
-		label         = "old thumbstick",
-		yPos          = startY,
-		stateKey      = "isOldThumbstickEnabled",
-		onEnable      = actions.syncMobileControls,
-		onDisable     = actions.syncMobileControls,
-		helpText      = "The old Roblox app's thumbstick (2012-2013): a thin ring with a see-through knob, and the round glass jump button with the jumping figure. It works the way it did: touch anywhere in the bottom-left corner of the screen (a third of the width and height) and the stick moves there under your thumb; push a little to walk slowly, all the way for full speed, toward where the camera looks; let go and it goes back to its place. Roblox's own touch controls are hidden while it is on, and it drives cars too. Works with any GUI, with Roblox's regular controls, with mobile controls (shown instead of them) and with hide controls. Untick for the controls you had before."
+		helpText      = "The 2013 mobile GUI's joystick and jump button, with any GUI (or none). Roblox's own touch controls are hidden while it is on. The joystick drives cars too, and holding jump keeps jumping. Untick for Roblox's own controls again."
 	})
 
 	createAddonRow({
@@ -5810,7 +5785,7 @@ task.spawn(function()
 	if state.isAllPlayersEnabled then task.spawn(actions.applyAllPlayers) end
 	if state.isFpsCapEnabled then task.spawn(actions.applyFpsCap) end
 	if state.isHideMobileControlsEnabled then task.spawn(actions.applyHideMobileControls) end
-	if state.isMobileControlsEnabled or state.isOldThumbstickEnabled then task.spawn(actions.syncMobileControls) end
+	if state.isMobileControlsEnabled then task.spawn(actions.syncMobileControls) end
 	if state.isChatBarEnabled then task.spawn(actions.applyChatBar) end
 	if state.isPre2018CameraEnabled then task.spawn(actions.applyPre2018Camera) end
 	-- iw legacy lighting and / or a lighting era (one script, worked out from the saved ticks)
