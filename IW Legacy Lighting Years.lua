@@ -1,6 +1,7 @@
--- (Addtion-Scripts) Hammer stuff 2's "iw legacy lighting" dropdown loads this file for its year options (2014, 2015,
--- 2016, 2017, 2019, 2020). The year is handed over in getgenv().BPIWLightingYear before it runs (2017 when none is).
--- "normal" in the same dropdown is the other file, IW Legacy Lighting.lua, which is left as it was.
+-- (Addtion-Scripts) Hammer stuff 2's "lighting era" dropdown loads this file for its eras (2014, 2015, 2016, 2017,
+-- 2019, 2020). The year is handed over in getgenv().BPIWLightingYear before it runs (2017 when none is).
+-- Hammer stuff 2's "iw legacy lighting" (its own option) is the other file, IW Legacy Lighting.lua, left as it was;
+-- the two are the same lighting script underneath, so only one of them runs at a time.
 -- Unticking calls getgenv().LegacyLightingStop(), which puts the game back as it was (the lighting, the game's own
 -- effects, the technology). Picking another year stops this one the same way first.
 --[[
@@ -27,8 +28,8 @@
 	  The restarts after you respawn only hand over to the new run.
 	* Where Bloxy's "2016 textures" has put its stud textures, they are hidden while this runs (this script's own stud
 	  is on that face), so there are no double studs; they come back when it stops.
-	* Works together with Hammer stuff's "voxel lighting" (its soft voxel shadows and its technology stay, and whichever
-	  of the two stops last gives the game's own values back) and its other "legacy lighting".
+	* Works together with Hammer stuff's other "legacy lighting". (The soft voxel shadows are this script's own; Hammer
+	  stuff's separate "voxel lighting" option has been taken out, and the code here that worked with it does nothing.)
 	* getgenv().LegacyLightingOriginal(instance, property) gives the game's own value (Classic Face uses it).
 ]]
 

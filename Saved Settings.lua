@@ -139,14 +139,14 @@ local HAMMER_BOXES = {
 	AllPlayersCheckbox = "isAllPlayersEnabled",
 	FpsCapCheckbox = "isFpsCapEnabled",
 	HideMobileControlsCheckbox = "isHideMobileControlsEnabled",
-	IWLegacyLightingCheckbox = "isIWLegacyLightingEnabled", -- (the iw legacy lighting dropdown's "normal")
+	IWLegacyLightingCheckbox = "isIWLegacyLightingEnabled",
+	-- the lighting era dropdown
 	IWLighting2014Checkbox = "isIWLighting2014Enabled",
 	IWLighting2015Checkbox = "isIWLighting2015Enabled",
 	IWLighting2016Checkbox = "isIWLighting2016Enabled",
 	IWLighting2017Checkbox = "isIWLighting2017Enabled",
 	IWLighting2019Checkbox = "isIWLighting2019Enabled",
 	IWLighting2020Checkbox = "isIWLighting2020Enabled",
-	VoxelLightingCheckbox = "isVoxelLightingEnabled",
 	OldMoonCheckbox = "isOldMoonEnabled",
 	Shadows2014Checkbox = "is2014ShadowsEnabled",
 	SlipperyWalkCheckbox = "isSlipperyWalkEnabled",
