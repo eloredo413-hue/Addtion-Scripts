@@ -2239,13 +2239,19 @@ local function startClassicBubbles()
 	-- Sizes from a real 2014 bubble (measured on a 2014 screenshot): Arial 22 in a tight bubble
 	-- (about 9 px of white above the letters, 8 below and 5 to 6 at the sides), rounder corners and a
 	-- slightly thicker grey edge, and a slightly longer tail. Before, the text was 20 with more white round it.
+	-- Second pass (a phone screenshot next to the 2014 one at the same text size): the letters a little
+	-- heavier (a faint text stroke), the grey edge thinner and the corners a little tighter, 1 to 2 px more
+	-- white above and below the text and less at the sides, a tail a little wider at the top, and no
+	-- bubble narrower than the tail's join (a one-letter message stays roughly square).
 	local FONT_SIZE = 22
 	local MAX_WIDTH = 240            -- where long messages wrap (as many letters per line as before)
-	local PAD_X, PAD_Y = 24, 22      -- the bubble frame is the text's size plus these
+	local PAD_X, PAD_Y = 20, 22      -- the bubble frame is the text's size plus these
 	local TEXT_Y = 11                -- the text's top inside the bubble frame
-	local BODY_SLICE_SCALE = 0.5     -- the bubble picture's corners and edge (0.4 before)
+	local BODY_SLICE_SCALE = 0.42    -- the bubble picture's corners and edge (0.5 made the edge too heavy)
+	local MIN_WIDTH = 48             -- the narrowest bubble frame: its flat bottom always covers the tail's join
+	local TEXT_STROKE = 0.8          -- a faint outline on the letters: as heavy as the 2014 text (1 = none)
 	local TAIL_OVERLAP = 8           -- how far the tail's top goes up into the bubble frame
-	local TAIL_WIDTH, TAIL_HEIGHT = 18, 21
+	local TAIL_WIDTH, TAIL_HEIGHT = 20, 22
 	local DOTS_WIDTH, DOTS_HEIGHT = 52, FONT_SIZE + PAD_Y
 	local TEXT_COLOR = Color3.fromRGB(0, 0, 0)
 	local OLD_TEXT_COLOR = Color3.fromRGB(160, 160, 160)
@@ -2464,6 +2470,7 @@ local function startClassicBubbles()
 
 		for _, old in ipairs(stack.entries) do
 			old.label.TextColor3 = OLD_TEXT_COLOR
+			old.label.TextStrokeColor3 = OLD_TEXT_COLOR
 		end
 		while #stack.entries >= MAX_BUBBLES do
 			removeEntry(stack, stack.entries[1])
@@ -2492,6 +2499,8 @@ local function startClassicBubbles()
 		label.FontFace = Font.new("rbxasset://fonts/families/Arial.json", Enum.FontWeight.Regular, Enum.FontStyle.Normal)
 		label.TextSize = FONT_SIZE
 		label.TextColor3 = TEXT_COLOR
+		label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+		label.TextStrokeTransparency = TEXT_STROKE
 		label.TextWrapped = true
 		label.Text = text
 		label.ZIndex = 10
@@ -2499,7 +2508,7 @@ local function startClassicBubbles()
 
 		local entry = {
 			text = text,
-			width = math.clamp(measured.X + PAD_X, 42, MAX_WIDTH + PAD_X),
+			width = math.clamp(measured.X + PAD_X, MIN_WIDTH, MAX_WIDTH + PAD_X),
 			height = measured.Y + PAD_Y,
 			textHeight = measured.Y,
 			frame = frame,
