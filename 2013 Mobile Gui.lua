@@ -804,8 +804,9 @@ local function createClassicBubble(head, messageText)
         Enum.FontWeight.Regular,
         Enum.FontStyle.Normal
     )
-    -- the 2014 look, the same sizes as the loader's 2011-2014 bubbles (measured on a 2014 screenshot):
-    -- Arial 22 in a tight bubble, rounder corners, a slightly thicker grey edge and a longer tail
+    -- the 2014 look, the same sizes as the loader's 2011-2014 bubbles (measured on 2014 screenshots):
+    -- Arial 22 with a faint stroke (as heavy as the 2014 letters) in a tight bubble with a thin grey edge,
+    -- never narrower than the tail's join
     local fontSize = 22
     local maxTextWidth = 240
     
@@ -816,9 +817,9 @@ local function createClassicBubble(head, messageText)
         Vector2.new(maxTextWidth, 1000)
     )
     
-    local width = math.clamp(absoluteTextSize.X + 24, 42, maxTextWidth + 24)
+    local width = math.clamp(absoluteTextSize.X + 20, 48, maxTextWidth + 20)
     local bodyHeight = absoluteTextSize.Y + 22
-    local tailWidth, tailHeight, tailOverlap = 18, 21, 8
+    local tailWidth, tailHeight, tailOverlap = 20, 22, 8
     
     local billboard = Instance.new("BillboardGui")
     billboard.Name = "ClassicBubbleGui"
@@ -834,7 +835,7 @@ local function createClassicBubble(head, messageText)
     bubbleBody.BackgroundTransparency = 1
     bubbleBody.ScaleType = Enum.ScaleType.Slice
     bubbleBody.SliceCenter = Rect.new(29, 29, 67, 67)
-    bubbleBody.SliceScale = 0.5
+    bubbleBody.SliceScale = 0.42
     bubbleBody.Size = UDim2.new(1, 0, 0, bodyHeight)
     bubbleBody.ZIndex = 2
     bubbleBody.Parent = billboard
@@ -856,6 +857,8 @@ local function createClassicBubble(head, messageText)
     textLabel.FontFace = classicFont
     textLabel.TextSize = fontSize
     textLabel.TextColor3 = Color3.fromRGB(0, 0, 0)
+    textLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    textLabel.TextStrokeTransparency = 0.8
     textLabel.TextWrapped = true
     textLabel.Text = messageText
     textLabel.ZIndex = 10
