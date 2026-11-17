@@ -804,8 +804,10 @@ local function createClassicBubble(head, messageText)
         Enum.FontWeight.Regular,
         Enum.FontStyle.Normal
     )
+    -- the 2014 look, the same sizes as the loader's 2011-2014 bubbles (measured on a 2014 screenshot):
+    -- Arial 22 in a tight bubble, rounder corners, a slightly thicker grey edge and a longer tail
     local fontSize = 22
-    local maxTextWidth = 220 
+    local maxTextWidth = 240
     
     local absoluteTextSize = TextService:GetTextSize(
         messageText, 
@@ -814,12 +816,13 @@ local function createClassicBubble(head, messageText)
         Vector2.new(maxTextWidth, 1000)
     )
     
-    local width = math.clamp(absoluteTextSize.X + 36, 75, maxTextWidth + 36)
-    local height = absoluteTextSize.Y + 24 + 12 
+    local width = math.clamp(absoluteTextSize.X + 24, 42, maxTextWidth + 24)
+    local bodyHeight = absoluteTextSize.Y + 22
+    local tailWidth, tailHeight, tailOverlap = 18, 21, 8
     
     local billboard = Instance.new("BillboardGui")
     billboard.Name = "ClassicBubbleGui"
-    billboard.Size = UDim2.new(0, width, 0, height)
+    billboard.Size = UDim2.new(0, width, 0, bodyHeight + tailHeight - tailOverlap)
     billboard.Adornee = head
     billboard.StudsOffset = Vector3.new(0, 3.2, 0)
     billboard.AlwaysOnTop = false
@@ -832,27 +835,30 @@ local function createClassicBubble(head, messageText)
     bubbleBody.ScaleType = Enum.ScaleType.Slice
     bubbleBody.SliceCenter = Rect.new(29, 29, 67, 67)
     bubbleBody.SliceScale = 0.5
-    bubbleBody.Size = UDim2.new(1, 0, 1, -2) 
+    bubbleBody.Size = UDim2.new(1, 0, 0, bodyHeight)
+    bubbleBody.ZIndex = 2
     bubbleBody.Parent = billboard
 
     local bubbleTail = Instance.new("ImageLabel")
     bubbleTail.Name = "BubbleTail"
-    bubbleTail.Size = UDim2.new(0, 16, 0, 12)
-    bubbleTail.Position = UDim2.new(0.5, -8, 1, -9.5)
+    bubbleTail.Size = UDim2.new(0, tailWidth, 0, tailHeight)
+    bubbleTail.Position = UDim2.new(0.5, -tailWidth / 2, 0, bodyHeight - tailOverlap)
     bubbleTail.BackgroundTransparency = 1
     bubbleTail.Image = "rbxassetid://2582470060"
+    bubbleTail.ZIndex = 4
     bubbleTail.Parent = billboard
 
     local textLabel = Instance.new("TextLabel")
     textLabel.Name = "BubbleText"
-    textLabel.Size = UDim2.new(1, -24, 1, -20)
-    textLabel.Position = UDim2.new(0, 12, 0, 10)
+    textLabel.Size = UDim2.new(1, -16, 0, absoluteTextSize.Y)
+    textLabel.Position = UDim2.new(0, 8, 0, 11)
     textLabel.BackgroundTransparency = 1
     textLabel.FontFace = classicFont
     textLabel.TextSize = fontSize
     textLabel.TextColor3 = Color3.fromRGB(0, 0, 0)
     textLabel.TextWrapped = true
     textLabel.Text = messageText
+    textLabel.ZIndex = 10
     textLabel.Parent = billboard
     
     billboard.Parent = head
