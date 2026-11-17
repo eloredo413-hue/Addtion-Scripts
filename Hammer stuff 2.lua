@@ -81,7 +81,6 @@ task.spawn(function()
 		isIWLighting2017Enabled = config.isIWLighting2017Enabled or false,
 		isIWLighting2019Enabled = config.isIWLighting2019Enabled or false,
 		isIWLighting2020Enabled = config.isIWLighting2020Enabled or false,
-		isVoxelLightingEnabled  = config.isVoxelLightingEnabled or false,
 		isOldMoonEnabled        = config.isOldMoonEnabled or false,
 		is2014ShadowsEnabled    = config.is2014ShadowsEnabled or false,
 		isSlipperyWalkEnabled   = config.isSlipperyWalkEnabled or false,
@@ -3754,12 +3753,13 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
-	-- 22. IW LEGACY LIGHTING: a dropdown. "normal" is IW Legacy Lighting.lua (as before); the years (2014, 2015,
-	-- 2016, 2017, 2019, 2020) are IW Legacy Lighting Years.lua, told the year in getgenv().BPIWLightingYear.
-	-- Both keep their own off switch, getgenv().LegacyLightingStop, which puts the game back (lighting, effects,
-	-- colours, terrain). Only one runs at a time, and one loader makes every switch in order: the one running is
-	-- stopped fully before the next starts, and a pick made while a file is still downloading is followed once it
-	-- is done, so two never run together and the last pick wins. Each file is downloaded once and kept.
+	-- 22. IW LEGACY LIGHTING and the LIGHTING ERA dropdown. "iw legacy lighting" (its own row; "normal" below) is
+	-- IW Legacy Lighting.lua, the overhaul; the lighting eras (2014, 2015, 2016, 2017, 2019, 2020) are
+	-- IW Legacy Lighting Years.lua, told the year in getgenv().BPIWLightingYear. Underneath they are the same lighting
+	-- script, so they can't run together: both keep their own off switch, getgenv().LegacyLightingStop, which puts the
+	-- game back (lighting, effects, colours, terrain). Only one runs at a time, and one loader makes every switch in
+	-- order: the one running is stopped fully before the next starts, and a pick made while a file is still downloading
+	-- is followed once it is done, so two never run together and the last pick wins. Each file is downloaded once and kept.
 	------------------------------------------------------------
 	do
 		local URLS = {
@@ -3833,168 +3833,6 @@ task.spawn(function()
 		for _, year in ipairs(IW_YEARS) do
 			actions["applyIWLighting" .. year] = function() apply(year) end
 			actions["restoreIWLighting" .. year] = function() restore(year) end
-		end
-	end
-
-	------------------------------------------------------------
-	-- 22b. VOXEL LIGHTING (2013)
-	-- The 2013 voxel lighting (out on 9 May 2013; Retro Studio's 2013 places run on it): light and shadow worked
-	-- out on a 4-stud grid of voxels, so the sun's shadows are soft and blocky, a blob under every character, no
-	-- crisp shadow maps and no shine. Recreated in any game, only on your screen: Lighting.Technology set to Voxel
-	-- (a hidden property: needs an executor with sethiddenproperty), LightingStyle Soft with
-	-- PrioritizeLightingQuality off (where Technology is not followed any more, the newest clients' own setting for
-	-- that look), GlobalShadows on (the voxel shadows) and no environment lighting (2013 had none). The game's
-	-- colours and time of day are left alone. Untick to put back each value it changed (if the game hasn't changed
-	-- it since). Not together with legacy lighting / remove pro (they set other lighting). Together with iw legacy
-	-- lighting: its look with these shadows on; the game's own values are kept by whichever started first, and
-	-- the one that stops last gives them back (getgenv().LegacyLightingGameValues / BPVoxelGameValues).
-	------------------------------------------------------------
-	do
-		local genv = (getgenv and getgenv()) or _G
-		local vxState = { active = false, saved = nil, conns = {}, written = {}, keptGameTech = false }
-		local okStyle, StyleEnum = pcall(function() return Enum.LightingStyle end)
-		if not okStyle then StyleEnum = nil end
-
-		local function read(prop)
-			local ok, v = pcall(function() return Lighting[prop] end)
-			if ok then return v end
-			if type(gethiddenproperty) == "function" then
-				local ok2, v2 = pcall(gethiddenproperty, Lighting, prop)
-				if ok2 then return v2 end
-			end
-			return nil
-		end
-
-		-- true when the property ends up with that value
-		local function write(prop, value)
-			if read(prop) == nil then return false end -- this Roblox client doesn't have it
-			if read(prop) ~= value then
-				pcall(function() Lighting[prop] = value end)
-				if read(prop) ~= value and type(sethiddenproperty) == "function" then
-					pcall(sethiddenproperty, Lighting, prop, value)
-				end
-			end
-			vxState.written[prop] = value
-			return read(prop) == value
-		end
-
-		local function isWashed()
-			return StyleEnum ~= nil and read("LightingStyle") == StyleEnum.Realistic
-				and read("PrioritizeLightingQuality") == true
-		end
-
-		local function iwRunning()
-			return type(genv.LegacyLightingStop) == "function"
-		end
-
-		function actions.applyVoxelLighting()
-			if vxState.active then return end
-			vxState.active = true
-			vxState.written = {}
-			genv.BPVoxelLightingOn = true
-			local saved = {}
-			for _, prop in ipairs({ "Technology", "LightingStyle", "PrioritizeLightingQuality", "GlobalShadows",
-				"EnvironmentDiffuseScale", "EnvironmentSpecularScale" }) do
-				saved[prop] = read(prop)
-			end
-			-- iw legacy lighting on first: what it has set is not the game's; the game's own is what it kept
-			local iwGame = genv.LegacyLightingGameValues
-			if iwRunning() and type(iwGame) == "table" then
-				for _, prop in ipairs({ "GlobalShadows", "LightingStyle", "PrioritizeLightingQuality",
-					"EnvironmentDiffuseScale", "EnvironmentSpecularScale" }) do
-					if iwGame[prop] ~= nil then saved[prop] = iwGame[prop] end
-				end
-			end
-			vxState.saved = saved
-			genv.BPVoxelGameValues = saved
-			local report = {}
-
-			-- the technology (the game's own kept for whichever lighting option gives it back last)
-			local okVoxel, voxel = pcall(function() return Enum.Technology.Voxel end)
-			vxState.keptGameTech = false
-			if okVoxel and saved.Technology ~= nil then
-				if genv.BPGameTechnology == nil then
-					genv.BPGameTechnology = saved.Technology
-					vxState.keptGameTech = true
-				end
-				if write("Technology", voxel) then
-					report[#report + 1] = "technology " .. tostring(saved.Technology) .. " -> Voxel"
-				else
-					report[#report + 1] = "technology stays " .. tostring(saved.Technology) .. " (the executor refused)"
-				end
-			else
-				report[#report + 1] = "technology could not be read"
-			end
-
-			write("GlobalShadows", true)
-			write("EnvironmentDiffuseScale", 0)
-			write("EnvironmentSpecularScale", 0)
-
-			-- Soft, quality off. Writing a value a property already has changes nothing, and a game can read Soft / off
-			-- and still render Future until one of them really changes: quality is switched on and back off.
-			if StyleEnum then
-				write("LightingStyle", StyleEnum.Soft)
-				local flipped = write("PrioritizeLightingQuality", true)
-				task.wait(0.15)
-				if not vxState.active then return end
-				local off = write("PrioritizeLightingQuality", false)
-				report[#report + 1] = "soft lighting " .. ((flipped and off) and "applied" or "refused by the executor")
-				for _, prop in ipairs({ "LightingStyle", "PrioritizeLightingQuality" }) do
-					local ok, signal = pcall(function() return Lighting:GetPropertyChangedSignal(prop) end)
-					if ok and signal then
-						table.insert(vxState.conns, signal:Connect(function()
-							-- the game switched it back to the washed-out, sharp-shadowed lighting
-							if vxState.active and isWashed() then
-								write("LightingStyle", StyleEnum.Soft)
-								write("PrioritizeLightingQuality", false)
-							end
-						end))
-					end
-				end
-			end
-			print("[Voxel Lighting] On: " .. table.concat(report, "; ") .. (iwRunning() and "; together with iw legacy lighting" or "") .. ".")
-
-			-- unticked while it was starting
-			if not state.isVoxelLightingEnabled then actions.restoreVoxelLighting() end
-		end
-
-		function actions.restoreVoxelLighting()
-			if not vxState.active then return end
-			vxState.active = false
-			genv.BPVoxelLightingOn = nil
-			genv.BPVoxelGameValues = nil
-			for _, c in ipairs(vxState.conns) do pcall(function() c:Disconnect() end) end
-			vxState.conns = {}
-			local saved = vxState.saved or {}
-			vxState.saved = nil
-			-- iw legacy lighting still on: its own look stays (Soft lighting, Voxel, no environment light, and its shadows:
-			-- off for "normal", on for the year versions, which say so in LegacyLightingShadows), and it gives the game's
-			-- values back when it stops
-			local iwOn = iwRunning()
-			-- each value put back only if it is still the one written here (the game's own changes stay)
-			for prop, value in pairs(vxState.written) do
-				if prop ~= "Technology" and read(prop) == value then
-					if iwOn then
-						if prop == "GlobalShadows" then write(prop, genv.LegacyLightingShadows == true) end
-					elseif saved[prop] ~= nil then
-						write(prop, saved[prop])
-					end
-				end
-			end
-			if iwOn then
-				-- (the technology and the game's own kept in BPGameTechnology are left for it)
-			elseif vxState.written.Technology ~= nil and read("Technology") == vxState.written.Technology then
-				local original = genv.BPGameTechnology
-				if original == nil then original = saved.Technology end
-				genv.BPGameTechnology = nil
-				if original ~= nil then write("Technology", original) end
-			elseif vxState.keptGameTech and not genv.BPLegacyLightingOn
-				and type(genv.LegacyLightingStop) ~= "function" then
-				genv.BPGameTechnology = nil -- (the executor refused the change: nothing to give back)
-			end
-			vxState.keptGameTech = false
-			vxState.written = {}
-			print("[Voxel Lighting] Off, the game's lighting put back.")
 		end
 	end
 
@@ -5194,7 +5032,6 @@ task.spawn(function()
 		label         = "remove pro",
 		yPos          = startY + ROW_HEIGHT,
 		stateKey      = "isRemoveProEnabled",
-		exclusiveWith = { "isVoxelLightingEnabled" },
 		onEnable      = actions.applyRemovePro,
 		onDisable     = actions.restoreRemovePro,
 		helpText      = "Removes modern post-processing (Atmosphere, Bloom, DepthOfField, etc.) and applies classic 2016-era flat lighting with Retro tonemapper. Parts are converted to SmoothPlastic. Shadows are kept. Disabling restores lighting; material changes persist."
@@ -5207,31 +5044,32 @@ task.spawn(function()
 		label         = "legacy lighting",
 		yPos          = startY + 8 * ROW_HEIGHT,
 		stateKey      = "isLegacyLightingEnabled",
-		exclusiveWith = { "isVoxelLightingEnabled" },
 		onEnable      = actions.applyLegacyLighting,
 		onDisable     = actions.restoreLegacyLighting,
 		helpText      = "2017 OldGraphics lighting: Compatibility technology, no bloom, blur, sun rays, depth of field or atmosphere, and flat grey colors. Can be on together with iw legacy lighting. Untick to put the original lighting back."
 	})
 
-	createDropdown({
-		containerName = "IWLightingDropdownContainer",
-		arrowName     = "IWLightingDropdownArrow",
-		helpName      = "IWLightingDropdownHelpButton",
+	createAddonRow({
+		containerName = "IWLegacyLightingContainer",
+		checkboxName  = "IWLegacyLightingCheckbox",
+		helpName      = "IWLegacyLightingHelpButton",
 		label         = "iw legacy lighting",
 		yPos          = startY,
-		helpText      = "Press the arrow to pick the iw legacy lighting: normal (the one from before, which darkens the colors for the old Voxel look) or a year (2014, 2015, 2016, 2017, 2019, 2020: lighting only, as in your year scripts). Only one can be on at a time; picking another stops the one that is on first. Any of them can be on together with legacy lighting or voxel lighting.",
+		stateKey      = "isIWLegacyLightingEnabled",
+		exclusiveWith = { "isIWLighting2014Enabled", "isIWLighting2015Enabled", "isIWLighting2016Enabled", "isIWLighting2017Enabled", "isIWLighting2019Enabled", "isIWLighting2020Enabled" },
+		onEnable      = actions.applyIWLegacyLighting,
+		onDisable     = actions.restoreIWLegacyLighting,
+		helpText      = "The iw legacy lighting, only on your screen: an overhaul of the game's look, brighter light with darker colors like the old Voxel look, the game's bloom / atmosphere / sun rays off, terrain darkened, no 3D clouds or grass blades. The game's time of day keeps going. Works with classic faces, and can be on together with legacy lighting. Not together with a lighting era (the same lighting script underneath: picking one stops the other). Untick to put the game back as it was (lighting, effects, colors, terrain)."
+	})
+
+	createDropdown({
+		containerName = "LightingEraDropdownContainer",
+		arrowName     = "LightingEraDropdownArrow",
+		helpName      = "LightingEraDropdownHelpButton",
+		label         = "lighting era",
+		yPos          = startY,
+		helpText      = "Press the arrow to pick a lighting era: 2014, 2015, 2016, 2017, 2019 or 2020 (lighting only, as in your era scripts: the map's colors aren't changed, and soft voxel shadows are on). Only one can be on at a time, and not together with iw legacy lighting: picking one stops the one that is on first. Any of them can be on together with legacy lighting.",
 		options = {
-			{
-				containerName = "IWLegacyLightingContainer",
-				checkboxName  = "IWLegacyLightingCheckbox",
-				helpName      = "IWLegacyLightingHelpButton",
-				label         = "normal",
-				stateKey      = "isIWLegacyLightingEnabled",
-				exclusiveWith = { "isIWLighting2014Enabled", "isIWLighting2015Enabled", "isIWLighting2016Enabled", "isIWLighting2017Enabled", "isIWLighting2019Enabled", "isIWLighting2020Enabled" },
-				onEnable      = actions.applyIWLegacyLighting,
-				onDisable     = actions.restoreIWLegacyLighting,
-				helpText      = "The 2017 legacy lighting, only on your screen: brighter light with darker colors like the old Voxel look, the game's bloom / atmosphere / sun rays off, terrain darkened, no 3D clouds or grass blades. The game's time of day keeps going. Works with classic faces, and can be on together with legacy lighting or voxel lighting (with voxel lighting its shadows stay on). Untick to put the game back as it was (lighting, effects, colors, terrain)."
-			},
 			{
 				containerName = "IWLighting2014Container",
 				checkboxName  = "IWLighting2014Checkbox",
@@ -5241,7 +5079,7 @@ task.spawn(function()
 				exclusiveWith = { "isIWLegacyLightingEnabled", "isIWLighting2015Enabled", "isIWLighting2016Enabled", "isIWLighting2017Enabled", "isIWLighting2019Enabled", "isIWLighting2020Enabled" },
 				onEnable      = actions.applyIWLighting2014,
 				onDisable     = actions.restoreIWLighting2014,
-				helpText      = "The 2014 legacy lighting, only on your screen: lighting only (the map's colors aren't changed), soft voxel shadows, and none of what came in 2017 or later: glass shows as plain see-through plastic, no trails, beams, lit particles or lit 3D GUIs. The game's bloom / atmosphere / sun rays off, no 3D clouds or grass blades. (2014, 2015 and 2016 are the same: their scripts have the same settings.) The game's time of day keeps going. Works with classic faces, and can be on together with legacy lighting or voxel lighting. Untick to put the game back as it was (lighting, effects, glass, trails)."
+				helpText      = "The 2014 lighting, only on your screen: lighting only (the map's colors aren't changed), soft voxel shadows, and none of what came in 2017 or later: glass shows as plain see-through plastic, no trails, beams, lit particles or lit 3D GUIs. The game's bloom / atmosphere / sun rays off, no 3D clouds or grass blades. (2014, 2015 and 2016 are the same: their scripts have the same settings.) The game's time of day keeps going. Works with classic faces, and can be on together with legacy lighting. Not together with iw legacy lighting (the same lighting script underneath: picking one stops the other). Untick to put the game back as it was (lighting, effects, glass, trails)."
 			},
 			{
 				containerName = "IWLighting2015Container",
@@ -5252,7 +5090,7 @@ task.spawn(function()
 				exclusiveWith = { "isIWLegacyLightingEnabled", "isIWLighting2014Enabled", "isIWLighting2016Enabled", "isIWLighting2017Enabled", "isIWLighting2019Enabled", "isIWLighting2020Enabled" },
 				onEnable      = actions.applyIWLighting2015,
 				onDisable     = actions.restoreIWLighting2015,
-				helpText      = "The 2015 legacy lighting, only on your screen: lighting only (the map's colors aren't changed), soft voxel shadows, and none of what came in 2017 or later: glass shows as plain see-through plastic, no trails, beams, lit particles or lit 3D GUIs. The game's bloom / atmosphere / sun rays off, no 3D clouds or grass blades. (2014, 2015 and 2016 are the same: their scripts have the same settings.) The game's time of day keeps going. Works with classic faces, and can be on together with legacy lighting or voxel lighting. Untick to put the game back as it was (lighting, effects, glass, trails)."
+				helpText      = "The 2015 lighting, only on your screen: lighting only (the map's colors aren't changed), soft voxel shadows, and none of what came in 2017 or later: glass shows as plain see-through plastic, no trails, beams, lit particles or lit 3D GUIs. The game's bloom / atmosphere / sun rays off, no 3D clouds or grass blades. (2014, 2015 and 2016 are the same: their scripts have the same settings.) The game's time of day keeps going. Works with classic faces, and can be on together with legacy lighting. Not together with iw legacy lighting (the same lighting script underneath: picking one stops the other). Untick to put the game back as it was (lighting, effects, glass, trails)."
 			},
 			{
 				containerName = "IWLighting2016Container",
@@ -5263,7 +5101,7 @@ task.spawn(function()
 				exclusiveWith = { "isIWLegacyLightingEnabled", "isIWLighting2014Enabled", "isIWLighting2015Enabled", "isIWLighting2017Enabled", "isIWLighting2019Enabled", "isIWLighting2020Enabled" },
 				onEnable      = actions.applyIWLighting2016,
 				onDisable     = actions.restoreIWLighting2016,
-				helpText      = "The 2016 legacy lighting, only on your screen: lighting only (the map's colors aren't changed), soft voxel shadows, and none of what came in 2017 or later: glass shows as plain see-through plastic, no trails, beams, lit particles or lit 3D GUIs. The game's bloom / atmosphere / sun rays off, no 3D clouds or grass blades. (2014, 2015 and 2016 are the same: their scripts have the same settings.) The game's time of day keeps going. Works with classic faces, and can be on together with legacy lighting or voxel lighting. Untick to put the game back as it was (lighting, effects, glass, trails)."
+				helpText      = "The 2016 lighting, only on your screen: lighting only (the map's colors aren't changed), soft voxel shadows, and none of what came in 2017 or later: glass shows as plain see-through plastic, no trails, beams, lit particles or lit 3D GUIs. The game's bloom / atmosphere / sun rays off, no 3D clouds or grass blades. (2014, 2015 and 2016 are the same: their scripts have the same settings.) The game's time of day keeps going. Works with classic faces, and can be on together with legacy lighting. Not together with iw legacy lighting (the same lighting script underneath: picking one stops the other). Untick to put the game back as it was (lighting, effects, glass, trails)."
 			},
 			{
 				containerName = "IWLighting2017Container",
@@ -5274,7 +5112,7 @@ task.spawn(function()
 				exclusiveWith = { "isIWLegacyLightingEnabled", "isIWLighting2014Enabled", "isIWLighting2015Enabled", "isIWLighting2016Enabled", "isIWLighting2019Enabled", "isIWLighting2020Enabled" },
 				onEnable      = actions.applyIWLighting2017,
 				onDisable     = actions.restoreIWLighting2017,
-				helpText      = "The 2017 legacy lighting, only on your screen: lighting only (the map's colors aren't changed), soft voxel shadows, glass, trails, beams, lit particles and lit 3D GUIs as the game has them. The game's bloom / atmosphere / sun rays off, no 3D clouds or grass blades. The game's time of day keeps going. Works with classic faces, and can be on together with legacy lighting or voxel lighting. Untick to put the game back as it was (lighting, effects, glass, trails)."
+				helpText      = "The 2017 lighting, only on your screen: lighting only (the map's colors aren't changed), soft voxel shadows, glass, trails, beams, lit particles and lit 3D GUIs as the game has them. The game's bloom / atmosphere / sun rays off, no 3D clouds or grass blades. The game's time of day keeps going. Works with classic faces, and can be on together with legacy lighting. Not together with iw legacy lighting (the same lighting script underneath: picking one stops the other). Untick to put the game back as it was (lighting, effects, glass, trails)."
 			},
 			{
 				containerName = "IWLighting2019Container",
@@ -5285,7 +5123,7 @@ task.spawn(function()
 				exclusiveWith = { "isIWLegacyLightingEnabled", "isIWLighting2014Enabled", "isIWLighting2015Enabled", "isIWLighting2016Enabled", "isIWLighting2017Enabled", "isIWLighting2020Enabled" },
 				onEnable      = actions.applyIWLighting2019,
 				onDisable     = actions.restoreIWLighting2019,
-				helpText      = "The 2019 legacy lighting, only on your screen: the 2017 one with the newer tonemapper of the 2018-2019 lighting update (brighter, softer highlights instead of the hard retro clipping). The game's time of day keeps going. Works with classic faces, and can be on together with legacy lighting or voxel lighting. Untick to put the game back as it was (lighting, effects, glass, trails)."
+				helpText      = "The 2019 lighting, only on your screen: the 2017 one with the newer tonemapper of the 2018-2019 lighting update (brighter, softer highlights instead of the hard retro clipping). The game's time of day keeps going. Works with classic faces, and can be on together with legacy lighting. Not together with iw legacy lighting (the same lighting script underneath: picking one stops the other). Untick to put the game back as it was (lighting, effects, glass, trails)."
 			},
 			{
 				containerName = "IWLighting2020Container",
@@ -5296,22 +5134,9 @@ task.spawn(function()
 				exclusiveWith = { "isIWLegacyLightingEnabled", "isIWLighting2014Enabled", "isIWLighting2015Enabled", "isIWLighting2016Enabled", "isIWLighting2017Enabled", "isIWLighting2019Enabled" },
 				onEnable      = actions.applyIWLighting2020,
 				onDisable     = actions.restoreIWLighting2020,
-				helpText      = "The 2020 legacy lighting, only on your screen: the 2019 one, and what Roblox had by 2020 stays: 3D clouds, grass blades and the game's own atmosphere, bloom and sun rays. The game's time of day keeps going. Works with classic faces, and can be on together with legacy lighting or voxel lighting. Untick to put the game back as it was (lighting, effects, glass, trails)."
+				helpText      = "The 2020 lighting, only on your screen: the 2019 one, and what Roblox had by 2020 stays: 3D clouds, grass blades and the game's own atmosphere, bloom and sun rays. The game's time of day keeps going. Works with classic faces, and can be on together with legacy lighting. Not together with iw legacy lighting (the same lighting script underneath: picking one stops the other). Untick to put the game back as it was (lighting, effects, glass, trails)."
 			},
 		}
-	})
-
-	createAddonRow({
-		containerName = "VoxelLightingContainer",
-		checkboxName  = "VoxelLightingCheckbox",
-		helpName      = "VoxelLightingHelpButton",
-		label         = "voxel lighting",
-		yPos          = startY,
-		stateKey      = "isVoxelLightingEnabled",
-		exclusiveWith = { "isLegacyLightingEnabled", "isRemoveProEnabled" },
-		onEnable      = actions.applyVoxelLighting,
-		onDisable     = actions.restoreVoxelLighting,
-		helpText      = "2013 voxel lighting (as in Retro Studio's 2013 places), only on your screen: light and shadows worked out on a 4-stud grid, so shadows are soft and blocky with a blob under every character, no sharp shadows and no shine. The game's colors and time of day stay. Needs an executor that can set hidden properties for the full effect. Can be on together with iw legacy lighting (its look with these shadows). Not together with legacy lighting or remove pro. Hammer stuff's \"no shadows\" turns its shadows off. Untick to put the game's lighting back."
 	})
 
 	createAddonRow({
@@ -5323,7 +5148,7 @@ task.spawn(function()
 		stateKey      = "is2014ShadowsEnabled",
 		onEnable      = actions.apply2014Shadows,
 		onDisable     = actions.restore2014Shadows,
-		helpText      = "From Rowind's 2014 character shadow test: each character casts a soft round shadow instead of its own, dark in the middle and fading smoothly out to nothing at the edge (a radial gradient), under its feet on the ground or whatever is below, stretching away from the sun (longer when the sun is low), fainter and smaller the higher it is above the ground, none at night. Materials and textures don't change it. Goes well with voxel lighting. Characters within 150 studs (the nearest 16). Untick to give characters their own shadows back."
+		helpText      = "From Rowind's 2014 character shadow test: each character casts a soft round shadow instead of its own, dark in the middle and fading smoothly out to nothing at the edge (a radial gradient), under its feet on the ground or whatever is below, stretching away from the sun (longer when the sun is low), fainter and smaller the higher it is above the ground, none at night. Materials and textures don't change it. Characters within 150 studs (the nearest 16). Untick to give characters their own shadows back."
 	})
 
 	createAddonRow({
@@ -5891,9 +5716,6 @@ task.spawn(function()
 				break
 			end
 		end
-	end
-	if state.isVoxelLightingEnabled and not (state.isLegacyLightingEnabled or state.isRemoveProEnabled) then
-		task.spawn(actions.applyVoxelLighting)
 	end
 	if state.is2013DynamicEnabled then task.spawn(actions.apply2013Dynamic) end
 	if state.isOldMoonEnabled then task.spawn(actions.applyOldMoon) end
