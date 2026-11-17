@@ -117,32 +117,21 @@ local function startClassicBubbles()
     end
     local MAX_BUBBLES = 3            -- messages shown at once per player
     local BUBBLE_GAP = 0             -- the bubble picture's own edge already leaves a gap between stacked bubbles
-    -- Sizes from a real 2014 bubble (measured on a 2014 screenshot): Arial 22 in a tight bubble
-    -- (about 9 px of white above the letters, 8 below and 5 to 6 at the sides), rounder corners and a
-    -- slightly thicker grey edge, and a slightly longer tail. Before, the text was 20 with more white round it.
-    -- Second pass (a phone screenshot next to the 2014 one at the same text size): the letters a little
-    -- heavier (a faint text stroke), the grey edge thinner and the corners a little tighter, 1 to 2 px more
-    -- white above and below the text and less at the sides, a tail a little wider at the top, and no
-    -- bubble narrower than the tail's join (a one-letter message stays roughly square).
-    -- Third pass: the tail and the bubble's edge are back to how they were before (16 x 19, its top 6 px up
-    -- into the frame, slice 0.4): that is where the tail's top meets the white, so the join is clean. With a
-    -- thicker or thinner edge, or the tail higher, the tail's outline corners showed as bumps in the white
-    -- (worst on small bubbles). Small bubbles are back to the old narrowest size (42). The big one: 2 px less
-    -- white below the text, 2 px more at the sides (measured again next to the 2014 one).
-    -- The tail is the bigger one again (18 x 21, as in the first 2014 pass). Its top sits 6 px up into the
-    -- frame, not 8: with this thinner edge that is the same place against the white as it had then, so the
-    -- join stays clean. The narrowest bubble is 44 so its flat bottom is wider than this tail.
+    -- The 2014 bubble (measured on a 2014 screenshot): Arial 22 in a tight bubble with a soft grey edge, and a
+    -- tail whose edge runs straight on from the bubble's. These are the sizes of 2011-2014 Dialogs and Chat as first
+    -- published (the bubbles in the 2014 screenshots): the bubble picture at slice 0.5, and the 18 x 21 tail with its
+    -- top 8 px up into the frame, where the white ends, so the grey edge bends into the tail and no corner or white
+    -- connector shows. (A thinner edge, or the tail lower, left a white notch with square corners where they meet,
+    -- worst on small bubbles.) Small bubbles keep the narrow 42 frame, so the edge runs down into the tail like a
+    -- funnel. A faint stroke makes the letters as heavy as 2014's.
     local FONT_SIZE = 22
-    local MAX_WIDTH = 240            -- where long messages wrap (as many letters per line as before)
-    local PAD_X, PAD_Y = 22, 20      -- the bubble frame is the text's size plus these
+    local MAX_WIDTH = 240            -- where long messages wrap
+    local PAD_X, PAD_Y = 24, 22      -- the bubble frame is the text's size plus these
     local TEXT_Y = 11                -- the text's top inside the bubble frame
-    local BODY_SLICE_SCALE = 0.4     -- the bubble picture's corners and edge (the tail's join is made for 0.4)
-    local MIN_WIDTH = 44             -- the narrowest bubble frame: its flat bottom is wider than the tail
+    local BODY_SLICE_SCALE = 0.5     -- the bubble picture's corners and edge (the tail's join is made for 0.5)
+    local MIN_WIDTH = 42             -- the narrowest bubble frame
     local TEXT_STROKE = 0.8          -- a faint outline on the letters: as heavy as the 2014 text (1 = none)
-    -- 6.5, not 6: at 6 the tail's sides started about 1 px (2 on a phone screen) below the bubble's grey
-    -- edge, so the edge looked lighter where they meet and the tail sat a little low. 6.5 puts them where
-    -- the earlier tail had them, flowing out of the edge (7 or more starts to poke up into the white).
-    local TAIL_OVERLAP = 6.5         -- how far the tail's top goes up into the bubble frame
+    local TAIL_OVERLAP = 8           -- how far the tail's top goes up into the bubble frame
     local TAIL_WIDTH, TAIL_HEIGHT = 18, 21
     local DOTS_WIDTH, DOTS_HEIGHT = 52, FONT_SIZE + PAD_Y
     local TEXT_COLOR = Color3.fromRGB(0, 0, 0)
