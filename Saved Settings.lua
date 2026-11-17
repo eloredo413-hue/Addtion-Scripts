@@ -125,6 +125,7 @@ local HAMMER_BOXES = {
 	Colors2005Checkbox = "is2005ColorsEnabled",
 	OldAvatarCheckbox = "isOldAvatarEnabled",
 	Avatar2006Checkbox = "is2006AvatarEnabled",
+	Players2008Checkbox = "is2008PlayersEnabled",
 	ClassicFaceCheckbox = "isClassicFaceEnabled",
 	OldCameraSoundCheckbox = "isOldCameraSoundEnabled",
 	OldPartSoundsCheckbox = "isOldPartSoundsEnabled",

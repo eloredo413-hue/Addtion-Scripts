@@ -56,6 +56,7 @@ task.spawn(function()
 		isOldAvatarEnabled   = config.isOldAvatarEnabled or false,
 		isClassicFaceEnabled = config.isClassicFaceEnabled or false,
 		is2006AvatarEnabled  = config.is2006AvatarEnabled or false,
+		is2008PlayersEnabled = config.is2008PlayersEnabled or false,
 		is2012ColorsEnabled  = config.is2012ColorsEnabled or false,
 		is2006ColorsEnabled  = config.is2006ColorsEnabled or false,
 		is2005ColorsEnabled  = config.is2005ColorsEnabled or false,
@@ -1670,9 +1671,33 @@ task.spawn(function()
 			end
 		end
 
+		-- (Addtion-Scripts) the repo copy loaded (it starts itself) without ticking "classic face", for "2008 players",
+		-- which puts its 2006 head on everyone through it. Returns its api, or nil.
+		function actions.loadClassicFace()
+			local api = genv.ClassicFace
+			if type(api) == "table" and type(api.Start) == "function" then return api end
+			local t0 = os.clock()
+			while loading and os.clock() - t0 < 20 do task.wait(0.1) end
+			api = genv.ClassicFace
+			if type(api) == "table" and type(api.Start) == "function" then return api end
+			loading = true
+			local ok, err = pcall(function()
+				loadstring(game:HttpGet(CLASSIC_FACE_URL))()
+			end)
+			loading = false
+			if not ok then warn("[Classic Face] couldn't be loaded for 2008 players: " .. tostring(err)) end
+			api = genv.ClassicFace
+			return (type(api) == "table" and type(api.Start) == "function") and api or nil
+		end
+
 		function actions.restoreClassicFace()
 			if not cfActive then return end
 			cfActive = false
+			-- (Addtion-Scripts) "2008 players" puts its heads on through it: it stays on, and goes with 2008 players
+			if state.is2008PlayersEnabled then
+				print("[Classic Face] Kept on: 2008 players uses it.")
+				return
+			end
 
 			local api = genv.ClassicFace
 			if type(api) == "table" and type(api.Stop) == "function" then
@@ -1694,6 +1719,124 @@ task.spawn(function()
 				end
 			end
 			print("[Classic Face] Disabled.")
+		end
+	end
+
+	------------------------------------------------------------
+	-- 6b. 2008 PLAYERS (Addtion-Scripts)
+	-- Every player as a 2008 player, on your screen only:
+	--   * no packages: the blocky body. R6 packages are CharacterMeshes on the character; each is taken off
+	--     (kept, and put back when this is turned off), also when one comes in later. R15 limbs are MeshParts
+	--     whose mesh a script can't change while the game runs, so R15 bodies keep their shape
+	--   * the 2006 head (the 2006 avatar's head mesh) on everyone, with the face each player really wears as a
+	--     classic face: done by Classic Face (Classic Face.lua), started for it with ClassicFace.SetHead. Headless
+	--     heads are left as they are
+	-- Their clothes, hats, body colours and animations are left alone. Not together with the old avatar or the
+	-- 2006 avatar (they change the same things).
+	------------------------------------------------------------
+	do
+		local genv = (getgenv and getgenv()) or _G
+		local HEAD_2006_ASSET = "rbxassetid://12723461139"
+		local HEAD_SCALE_2006 = Vector3.new(1.25, 1.25, 1.25)
+		-- (removed: each package taken off -> its character. A plain table: the packages are out of the game, so
+		-- nothing else holds on to them until they are put back)
+		local p8 = { active = false, conns = {}, removed = {} }
+		local headSpec = nil
+
+		-- the 2006 head: the mesh in the 2006 avatar's head asset (the plain classic head if it can't be read)
+		local function loadHead()
+			if headSpec then return headSpec end
+			local spec = { name = "the 2006 head", scale = HEAD_SCALE_2006 }
+			local ok, objs = pcall(function() return game:GetObjects(HEAD_2006_ASSET) end)
+			if ok and type(objs) == "table" and objs[1] then
+				local root = objs[1]
+				local found = nil
+				if root:IsA("SpecialMesh") or root:IsA("MeshPart") then
+					found = root
+				else
+					found = root:FindFirstChildWhichIsA("SpecialMesh", true) or root:FindFirstChildWhichIsA("MeshPart", true)
+				end
+				if found and found:IsA("SpecialMesh") and found.MeshId ~= "" then
+					spec.meshId, spec.textureId = found.MeshId, found.TextureId
+				elseif found and found:IsA("MeshPart") and found.MeshId ~= "" then
+					spec.meshId, spec.textureId = found.MeshId, found.TextureID
+				end
+			end
+			if not spec.meshId then
+				warn("[2008 Players] the 2006 head couldn't be read: the plain classic head is used")
+				spec.name = "the plain classic head"
+			end
+			headSpec = spec
+			return spec
+		end
+
+		-- R6 packages off: each CharacterMesh kept aside (put back when turned off), also one put back by the game
+		local function stripPackages(character)
+			for _, child in ipairs(character:GetChildren()) do
+				if child:IsA("CharacterMesh") then
+					if p8.removed[child] == nil then p8.removed[child] = character end
+					pcall(function() child.Parent = nil end)
+				end
+			end
+		end
+
+		local function hookCharacter(character)
+			if not p8.active or not character then return end
+			stripPackages(character)
+			table.insert(p8.conns, character.ChildAdded:Connect(function(child)
+				if p8.active and child:IsA("CharacterMesh") then
+					-- (once it has been put in place)
+					task.defer(function()
+						if p8.active and child.Parent == character then stripPackages(character) end
+					end)
+				end
+			end))
+		end
+
+		local function hookPlayer(plr)
+			if plr.Character then hookCharacter(plr.Character) end
+			table.insert(p8.conns, plr.CharacterAdded:Connect(hookCharacter))
+		end
+
+		function actions.apply2008Players()
+			if p8.active then return end
+			p8.active = true
+			for _, plr in ipairs(Players:GetPlayers()) do pcall(hookPlayer, plr) end
+			table.insert(p8.conns, Players.PlayerAdded:Connect(function(plr) pcall(hookPlayer, plr) end))
+			task.spawn(function()
+				local spec = loadHead()
+				-- the head is set before Classic Face starts, so it does each head once
+				if p8.active then genv.BPClassicFaceHead = spec end
+				local api = actions.loadClassicFace and actions.loadClassicFace() or nil
+				if not p8.active then return end
+				if not api then
+					warn("[2008 Players] Classic Face couldn't be started: the heads stay as they are")
+					return
+				end
+				pcall(api.Start)
+				if type(api.SetHead) == "function" then pcall(api.SetHead, spec) end
+				print("[2008 Players] On: blocky bodies (R6 packages off), " .. tostring(spec.name) .. " with classic faces on everyone.")
+			end)
+		end
+
+		function actions.restore2008Players()
+			if not p8.active then return end
+			p8.active = false
+			for _, c in ipairs(p8.conns) do pcall(function() c:Disconnect() end) end
+			table.clear(p8.conns)
+			-- the packages back on their characters (not on one that is gone)
+			for mesh, character in pairs(p8.removed) do
+				if character.Parent then pcall(function() mesh.Parent = character end) end
+			end
+			table.clear(p8.removed)
+			genv.BPClassicFaceHead = nil
+			local api = genv.ClassicFace
+			if type(api) == "table" then
+				if type(api.SetHead) == "function" then pcall(api.SetHead, nil) end
+				-- started for this only: off again ("classic face" ticked: it stays, with each head's own rules)
+				if not state.isClassicFaceEnabled and type(api.Stop) == "function" then pcall(api.Stop) end
+			end
+			print("[2008 Players] Off: packages and heads back.")
 		end
 	end
 
@@ -5139,7 +5282,7 @@ task.spawn(function()
 		helpName      = "AvatarDropdownHelpButton",
 		label         = "avatar",
 		yPos          = startY + 4 * ROW_HEIGHT,
-		helpText      = "Press the arrow to pick an avatar era: old avatar or 2006 avatar. Only one can be on at a time.",
+		helpText      = "Press the arrow to pick an avatar era: old avatar, 2006 avatar or 2008 players. Only one can be on at a time.",
 		options = {
 			{
 				containerName = "OldAvatarContainer",
@@ -5147,7 +5290,7 @@ task.spawn(function()
 				helpName      = "OldAvatarHelpButton",
 				label         = "old avatar",
 				stateKey      = "isOldAvatarEnabled",
-				exclusiveWith = { "is2006AvatarEnabled" },
+				exclusiveWith = { "is2006AvatarEnabled", "is2008PlayersEnabled" },
 				onEnable      = actions.applyOldAvatar,
 				onDisable     = actions.restoreOldAvatar,
 				helpText      = "Retro Suite 2006: 2010 Motor6D procedural animations for all players (R6 and R15 bodies), 31-color palette quantization, 1-hat/1-hair enforcement, legacy audio, and original mesh/face textures."
@@ -5158,10 +5301,21 @@ task.spawn(function()
 				helpName      = "Avatar2006HelpButton",
 				label         = "2006 avatar",
 				stateKey      = "is2006AvatarEnabled",
-				exclusiveWith = { "isOldAvatarEnabled" },
+				exclusiveWith = { "isOldAvatarEnabled", "is2008PlayersEnabled" },
 				onEnable      = actions.apply2006Avatar,
 				onDisable     = actions.restore2006Avatar,
 				helpText      = "Retro Suite 2006 Executor Edition: random 2006 body colors, classic head and face, sharp R6 meshes, the 2006 T-shirt badge, no animations (arms and legs stay still, as in 2006) and sounds for all players. Removes accessories and clothing; respawn to get them back after disabling."
+			},
+			{
+				containerName = "Players2008Container",
+				checkboxName  = "Players2008Checkbox",
+				helpName      = "Players2008HelpButton",
+				label         = "2008 players",
+				stateKey      = "is2008PlayersEnabled",
+				exclusiveWith = { "isOldAvatarEnabled", "is2006AvatarEnabled" },
+				onEnable      = actions.apply2008Players,
+				onDisable     = actions.restore2008Players,
+				helpText      = "Every player as a 2008 player: the blocky body (R6 packages taken off; R15 bodies keep their shape, a script can't change those) and the 2006 head with the face each player wears as a classic face (through classic face, started for it). Clothes, hats and colors stay. Untick to put packages and heads back."
 			},
 		}
 	})
@@ -5576,7 +5730,8 @@ task.spawn(function()
 	if state.isOutlineEnabled then task.spawn(actions.applyOutline) end
 	if state.isLensFlareEnabled then task.spawn(actions.applyLensFlare) end
 	if state.isOldAvatarEnabled then task.spawn(actions.applyOldAvatar)
-	elseif state.is2006AvatarEnabled then task.spawn(actions.apply2006Avatar) end
+	elseif state.is2006AvatarEnabled then task.spawn(actions.apply2006Avatar)
+	elseif state.is2008PlayersEnabled then task.spawn(actions.apply2008Players) end
 	if state.isClassicFaceEnabled then task.spawn(actions.applyClassicFace) end
 	if state.is2012ColorsEnabled then task.spawn(actions.apply2012Colors)
 	elseif state.is2006ColorsEnabled then task.spawn(actions.apply2006Colors)

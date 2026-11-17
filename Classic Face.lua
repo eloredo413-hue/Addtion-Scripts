@@ -20,7 +20,12 @@
 -- Nothing of the player's own is deleted: their face decals and dynamic head are only hidden, so
 -- getgenv().ClassicFace.Stop() puts every head back as it was. It waits for each avatar to load, and
 -- follows changes (a new head, a new face) while it runs.
--- getgenv().ClassicFace = { Start, Stop, IsRunning, Refresh }
+-- getgenv().ClassicFace = { Start, Stop, IsRunning, Refresh, SetHead }
+--
+-- (Addtion-Scripts) One head for everyone: ClassicFace.SetHead({ meshId, textureId, scale, name }) (Hammer stuff 2's
+-- "2008 players" sets the 2006 head) covers every head but headless ones with a classic head of that mesh, the face
+-- each player really wears on it, the same way a dynamic head is covered. SetHead(nil) goes back to the rules above.
+-- (Also read from getgenv().BPClassicFaceHead.)
 
 local Env = (getgenv and getgenv()) or _G
 if Env.ClassicFace and type(Env.ClassicFace.Stop) == "function" then
@@ -1059,6 +1064,13 @@ local function makeFaceDecal(texture)
 	return decal
 end
 
+-- the one head everyone gets, when set (see SetHead at the top)
+local function headOverride()
+	local spec = Env.BPClassicFaceHead
+	if type(spec) == "table" then return spec end
+	return nil
+end
+
 local generation = setmetatable({}, { __mode = "k" }) -- character -> number of the latest refresh
 local lastReport = setmetatable({}, { __mode = "k" })
 
@@ -1094,8 +1106,9 @@ local function apply(player, character)
 		st.hiddenDecals = {}
 		return
 	end
-	if kind == "dynamic" then
-		-- a dynamic head: hidden, with a classic head on top
+	local override = headOverride()
+	if kind == "dynamic" or override then
+		-- a dynamic head (or, with one head for everyone, any head): hidden, with a classic head on top
 		st.headTransparency = head.Transparency
 		head.Transparency = 1
 
@@ -1112,7 +1125,17 @@ local function apply(player, character)
 		fake.CFrame = head.CFrame
 
 		local mesh = Instance.new("SpecialMesh")
-		if shape and shape.mesh then
+		if override then
+			-- the one head everyone gets (the 2006 head for "2008 players")
+			if type(override.meshId) == "string" and override.meshId ~= "" then
+				mesh.MeshType = Enum.MeshType.FileMesh
+				mesh.MeshId = override.meshId
+				mesh.TextureId = type(override.textureId) == "string" and override.textureId or ""
+			else
+				mesh.MeshType = Enum.MeshType.Head
+			end
+			mesh.Scale = typeof(override.scale) == "Vector3" and override.scale or HEAD_SCALE
+		elseif shape and shape.mesh then
 			-- the classic model of its shape (Roundy, Blockhead, ...)
 			mesh.MeshType = Enum.MeshType.FileMesh
 			mesh.MeshId = "rbxassetid://" .. tostring(shape.mesh)
@@ -1135,9 +1158,14 @@ local function apply(player, character)
 		st.fake = fake
 		st.weld = weld
 		fakeHeads[character] = st
-		st.report = "dynamic head -> classic head" .. (shape and (" (" .. shape.key .. ")") or "")
-			.. ", face from " .. tostring(source)
-			.. (shape and "" or (" [its shape isn't known, so the plain head: " .. tostring(seen) .. "]"))
+		if override then
+			st.report = (kind == "dynamic" and "dynamic" or "classic") .. " head -> " .. tostring(override.name or "the one head")
+				.. ", face from " .. tostring(source)
+		else
+			st.report = "dynamic head -> classic head" .. (shape and (" (" .. shape.key .. ")") or "")
+				.. ", face from " .. tostring(source)
+				.. (shape and "" or (" [its shape isn't known, so the plain head: " .. tostring(seen) .. "]"))
+		end
 	else
 		-- a classic head (R6 mesh, R15 classic head, or the plain head): kept, with the face on it
 		if not head:IsA("MeshPart") and not head:FindFirstChildWhichIsA("DataModelMesh") then
@@ -1296,6 +1324,12 @@ function api.Refresh()
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player.Character then scheduleApply(player, player.Character, 0) end
 	end
+end
+
+-- one head for everyone (nil: back to each head's own rules), every head done again
+function api.SetHead(spec)
+	Env.BPClassicFaceHead = (type(spec) == "table") and spec or nil
+	if running then api.Refresh() end
 end
 
 Env.ClassicFace = api
