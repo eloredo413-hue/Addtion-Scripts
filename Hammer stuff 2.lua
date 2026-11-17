@@ -3955,24 +3955,26 @@ task.spawn(function()
 			print("[Old Moon] Off, the game's moon back.")
 		end
 
-		-- 2014 SHADOWS (Rowind's 2014 character shadow test, without its Studio-only parts): each character casts a
-		-- soft dark blob instead of its own shadow, under its feet on whatever is below (up to 27 studs down) and
-		-- stretching from there away from the sun, longer the lower the sun, fainter and smaller the higher the
-		-- character is above it (a jump) and on surfaces turned from the sun, none at night. (It was put where the
-		-- body's shadow would fall, which with the sun low ended up beside the character instead of under it.)
-		-- Drawn as a radial gradient, darkest in the middle and fading smoothly out to nothing at the edge: twelve
-		-- see-through discs on top of each other on a SurfaceGui (the more of them overlap, the darker), on an
-		-- invisible part, so nothing that changes materials or surfaces (Hammer stuff's materials, 2009 / legacy
-		-- materials, Bloxy's textures, studs) can change how it looks; anything put on the part is taken off again. No
-		-- picture has to load (a frame's own gradients only run in a straight line, so the discs make the round one).
-		-- It used to be three discs, which showed as three flat rings. Characters within 150 studs, the nearest 16.
+		-- 2014 SHADOWS (from Rowind's 2014 character shadow test, without its Studio-only parts), drawn as the old
+		-- blob shadow (like the one under the characters in the 2013 Roblox app): each character casts a soft round
+		-- blob instead of its own shadow, right under its feet on whatever is below (up to 27 studs down), about a third
+		-- darker than the ground in the middle and fading smoothly out to nothing (a soft bell, no rings), smaller and
+		-- fainter the higher the character is above it (a jump), none at night. It no longer stretches away from the sun
+		-- or fades on surfaces turned from it: the blob is the same at any time of day.
+		-- Drawn as 24 see-through discs on top of each other on a SurfaceGui (the more of them overlap, the darker; with
+		-- 24 the steps are too small to see), on an invisible part, so nothing that changes materials or surfaces
+		-- (Hammer stuff's materials, 2009 / legacy materials, Bloxy's textures, studs) can change how it looks; anything
+		-- put on the part is taken off again. No picture has to load (a frame's own gradients only run in a straight
+		-- line, so the discs make the round one). Characters within 150 studs, the nearest 16.
 		local SHADOW_REACH = 27
 		local SHADOW_RANGE = 150
 		local MAX_SHADOWS = 16
-		-- the discs' sizes, from the full size down: closer together towards the edge (square-root steps), so the
-		-- middle stays dark and the edge fades out softly
+		local BLOB_SIZE = 3.8      -- studs across, standing on the ground (the faint edge included)
+		local BLOB_CLEAR = 0.65    -- how much of the ground shows through in the middle (a third darker)
+		-- the discs' sizes (fractions of the blob's width): disc i covers where the bell (1 - r^2)^2 is at least
+		-- (i - 0.5) / 24, so the darkness falls off as a smooth bell from the middle to the edge
 		local LAYERS = {}
-		for i = 1, 12 do LAYERS[i] = math.sqrt(1 - (i - 1) / 12) end
+		for i = 1, 24 do LAYERS[i] = math.sqrt(1 - math.sqrt((i - 0.5) / 24)) end
 		local shState = { active = false }
 
 		-- one shadow: an invisible flat part whose top face carries the picture
@@ -4080,8 +4082,6 @@ task.spawn(function()
 				params.FilterDescendantsInstances = exclude
 				local seen = {}
 				local sun = Lighting:GetSunDirection()
-				local away = -sun
-				local stretch = math.clamp((1 - (sun.Y + 1) / 2) * 4 + 1, 1, 3) -- (long at sunset, round at noon)
 				for i = 1, math.min(#list, MAX_SHADOWS) do
 					local e = list[i]
 					local rec = caster(e.char)
@@ -4093,17 +4093,17 @@ task.spawn(function()
 						hide(rec)
 					else
 						local up = hit.Normal
-						local along = away - up * away:Dot(up)
-						if along.Magnitude < 0.01 then along = up:Cross(Vector3.new(1, 0, 0)) end
+						-- (any direction along the ground: the blob is round)
+						local along = up:Cross(Vector3.new(1, 0, 0))
 						if along.Magnitude < 0.01 then along = up:Cross(Vector3.new(0, 0, 1)) end
 						along = along.Unit
 						local right = along:Cross(up)
 						local dist = (hit.Position - e.root.Position).Magnitude -- (how high above it: about 3 standing)
 						local near = dist < 2.5 and dist / 2.5 or 1 - (dist - 2.5) / (SHADOW_REACH - 2.5)
 						near = math.clamp(near, 0.05, 1)
-						-- how see-through, as Rowind adds it up: fainter far away, on surfaces turned from the sun,
-						-- and when the character is see-through (first person included)
-						local clear = 0.35 + (1 - near) / 2 + (1 - (up:Dot(sun) + 1) / 2)
+						-- how see-through: fainter the higher above the ground, and when the character is see-through
+						-- (first person included)
+						local clear = BLOB_CLEAR + (1 - near) / 2
 						local ok, bodyClear = pcall(function()
 							return 1 - (1 - body.Transparency) * (1 - body.LocalTransparencyModifier)
 						end)
@@ -4112,10 +4112,10 @@ task.spawn(function()
 						-- the discs on top of each other: each lets `each` of the light through, so the middle, where all of
 						-- them are, lets `clear` through (each ^ count = clear), and towards the edge it gets lighter
 						local each = clear ^ (1 / #LAYERS)
-						local width = 4.2 * near
-						local length = width * (1 + stretch) / 2
-						-- round under the feet, the rest stretching away from the sun
-						local center = hit.Position + up * 0.03 + along * (length - width) / 2
+						local width = BLOB_SIZE * near
+						local length = width
+						-- round, right under the feet
+						local center = hit.Position + up * 0.03
 						local sh = rec.shadow
 						-- (resized only when it really changes: a new size redraws the picture)
 						local size = sh.size
@@ -4124,7 +4124,7 @@ task.spawn(function()
 							sh.part.Size = sh.size
 						end
 						sh.part.CFrame = CFrame.fromMatrix(center, right, up)
-						-- (only when it changes: twelve discs on up to sixteen shadows, every frame)
+						-- (only when it changes: 24 discs on up to sixteen shadows, every frame)
 						if not sh.each or math.abs(sh.each - each) > 0.002 then
 							sh.each = each
 							for _, f in ipairs(sh.frames) do f.BackgroundTransparency = each end
@@ -5148,7 +5148,7 @@ task.spawn(function()
 		stateKey      = "is2014ShadowsEnabled",
 		onEnable      = actions.apply2014Shadows,
 		onDisable     = actions.restore2014Shadows,
-		helpText      = "From Rowind's 2014 character shadow test: each character casts a soft round shadow instead of its own, dark in the middle and fading smoothly out to nothing at the edge (a radial gradient), under its feet on the ground or whatever is below, stretching away from the sun (longer when the sun is low), fainter and smaller the higher it is above the ground, none at night. Materials and textures don't change it. Characters within 150 studs (the nearest 16). Untick to give characters their own shadows back."
+		helpText      = "The old blob shadow (as under the characters in the 2013 Roblox app), from Rowind's 2014 character shadow test: each character casts a soft round blob instead of its own shadow, right under its feet on the ground or whatever is below, a third darker in the middle and fading smoothly out to nothing, the same at any time of day, fainter and smaller the higher it is above the ground, none at night. Materials and textures don't change it. Characters within 150 studs (the nearest 16). Untick to give characters their own shadows back."
 	})
 
 	createAddonRow({
