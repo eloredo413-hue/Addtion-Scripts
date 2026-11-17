@@ -2243,15 +2243,20 @@ local function startClassicBubbles()
 	-- heavier (a faint text stroke), the grey edge thinner and the corners a little tighter, 1 to 2 px more
 	-- white above and below the text and less at the sides, a tail a little wider at the top, and no
 	-- bubble narrower than the tail's join (a one-letter message stays roughly square).
+	-- Third pass: the tail and the bubble's edge are back to how they were before (16 x 19, its top 6 px up
+	-- into the frame, slice 0.4): that is where the tail's top meets the white, so the join is clean. With a
+	-- thicker or thinner edge, or the tail higher, the tail's outline corners showed as bumps in the white
+	-- (worst on small bubbles). Small bubbles are back to the old narrowest size (42). The big one: 2 px less
+	-- white below the text, 2 px more at the sides (measured again next to the 2014 one).
 	local FONT_SIZE = 22
 	local MAX_WIDTH = 240            -- where long messages wrap (as many letters per line as before)
-	local PAD_X, PAD_Y = 20, 22      -- the bubble frame is the text's size plus these
+	local PAD_X, PAD_Y = 22, 20      -- the bubble frame is the text's size plus these
 	local TEXT_Y = 11                -- the text's top inside the bubble frame
-	local BODY_SLICE_SCALE = 0.42    -- the bubble picture's corners and edge (0.5 made the edge too heavy)
-	local MIN_WIDTH = 48             -- the narrowest bubble frame: its flat bottom always covers the tail's join
+	local BODY_SLICE_SCALE = 0.4     -- the bubble picture's corners and edge (the tail's join is made for 0.4)
+	local MIN_WIDTH = 42             -- the narrowest bubble frame (as before)
 	local TEXT_STROKE = 0.8          -- a faint outline on the letters: as heavy as the 2014 text (1 = none)
-	local TAIL_OVERLAP = 8           -- how far the tail's top goes up into the bubble frame
-	local TAIL_WIDTH, TAIL_HEIGHT = 20, 22
+	local TAIL_OVERLAP = 6           -- how far the tail's top goes up into the bubble frame (to where the white ends)
+	local TAIL_WIDTH, TAIL_HEIGHT = 16, 19
 	local DOTS_WIDTH, DOTS_HEIGHT = 52, FONT_SIZE + PAD_Y
 	local TEXT_COLOR = Color3.fromRGB(0, 0, 0)
 	local OLD_TEXT_COLOR = Color3.fromRGB(160, 160, 160)
