@@ -2235,11 +2235,18 @@ local function startClassicBubbles()
 	end
 
 	local MAX_BUBBLES = 3
-	local BUBBLE_GAP = 2
-	local FONT_SIZE = 20
-	local MAX_WIDTH = 220
-	local TAIL_WIDTH, TAIL_HEIGHT = 16, 19
-	local DOTS_WIDTH, DOTS_HEIGHT = 52, 38
+	local BUBBLE_GAP = 0             -- the bubble picture's own edge already leaves a gap between stacked bubbles
+	-- Sizes from a real 2014 bubble (measured on a 2014 screenshot): Arial 22 in a tight bubble
+	-- (about 9 px of white above the letters, 8 below and 5 to 6 at the sides), rounder corners and a
+	-- slightly thicker grey edge, and a slightly longer tail. Before, the text was 20 with more white round it.
+	local FONT_SIZE = 22
+	local MAX_WIDTH = 240            -- where long messages wrap (as many letters per line as before)
+	local PAD_X, PAD_Y = 24, 22      -- the bubble frame is the text's size plus these
+	local TEXT_Y = 11                -- the text's top inside the bubble frame
+	local BODY_SLICE_SCALE = 0.5     -- the bubble picture's corners and edge (0.4 before)
+	local TAIL_OVERLAP = 8           -- how far the tail's top goes up into the bubble frame
+	local TAIL_WIDTH, TAIL_HEIGHT = 18, 21
+	local DOTS_WIDTH, DOTS_HEIGHT = 52, FONT_SIZE + PAD_Y
 	local TEXT_COLOR = Color3.fromRGB(0, 0, 0)
 	local OLD_TEXT_COLOR = Color3.fromRGB(160, 160, 160)
 
@@ -2306,14 +2313,14 @@ local function startClassicBubbles()
 				entry.frame.Visible = newest
 				if newest then
 					entry.label.Text = "..."
-					entry.label.Size = UDim2.new(1, -16, 0, 20)
-					entry.label.Position = UDim2.new(0, 8, 0, 9)
+					entry.label.Size = UDim2.new(1, -16, 0, FONT_SIZE)
+					entry.label.Position = UDim2.new(0, 8, 0, TEXT_Y)
 					entry.frame.Size = UDim2.new(0, DOTS_WIDTH, 0, DOTS_HEIGHT)
 					entry.frame.Position = UDim2.new(0.5, -DOTS_WIDTH / 2, 0, 0)
 				end
 			end
 			stack.gui.Size = UDim2.new(0, DOTS_WIDTH, 0, DOTS_HEIGHT + TAIL_HEIGHT)
-			stack.tail.Position = UDim2.new(0.5, -TAIL_WIDTH / 2, 0, DOTS_HEIGHT - 6)
+			stack.tail.Position = UDim2.new(0.5, -TAIL_WIDTH / 2, 0, DOTS_HEIGHT - TAIL_OVERLAP)
 			return
 		end
 
@@ -2336,10 +2343,10 @@ local function startClassicBubbles()
 			entry.frame.Position = UDim2.new(0.5, -entry.width / 2, 0, y)
 			entry.label.Text = entry.text
 			entry.label.Size = UDim2.new(1, -16, 0, entry.textHeight)
-			entry.label.Position = UDim2.new(0, 8, 0, 12)
+			entry.label.Position = UDim2.new(0, 8, 0, TEXT_Y)
 			y = y - BUBBLE_GAP
 		end
-		stack.tail.Position = UDim2.new(0.5, -TAIL_WIDTH / 2, 0, total - 6)
+		stack.tail.Position = UDim2.new(0.5, -TAIL_WIDTH / 2, 0, total - TAIL_OVERLAP)
 	end
 
 	local function destroyStack(player)
@@ -2474,7 +2481,7 @@ local function startClassicBubbles()
 		body.Image = "rbxassetid://2582470061"
 		body.ScaleType = Enum.ScaleType.Slice
 		body.SliceCenter = Rect.new(29, 29, 67, 67)
-		body.SliceScale = 0.4
+		body.SliceScale = BODY_SLICE_SCALE
 		body.Size = UDim2.new(1, 0, 1, 0)
 		body.ZIndex = 2
 		body.Parent = frame
@@ -2492,8 +2499,8 @@ local function startClassicBubbles()
 
 		local entry = {
 			text = text,
-			width = math.clamp(measured.X + 24, 42, MAX_WIDTH + 24),
-			height = measured.Y + 24,
+			width = math.clamp(measured.X + PAD_X, 42, MAX_WIDTH + PAD_X),
+			height = measured.Y + PAD_Y,
 			textHeight = measured.Y,
 			frame = frame,
 			label = label,
