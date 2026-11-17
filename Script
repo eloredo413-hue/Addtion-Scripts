@@ -670,15 +670,18 @@ task.spawn(function()
         -- thicker or thinner edge, or the tail higher, the tail's outline corners showed as bumps in the white
         -- (worst on small bubbles). Small bubbles are back to the old narrowest size (42). The big one: 2 px less
         -- white below the text, 2 px more at the sides (measured again next to the 2014 one).
+        -- The tail is the bigger one again (18 x 21, as in the first 2014 pass). Its top sits 6 px up into the
+        -- frame, not 8: with this thinner edge that is the same place against the white as it had then, so the
+        -- join stays clean. The narrowest bubble is 44 so its flat bottom is wider than this tail.
         local FONT_SIZE = 22
         local MAX_WIDTH = 240            -- where long messages wrap (as many letters per line as before)
         local PAD_X, PAD_Y = 22, 20      -- the bubble frame is the text's size plus these
         local TEXT_Y = 11                -- the text's top inside the bubble frame
         local BODY_SLICE_SCALE = 0.4     -- the bubble picture's corners and edge (the tail's join is made for 0.4)
-        local MIN_WIDTH = 42             -- the narrowest bubble frame (as before)
+        local MIN_WIDTH = 44             -- the narrowest bubble frame: its flat bottom is wider than the tail
         local TEXT_STROKE = 0.8          -- a faint outline on the letters: as heavy as the 2014 text (1 = none)
         local TAIL_OVERLAP = 6           -- how far the tail's top goes up into the bubble frame (to where the white ends)
-        local TAIL_WIDTH, TAIL_HEIGHT = 16, 19
+        local TAIL_WIDTH, TAIL_HEIGHT = 18, 21
         local DOTS_WIDTH, DOTS_HEIGHT = 52, FONT_SIZE + PAD_Y
         local TEXT_COLOR = Color3.fromRGB(0, 0, 0)
         local OLD_TEXT_COLOR = Color3.fromRGB(160, 160, 160)

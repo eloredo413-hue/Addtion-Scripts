@@ -806,8 +806,8 @@ local function createClassicBubble(head, messageText)
     )
     -- the 2014 look, the same sizes as the loader's 2011-2014 bubbles (measured on 2014 screenshots):
     -- Arial 22 with a faint stroke (as heavy as the 2014 letters) in a tight bubble with a thin grey edge,
-    -- the old narrowest size; the tail and edge as before (16 x 19, 6 px up into the bubble, slice 0.4) so
-    -- the tail's join is clean
+    -- the bigger tail (18 x 21) with its top 6 px up into the bubble (slice 0.4), where its join is clean,
+    -- and never narrower than 44 so the bubble's flat bottom is wider than the tail
     local fontSize = 22
     local maxTextWidth = 240
     
@@ -818,9 +818,9 @@ local function createClassicBubble(head, messageText)
         Vector2.new(maxTextWidth, 1000)
     )
     
-    local width = math.clamp(absoluteTextSize.X + 22, 42, maxTextWidth + 22)
+    local width = math.clamp(absoluteTextSize.X + 22, 44, maxTextWidth + 22)
     local bodyHeight = absoluteTextSize.Y + 20
-    local tailWidth, tailHeight, tailOverlap = 16, 19, 6
+    local tailWidth, tailHeight, tailOverlap = 18, 21, 6
     
     local billboard = Instance.new("BillboardGui")
     billboard.Name = "ClassicBubbleGui"
