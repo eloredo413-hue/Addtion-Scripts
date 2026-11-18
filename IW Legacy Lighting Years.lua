@@ -128,8 +128,10 @@ local Settings = {
 	NoWind           = true,  -- wind (2023): it bends smoke, fire and particles and moves clouds. Kept at zero
 	NoHighlights     = true,  -- hide Highlight outlines / glows (2021). Set false if a game uses them to show you
 	                          -- objectives, items or teammates
-	OldMaterials     = true,  -- built-in materials only: removes the game's custom (2022) materials, and switches to the
-	                          -- pre-2022 textures where the executor can write hidden properties. Set false to keep the game's own
+	OldMaterials     = false, -- (Addtion-Scripts) off for the lighting eras: the game's materials are left as they are (the
+	                          -- 2022 textures and its custom materials); old materials are Hammer stuff 1's own option.
+	                          -- true = built-in materials only: removes the game's custom (2022) materials, and switches to the
+	                          -- pre-2022 textures where the executor can write hidden properties
 	NoPBR            = false, -- remove SurfaceAppearance (2020 shiny PBR textures). A mesh that has no plain texture turns flat-coloured
 
 	-- respawning
