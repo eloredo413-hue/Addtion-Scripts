@@ -52,8 +52,9 @@ local Settings = {
 	KeepSun          = 0.95,  -- lighting-only mode: how much stronger the sun is made
 	KeepAmbient      = 1.05,  -- lighting-only mode: how much stronger the shade light is made
 	LegacyIntensity  = 3,     -- the original value
-	LegacyStuds      = true,  -- studs on plain parts that use the Studs surface
-	RetroStudsWith2016Textures = true, -- (Addtion-Scripts) where Bloxy's "2016 textures" puts its stud textures, each
+	LegacyStuds      = false, -- (Addtion-Scripts) off for the lighting eras: no classic studs are put on parts. true = studs on plain
+	                          -- parts that use the Studs surface
+	RetroStudsWith2016Textures = false, -- (Addtion-Scripts) off for the lighting eras (it swaps Bloxy's stud faces for this script's studs; false leaves Bloxy's as they are). Was: where Bloxy's "2016 textures" puts its stud textures, each
 	                          -- is hidden while this runs (this script's stud is on that face instead, so there are no
 	                          -- double studs) and comes back when it stops
 	Voxel2019        = false, -- true = modern tonemapper instead of the retro one

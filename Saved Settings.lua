@@ -141,6 +141,7 @@ local HAMMER_BOXES = {
 	HideMobileControlsCheckbox = "isHideMobileControlsEnabled",
 	MobileControlsCheckbox = "isMobileControlsEnabled",
 	OldThumbstickCheckbox = "isOldThumbstickEnabled",
+	ClassicNotificationsCheckbox = "isClassicNotificationsEnabled",
 	IWLegacyLightingCheckbox = "isIWLegacyLightingEnabled",
 	-- the lighting era dropdown
 	IWLighting2014Checkbox = "isIWLighting2014Enabled",

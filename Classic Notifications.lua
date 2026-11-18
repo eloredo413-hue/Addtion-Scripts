@@ -6,8 +6,9 @@
 --   * Friend requests: tap the box and a dark box opens in the middle of the screen, "Accept Friend Request from
 --     <name>?", with Accept and Decline (Player.FriendStatusChanged; they answer the request). When you become
 --     friends: "You are now friends with <name>".
---   * Badge Awarded: the same small box with the badge's picture and the game's message
---     (BadgeService.BadgeAwarded).
+--   * Badge Awarded: the same small box with the badge's picture and the game's message. Roblox's own (modern) notice
+--     for a badge is found when it appears, hidden, and shown here in the classic box with the same text; the
+--     BadgeService.BadgeAwarded event is listened to as well, when the executor is allowed to.
 -- Nothing is changed in the game.
 --
 -- The loader starts it with the 2014 GUI, and with the 2013 and 2013 mobile GUIs when the old health bar is off.
@@ -42,8 +43,10 @@ local Settings = {
 	Gap            = 6,    -- pixels between notifications
 	AskWidth       = 270,  -- the middle box: width in pixels
 	AskHeight      = 290,  -- ...and height
-	StartupNotice  = true, -- a short box when it starts, saying which events it could connect to (set
-	                       -- getgenv().ClassicNotificationsQuiet = true before running to leave it out)
+	HideNativeBadges = true, -- the modern "Badge Awarded" notice (right edge, medal picture) is hidden and shown again in the
+	                       -- classic box with its own text
+	StartupNotice  = false, -- a short box when it starts, saying which events it could connect to (set
+	                       -- getgenv().ClassicNotificationsDebug = true before running to see it)
 	SlideTime      = 0.3,
 }
 
@@ -51,7 +54,8 @@ local GUI_NAME = "ClassicNotifications"
 local running = false
 local gui, holder = nil, nil
 local ask = nil            -- the Accept / Decline box in the middle: { frame, userId }
-local sources = {}         -- which events could be connected: badges, requests, friended
+local sources = {}         -- which events could be connected: badges, requests, friended, modern (the modern badge notice)
+local recentBadges = {}   -- message -> when it was shown (a badge can come from both the event and the modern notice)
 local conns = {}
 local active = {}          -- notifications on screen, oldest first
 local friendNotes = {}     -- userId -> its friend request notification
@@ -330,8 +334,88 @@ end
 
 local function onBadge(message, userId, badgeId)
 	if not running or userId ~= LocalPlayer.UserId then return end
+	if recentBadges[tostring(message)] then return end -- (the modern notice was just shown here)
+	recentBadges[tostring(message)] = os.clock()
 	notify("Badge Awarded", tostring(message or "You earned a badge!"),
 		badgeId and ("rbxthumb://type=BadgeIcon&id=" .. tostring(badgeId) .. "&w=150&h=150") or nil)
+end
+
+----------------------------------------------------------------------------------------------------
+-- Roblox's own (modern) badge notice: found when it appears, hidden, and shown in the classic box
+----------------------------------------------------------------------------------------------------
+local nativeSeen = setmetatable({}, {__mode = "k"})
+local nativeHeld = {}
+
+local function badgeShownRecently(message)
+	local now = os.clock()
+	for key, at in pairs(recentBadges) do
+		if now - at > 6 then recentBadges[key] = nil end
+	end
+	if recentBadges[message] then return true end
+	recentBadges[message] = now
+	return false
+end
+
+local function isBadgeTitle(label)
+	local text = string.lower(string.gsub(tostring(label.Text), "^%s*(.-)%s*$", "%1"))
+	return text == "badge awarded"
+end
+
+local function countBadgeTitles(root)
+	local n = 0
+	for _, d in ipairs(root:GetDescendants()) do
+		if d:IsA("TextLabel") and isBadgeTitle(d) then n = n + 1 end
+	end
+	return n
+end
+
+-- the one notice around a title: up while the next frame holds only this notice (not the whole stack of them)
+local function noticeOf(title)
+	local item = title.Parent
+	local steps = 0
+	while item and steps < 5 do
+		local up = item.Parent
+		if not up or not up:IsA("GuiObject") or up:IsA("ScrollingFrame") then break end
+		if up.AbsoluteSize.Y > 260 then break end
+		-- the frame that lays notices out one under another is the stack: never hidden, only the notice in it
+		if up:FindFirstChildOfClass("UIListLayout") or up:FindFirstChildOfClass("UIGridLayout") then break end
+		if #up:GetDescendants() > 16 then break end
+		if countBadgeTitles(up) ~= 1 then break end
+		item = up
+		steps = steps + 1
+	end
+	return item
+end
+
+local function holdHidden(inst)
+	if nativeHeld[inst] then return end
+	nativeHeld[inst] = true
+	pcall(function() inst.Visible = false end)
+	track(inst:GetPropertyChangedSignal("Visible"):Connect(function()
+		if running and inst.Visible then pcall(function() inst.Visible = false end) end
+	end))
+end
+
+local function inspectNative(label)
+	if not running or nativeSeen[label] or not label.Parent then return end
+	if not label:IsA("TextLabel") or not isBadgeTitle(label) then return end
+	if gui and label:IsDescendantOf(gui) then return end -- our own notification
+	nativeSeen[label] = true
+	local item = noticeOf(label)
+	if not item then return end
+	-- the message is the longest other text in the notice ("award!" under the medal is not it); the picture its first image
+	local body, bodyLength, image = nil, 0, nil
+	for _, d in ipairs(item:GetDescendants()) do
+		if d:IsA("TextLabel") and d ~= label then
+			local t = tostring(d.Text)
+			if string.lower(t) ~= "award!" and #t > bodyLength then body, bodyLength = t, #t end
+		elseif d:IsA("ImageLabel") and not image and tostring(d.Image) ~= "" then
+			image = d.Image
+		end
+	end
+	if Settings.HideNativeBadges then holdHidden(item) end
+	if badgeShownRecently(body or "badge") then return end
+	notify("Badge Awarded", body or "You earned a badge!", image)
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -399,13 +483,21 @@ function api.Start()
 			end
 		end))
 	end)
-	sources = { badges = okBadge, requests = okFriend, friended = okFriended }
+	-- Roblox's own modern badge notice: found when it appears (it is made in CoreGui)
+	local okModern = pcall(function()
+		track(CoreGui.DescendantAdded:Connect(function(obj)
+			if obj:IsA("TextLabel") then
+				task.delay(0.15, function() pcall(inspectNative, obj) end) -- (its text is set just after it is made)
+			end
+		end))
+	end)
+	sources = { badges = okBadge or okModern, requests = okFriend, friended = okFriended, modern = okModern, event = okBadge }
 
 	genv.ClassicNotificationsStop = api.Stop
 	local function word(ok) return ok and "yes" or "blocked" end
 	local report = "Badges: " .. word(sources.badges) .. ". Friend requests: " .. word(sources.requests) .. "."
 	print("[Classic Notifications] on. " .. report .. " (getgenv().ClassicNotifications.Test() shows a sample.)")
-	if Settings.StartupNotice and genv.ClassicNotificationsQuiet ~= true then
+	if (Settings.StartupNotice or genv.ClassicNotificationsDebug == true) and genv.ClassicNotificationsQuiet ~= true then
 		notify("Notifications on", report, nil, { lifetime = 6 })
 	end
 end
