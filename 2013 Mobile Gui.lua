@@ -559,7 +559,11 @@ local function createClassicBubble(head, messageText)
         Vector2.new(maxTextWidth, 1000)
     )
     
-    local width = math.clamp(absoluteTextSize.X + 24, 42, maxTextWidth + 24)
+    -- the text is drawn exactly as wide as it was measured (a hair over, never past the wrap width), so it wraps
+    -- the way it was measured; drawn in the whole bubble less 16 it was 8 px wider on long messages, a word more
+    -- fitted on a line and that line ran into the grey edge
+    local textWidth = math.min(math.ceil(absoluteTextSize.X) + 2, maxTextWidth)
+    local width = math.clamp(absoluteTextSize.X + 24, 42, maxTextWidth + 24) -- (the bubble as wide as before)
     local bodyHeight = absoluteTextSize.Y + 22
     local tailWidth, tailHeight, tailOverlap = 18, 21, 8
     
@@ -593,8 +597,8 @@ local function createClassicBubble(head, messageText)
 
     local textLabel = Instance.new("TextLabel")
     textLabel.Name = "BubbleText"
-    textLabel.Size = UDim2.new(1, -16, 0, absoluteTextSize.Y)
-    textLabel.Position = UDim2.new(0, 8, 0, 11)
+    textLabel.Size = UDim2.new(0, textWidth, 0, absoluteTextSize.Y)
+    textLabel.Position = UDim2.new(0.5, -textWidth / 2, 0, 11)
     textLabel.BackgroundTransparency = 1
     textLabel.FontFace = classicFont
     textLabel.TextSize = fontSize
