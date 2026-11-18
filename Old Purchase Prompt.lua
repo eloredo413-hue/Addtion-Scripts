@@ -1,12 +1,14 @@
 --========================================================
 -- OLD PURCHASE PROMPT (Addtion-Scripts)
 -- The 2016 purchase prompt (PurchasePromptScript2 and PurchasePromptScript3, the real 2016 core scripts) in place of
--- Roblox's modern one, for the 2015-2019 GUIs. It uses the same method as the "Roblox 2016 UI - Remaster" script by
+-- Roblox's modern one, for the 2013-2019 GUIs. It uses the same method as the "Roblox 2016 UI - Remaster" script by
 -- Invisible_: the 2016 GUI asset (rbxassetid://9139773381) is loaded with game:GetObjects, and its core scripts are
 -- run from their Source. Only the purchase prompt is taken from it: everything else the asset draws is thrown away.
 --
 -- Roblox's own prompt is switched off (hidden, not deleted) only AFTER the old one has started without an error, so
 -- if the old one cannot run in your executor, you keep Roblox's own prompt and nothing is lost. Stop brings it back.
+-- A watchdog covers the rest: when a game asks for a purchase and the old prompt has not appeared 6 seconds later,
+-- Roblox's own prompt is shown after all (and hidden again at the next request), so a purchase is never stuck.
 -- Buying: the old prompt's Buy button buys the item the way Roblox's own prompt does (it spends real Robux for items
 -- that cost Robux). Try it on a free item first.
 --
@@ -31,6 +33,10 @@ local status = "off"
 local host = nil
 local token = nil
 local hiddenNative = {}      -- modern purchase GUIs switched off: gui -> { was }
+local requestConns = {}
+local watchdog = nil
+local WATCHDOG_SECONDS = 6
+local requests, fallbacks = 0, 0
 local nativeConns = {}
 
 local function guiHolder()
@@ -157,6 +163,47 @@ local function showNative()
 end
 
 ----------------------------------------------------------------------------------------------------
+-- watchdog: a purchase request must make the old prompt appear, or Roblox's own prompt is given back
+----------------------------------------------------------------------------------------------------
+local function dialogVisible()
+	local dialog = host and host:FindFirstChild("PurchaseDialog")
+	return dialog ~= nil and dialog.Visible == true
+end
+
+local function onRequest()
+	if not running then return end
+	requests = requests + 1
+	if next(hiddenNative) == nil then hideAllNative() end -- (given back after an earlier request: hidden again)
+	local mine = {}
+	watchdog = mine
+	task.delay(WATCHDOG_SECONDS, function()
+		if watchdog ~= mine or not running then return end
+		if dialogVisible() then return end -- the old prompt is showing: all good
+		fallbacks = fallbacks + 1
+		showNative()
+		warn("[Old Purchase Prompt] the old prompt did not appear " .. WATCHDOG_SECONDS .. " s after a purchase request: Roblox's own prompt is shown instead.")
+	end)
+end
+
+local function listenForRequests()
+	pcall(function()
+		local ms = game:GetService("MarketplaceService")
+		for _, name in ipairs({ "PromptPurchaseRequested", "PromptProductPurchaseRequested", "PromptGamePassPurchaseRequested", "PromptBundlePurchaseRequested" }) do
+			pcall(function()
+				table.insert(requestConns, ms[name]:Connect(function() onRequest() end))
+			end)
+		end
+	end)
+	-- the old prompt showing cancels the watchdog
+	local dialog = host and host:FindFirstChild("PurchaseDialog")
+	if dialog then
+		table.insert(requestConns, dialog:GetPropertyChangedSignal("Visible"):Connect(function()
+			if dialog.Visible then watchdog = nil end
+		end))
+	end
+end
+
+----------------------------------------------------------------------------------------------------
 -- on and off
 ----------------------------------------------------------------------------------------------------
 local api = {}
@@ -165,6 +212,9 @@ function api.Stop()
 	if not running then return end
 	running = false
 	token = nil
+	watchdog = nil
+	for _, c in ipairs(requestConns) do pcall(function() c:Disconnect() end) end
+	requestConns = {}
 	showNative()
 	if host then pcall(function() host:Destroy() end) end
 	host = nil
@@ -238,6 +288,7 @@ function api.Start()
 		return
 	end
 	hideAllNative()
+	listenForRequests()
 	status = "on"
 	genv.OldPurchasePromptStop = api.Stop
 	print("[Old Purchase Prompt] on: " .. started .. " of " .. #SCRIPTS .. " 2016 scripts started; Roblox's own prompt is hidden.")
@@ -248,7 +299,7 @@ function api.Running()
 end
 
 function api.Status()
-	return status
+	return status .. " (requests seen: " .. requests .. ", given back to Roblox's prompt: " .. fallbacks .. ")"
 end
 
 genv.OldPurchasePrompt = api
