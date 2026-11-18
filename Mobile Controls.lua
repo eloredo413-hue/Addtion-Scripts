@@ -3,13 +3,13 @@
 -- Two parts, each its own option in Hammer stuff 2 (one, the other, or both):
 --   "mobile controls": the 2013 mobile GUI's joystick and jump button (Roblox's 2013 TouchControlsSheet pictures),
 --      with any GUI. Roblox's own touch controls are hidden while it is on.
---   "old thumbstick": the classic thumbstick you can drag everywhere. A thin light ring with a see-through knob,
---      resting in the bottom-left corner. Put your thumb on it (or anywhere in the bottom-left corner: it jumps under
---      your thumb) and drag: the knob follows your thumb, and once your thumb goes past the ring's edge the whole
---      stick comes along with it, anywhere on the screen, so you keep walking that way. Let go and it goes back to
---      its corner. It only replaces the thumbstick: with mobile controls it takes the 2013 joystick's place next to
---      the 2013 jump button; with Roblox's regular controls it takes the place of Roblox's own thumbstick, and
---      Roblox's jump button (or Bloxy's old jump button) stays.
+--   "old thumbstick": Roblox's classic thumbstick, rebuilt from its own script (PlayerScripts.ControlScript.
+--      MasterControl.Thumbstick, 2014-2016), so it feels the way it did: 70 across on a phone (120 on a bigger
+--      screen) in the bottom-left corner, in the TouchControlsSheet pictures. Put your thumb on it and it centres
+--      under your thumb; drag, and once your thumb goes past its edge the whole stick comes along with it, anywhere
+--      on the screen. Let go and it goes back to its corner. It only replaces the thumbstick: with mobile controls it
+--      takes the 2013 joystick's place next to the 2013 jump button; with Roblox's regular controls it takes the
+--      place of Roblox's own thumbstick, and Roblox's jump button (or Bloxy's old jump button) stays.
 -- The stick is fed into Roblox's control module, so cars and the game's own movement code react to it as to
 -- Roblox's own stick (in a game without that module the character and a VehicleSeat are moved directly). Hold jump
 -- to keep jumping. Everything is put back when both are off.
@@ -21,7 +21,6 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local ContextActionService = game:GetService("ContextActionService")
 local CoreGui = game:GetService("CoreGui")
 local ContentProvider = game:GetService("ContentProvider")
 
@@ -41,7 +40,6 @@ end
 local TOUCH_SHEET = "rbxasset://textures/ui/TouchControlsSheet.png"
 local GUI_NAME = "LegacyTouchControls"
 local STEP_VEHICLE = "Legacy2013VehicleDrive"
-local ACTION_CORNER = "BPOldThumbstickCorner"
 local ZERO = Vector3.new(0, 0, 0)
 
 local controlsOn = false      -- "mobile controls": the 2013 joystick (unless the old thumbstick) and jump button
@@ -80,7 +78,7 @@ end)
 -- what goes on screen
 ----------------------------------------------------------------------------------------------------
 -- A stick gives: frame, deadZone, radius(), center() (its middle on the screen), rest() (back in its place, knob
--- in the middle), placeKnob(dx, dy), and the old one also drags = true, moveCenter(position), inCorner(position).
+-- in the middle), placeKnob(dx, dy), and the old one also classic = true and moveCenter(position).
 -- A jump button gives: button, press(down).
 
 local function build2013Stick(gui)
@@ -142,94 +140,72 @@ local function build2013Jump(gui)
 	}
 end
 
--- the old thumbstick, drawn: a thin light ring and a see-through knob with a dark and a light rim
-local function circle(parent, name, size)
-	local f = Instance.new("Frame")
-	f.Name = name
-	f.AnchorPoint = Vector2.new(0.5, 0.5)
-	f.Size = size
-	f.Position = UDim2.new(0.5, 0, 0.5, 0)
-	f.BackgroundTransparency = 1
-	f.BorderSizePixel = 0
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0.5, 0)
-	corner.Parent = f
-	f.Parent = parent
-	return f
-end
-local function stroke(parent, color, thickness, transparency)
-	local s = Instance.new("UIStroke")
-	s.Color = color
-	s.Thickness = thickness
-	s.Transparency = transparency
-	s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	s.Parent = parent
-	return s
-end
-
+-- Roblox's classic thumbstick (ControlScript.MasterControl.Thumbstick), as its script made it
 local function buildOldStick(gui)
-	local ring = circle(gui, "OldThumbstick", UDim2.new(0, 72, 0, 72))
-	local ringStroke = stroke(ring, Color3.fromRGB(212, 212, 212), 3, 0.08)
-	local ringEdge = circle(ring, "Edge", UDim2.new(1, -6, 1, -6))
-	stroke(ringEdge, Color3.fromRGB(90, 90, 90), 1, 0.7)
+	local frame = Instance.new("Frame")
+	frame.Name = "ThumbstickFrame"
+	frame.Active = true
+	frame.BackgroundTransparency = 1
+	frame.Parent = gui
 
-	local knob = circle(ring, "Knob", UDim2.new(0.47, 0, 0.47, 0))
-	knob.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
-	knob.BackgroundTransparency = 0.72
+	local outer = Instance.new("ImageLabel")
+	outer.Name = "OuterImage"
+	outer.Image = TOUCH_SHEET
+	outer.ImageRectOffset = Vector2.new(0, 0)
+	outer.ImageRectSize = Vector2.new(220, 220)
+	outer.BackgroundTransparency = 1
+	outer.Position = UDim2.new(0, 0, 0, 0)
+	outer.Parent = frame
+
+	local knob = Instance.new("ImageLabel")
+	knob.Name = "StickImage"
+	knob.Image = TOUCH_SHEET
+	knob.ImageRectOffset = Vector2.new(220, 0)
+	knob.ImageRectSize = Vector2.new(111, 111)
+	knob.BackgroundTransparency = 1
 	knob.ZIndex = 2
-	local knobStroke = stroke(knob, Color3.fromRGB(95, 95, 95), 2, 0.3)
-	local knobInner = circle(knob, "Inner", UDim2.new(0.84, 0, 0.84, 0))
-	knobInner.ZIndex = 2
-	stroke(knobInner, Color3.fromRGB(225, 225, 225), 1.5, 0.4)
+	knob.Parent = frame
 
-	local size = 72
+	local size = 70
+	local restPosition = UDim2.new(0, 25, 1, -90)
 	local held = false
-	local centerAt = Vector2.new(0, 0) -- the ring's middle, from the controls screen's top-left corner
-	local function place(p)
-		centerAt = p
-		ring.Position = UDim2.new(0, p.X, 0, p.Y)
+	local function placeKnob(dx, dy)
+		-- (the knob's corner, so that its middle is the stick's middle moved by dx, dy)
+		knob.Position = UDim2.new(0, size / 4 + dx, 0, size / 4 + dy)
 	end
-	local function restPlace()
-		local area = gui.AbsoluteSize
-		local r = size / 2
-		return Vector2.new(math.max(area.X * 0.12, r + 10), math.min(area.Y * 0.85, area.Y - r - 10))
-	end
-	-- the size follows the screen's height (the screen can turn or change size)
+	-- 70 across on a screen up to 500 high, 120 on a bigger one, and its place in the corner (as Roblox's)
 	local function layout()
-		local area = gui.AbsoluteSize
-		size = math.floor(math.clamp(area.Y * 0.18, 64, 140) + 0.5)
-		ring.Size = UDim2.new(0, size, 0, size)
-		ringStroke.Thickness = math.max(2, math.floor(size * 0.04 + 0.5))
-		knobStroke.Thickness = math.max(1.5, size * 0.022)
-		if not held then place(restPlace()) end
+		local small = gui.AbsoluteSize.Y <= 500
+		size = small and 70 or 120
+		restPosition = small and UDim2.new(0, size / 2 - 10, 1, -size - 20) or UDim2.new(0, size / 2, 1, -size * 1.75)
+		frame.Size = UDim2.new(0, size, 0, size)
+		outer.Size = UDim2.new(0, size, 0, size)
+		knob.Size = UDim2.new(0, size / 2, 0, size / 2)
+		if not held then
+			frame.Position = restPosition
+			placeKnob(0, 0)
+		end
 	end
 	layout()
 	track(lookConns, gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(layout))
 
 	return {
-		frame = ring,
-		drags = true,
-		deadZone = 0.08,
+		frame = frame,
+		classic = true,
+		deadZone = 0.05,
 		radius = function() return size / 2 end,
-		center = function() return gui.AbsolutePosition + centerAt end,
+		center = function() return frame.AbsolutePosition + frame.AbsoluteSize / 2 end,
 		rest = function()
 			held = false
-			knob.Position = UDim2.new(0.5, 0, 0.5, 0)
-			place(restPlace())
+			frame.Position = restPosition
+			placeKnob(0, 0)
 		end,
-		placeKnob = function(dx, dy) knob.Position = UDim2.new(0.5, dx, 0.5, dy) end,
-		-- the stick's middle to a place on the screen (from a touch)
+		placeKnob = placeKnob,
+		-- the stick's middle to a place on the screen
 		moveCenter = function(position)
 			held = true
-			place(Vector2.new(position.X, position.Y) - gui.AbsolutePosition)
-		end,
-		-- the bottom-left corner (a third of the width and of the height), or the ring itself
-		inCorner = function(position)
-			local x = position.X - gui.AbsolutePosition.X
-			local y = position.Y - gui.AbsolutePosition.Y
-			local area = gui.AbsoluteSize
-			if x >= 0 and x <= area.X / 3 and y >= area.Y * 2 / 3 and y <= area.Y then return true end
-			return (Vector2.new(x, y) - centerAt).Magnitude <= size / 2
+			local origin = gui.AbsolutePosition
+			frame.Position = UDim2.new(0, position.X - origin.X - size / 2, 0, position.Y - origin.Y - size / 2)
 		end,
 	}
 end
@@ -249,20 +225,36 @@ local function releaseJump()
 	if look and look.jump then look.jump.press(false) end
 end
 
--- a touch's place: the knob goes there (up to the ring) and sets the direction and how fast. The old thumbstick is
--- dragged along: past the ring's edge its middle follows the thumb, so the thumb stays on the edge.
+-- the old thumbstick's step, the way Roblox's classic Thumbstick did it: the middle is where the stick is now; the
+-- speed is how far the thumb is from it (a small dead zone, then 0 .. 1); past the edge the stick is moved so the
+-- thumb is on its edge, and the knob is drawn where the thumb was from the old middle (a little past the edge for
+-- that one step, as it was)
+local function steerClassic(stick, position)
+	local radius = stick.radius()
+	local thumb = Vector2.new(position.X, position.Y)
+	local offset = thumb - stick.center()
+	local length = offset.Magnitude
+	local amount = radius > 0 and length / radius or 0
+	if amount < stick.deadZone then
+		walkSpeedFactor = 0
+		moveVector = ZERO
+	else
+		walkSpeedFactor = math.min(1, (amount - stick.deadZone) / (1 - stick.deadZone))
+		moveVector = Vector3.new(offset.X / length, 0, offset.Y / length)
+	end
+	if length > radius then
+		stick.moveCenter(thumb - offset.Unit * radius)
+	end
+	stick.placeKnob(offset.X, offset.Y)
+end
+
+-- a touch's place: the knob goes there (up to the ring) and sets the direction and how fast
 local function steer(position)
 	local stick = look and look.stick
 	if not stick then return end
+	if stick.classic then return steerClassic(stick, position) end
 	local radius = stick.radius()
-	local thumb = Vector2.new(position.X, position.Y)
-	local center = stick.center()
-	local diff = thumb - center
-	if stick.drags and radius > 0 and diff.Magnitude > radius then
-		center = thumb - diff.Unit * radius
-		stick.moveCenter(center)
-		diff = thumb - center
-	end
+	local diff = Vector2.new(position.X, position.Y) - stick.center()
 	local dist = math.min(diff.Magnitude, radius)
 	local dir = diff.Magnitude > 0 and diff.Unit or Vector2.new(0, 0)
 	stick.placeKnob(dir.X * dist, dir.Y * dist)
@@ -274,7 +266,12 @@ end
 
 local function grabStick(input)
 	moveTouchObject = input
-	if look.stick.drags then look.stick.moveCenter(input.Position) end -- (it jumps under the thumb)
+	if look.stick.classic then
+		-- the classic stick centres under the thumb, and only moves you once the thumb moves
+		look.stick.moveCenter(input.Position)
+		look.stick.placeKnob(0, 0)
+		return
+	end
 	steer(input.Position)
 end
 
@@ -437,7 +434,7 @@ local function unfeedAll()
 end
 
 ----------------------------------------------------------------------------------------------------
--- a VehicleSeat driven directly, only when the control module is not asking for the stick (a game without it)
+-- without Roblox's control module asking for the stick: the character and a VehicleSeat moved directly
 ----------------------------------------------------------------------------------------------------
 local drivenSeat = nil
 local function releaseSeat()
@@ -449,8 +446,22 @@ local function releaseSeat()
 	end
 	drivenSeat = nil
 end
+-- Runs just after the controls' own step (bound one after RenderPriority.Input): in a game whose controls are not
+-- Roblox's control module (no PlayerModule, or the old ControlScript, whose MasterControl moves the character every
+-- frame at RenderPriority.Input), the character is moved here, after them, so this stick's walk is the one kept.
 local function vehicleStep()
 	local character = LocalPlayer.Character
+	if character and character:FindFirstChildOfClass("Humanoid") then
+		-- (when the control module is being fed the stick, it does the moving itself)
+		if walkSpeedFactor > 0 and moveVector.Magnitude > 0 and not controlsAreFed() then
+			LocalPlayer:Move(moveVector * walkSpeedFactor, true)
+			movedByUs = true
+		elseif movedByUs then
+			-- let go: stop the walk this script started (nothing else would)
+			movedByUs = false
+			pcall(function() LocalPlayer:Move(ZERO, true) end)
+		end
+	end
 	local hum = character and character:FindFirstChildOfClass("Humanoid")
 	local seat = hum and hum.SeatPart
 	if seat and not seat:IsA("VehicleSeat") then seat = nil end
@@ -468,7 +479,7 @@ local function vehicleStep()
 end
 
 ----------------------------------------------------------------------------------------------------
--- every frame: nothing stays held that is not, walking without a control module, holding jump
+-- every frame: feeding the control module, nothing stays held that is not, holding jump
 ----------------------------------------------------------------------------------------------------
 local function frameStep()
 	if not controls then
@@ -488,16 +499,6 @@ local function frameStep()
 
 	local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
 	if not hum then return end
-
-	-- (when the control module is being fed the stick, it does the moving itself)
-	if walkSpeedFactor > 0 and moveVector.Magnitude > 0 and not controlsAreFed() then
-		LocalPlayer:Move(moveVector * walkSpeedFactor, true)
-		movedByUs = true
-	elseif movedByUs then
-		-- let go: stop the walk this script started (nothing else would)
-		movedByUs = false
-		pcall(function() LocalPlayer:Move(ZERO, true) end)
-	end
 
 	if isJumpButtonDown then
 		local state = hum:GetState()
@@ -523,20 +524,8 @@ local function guiHolder()
 	return holder
 end
 
--- the bottom-left corner: touches there that no button took pick up the old thumbstick (and not the camera)
-local function cornerAction(_, inputState, input)
-	local stick = look and look.stick
-	if not stick or not stick.drags or inputState ~= Enum.UserInputState.Begin
-		or input.UserInputType ~= Enum.UserInputType.Touch or moveTouchObject or not stick.inCorner(input.Position) then
-		return Enum.ContextActionResult.Pass
-	end
-	grabStick(input)
-	return Enum.ContextActionResult.Sink
-end
-
 local function showLook()
 	disconnectAll(lookConns)
-	pcall(function() ContextActionService:UnbindAction(ACTION_CORNER) end)
 	if screenGui then
 		local old = screenGui
 		screenGui = nil
@@ -557,30 +546,9 @@ local function showLook()
 	look.stick = oldStickOn and buildOldStick(gui) or build2013Stick(gui)
 	if controlsOn then look.jump = build2013Jump(gui) end
 
-	if look.stick.drags then
-		-- (a little above Roblox's own thumbstick, so the corner is this stick's first)
-		local bound = pcall(function()
-			ContextActionService:BindActionAtPriority(ACTION_CORNER, cornerAction, false,
-				Enum.ContextActionPriority.High.Value + 1, Enum.UserInputType.Touch)
-		end)
-		if not bound then
-			-- no ContextActionService here: a see-through frame over the corner takes the touches instead
-			local corner = Instance.new("Frame")
-			corner.Name = "OldThumbstickCorner"
-			corner.BackgroundTransparency = 1
-			corner.Size = UDim2.new(1 / 3, 0, 1 / 3, 0)
-			corner.Position = UDim2.new(0, 0, 2 / 3, 0)
-			corner.Active = true
-			corner.Parent = gui
-			track(lookConns, corner.InputBegan:Connect(function(input)
-				if input.UserInputType == Enum.UserInputType.Touch and not moveTouchObject then grabStick(input) end
-			end))
-		end
-	else
-		track(lookConns, look.stick.frame.InputBegan:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.Touch and not moveTouchObject then grabStick(input) end
-		end))
-	end
+	track(lookConns, look.stick.frame.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch and not moveTouchObject then grabStick(input) end
+	end))
 
 	if look.jump then
 		local jump = look.jump
