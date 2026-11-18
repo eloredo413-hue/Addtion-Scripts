@@ -8,8 +8,9 @@
 --      screen) in the bottom-left corner, in the TouchControlsSheet pictures. Put your thumb on it and it centres
 --      under your thumb; drag, and once your thumb goes past its edge the whole stick comes along with it, anywhere
 --      on the screen. Let go and it goes back to its corner. It only replaces the thumbstick: with mobile controls it
---      takes the 2013 joystick's place next to the 2013 jump button; with Roblox's regular controls it takes the
---      place of Roblox's own thumbstick, and Roblox's jump button (or Bloxy's old jump button) stays.
+--      takes the 2013 joystick's place next to the 2013 jump button (as big as the jump button); with Roblox's
+--      regular controls it takes the place of Roblox's own thumbstick, and Roblox's jump button (or Bloxy's old
+--      jump button) stays.
 -- The stick is fed into Roblox's control module, so cars and the game's own movement code react to it as to
 -- Roblox's own stick (in a game without that module the character and a VehicleSeat are moved directly). Hold jump
 -- to keep jumping. Everything is put back when both are off.
@@ -41,6 +42,10 @@ local TOUCH_SHEET = "rbxasset://textures/ui/TouchControlsSheet.png"
 local GUI_NAME = "LegacyTouchControls"
 local STEP_VEHICLE = "Legacy2013VehicleDrive"
 local ZERO = Vector3.new(0, 0, 0)
+-- the 2013 controls: the joystick and the jump button are both this big, level with each other in the two corners
+local SIZE_2013 = 90
+local STICK_PLACE_2013 = UDim2.new(0, 30, 1, -120)
+local JUMP_PLACE_2013 = UDim2.new(1, -120, 1, -120)
 
 local controlsOn = false      -- "mobile controls": the 2013 joystick (unless the old thumbstick) and jump button
 local oldStickOn = false      -- "old thumbstick": the draggable stick
@@ -84,8 +89,8 @@ end)
 local function build2013Stick(gui)
 	local frame = Instance.new("Frame")
 	frame.Name = "JoystickFrame"
-	frame.Size = UDim2.new(0, 90, 0, 90)
-	frame.Position = UDim2.new(0, 30, 1, -120)
+	frame.Size = UDim2.new(0, SIZE_2013, 0, SIZE_2013)
+	frame.Position = STICK_PLACE_2013
 	frame.BackgroundTransparency = 1
 	frame.Active = true
 	frame.Parent = gui
@@ -114,7 +119,7 @@ local function build2013Stick(gui)
 	return {
 		frame = frame,
 		deadZone = 0,
-		radius = function() return 45 end,
+		radius = function() return SIZE_2013 / 2 end,
 		center = function() return frame.AbsolutePosition + frame.AbsoluteSize / 2 end,
 		rest = function() stick.Position = UDim2.new(0.5, 0, 0.5, 0) end,
 		placeKnob = function(dx, dy) stick.Position = UDim2.new(0.5, dx, 0.5, dy) end,
@@ -124,8 +129,8 @@ end
 local function build2013Jump(gui)
 	local jump = Instance.new("ImageButton")
 	jump.Name = "JumpButton"
-	jump.Size = UDim2.new(0, 90, 0, 90)
-	jump.Position = UDim2.new(1, -120, 1, -120)
+	jump.Size = UDim2.new(0, SIZE_2013, 0, SIZE_2013)
+	jump.Position = JUMP_PLACE_2013
 	jump.BackgroundTransparency = 1
 	jump.Image = TOUCH_SHEET
 	jump.ImageRectOffset = Vector2.new(176, 222)
@@ -140,8 +145,9 @@ local function build2013Jump(gui)
 	}
 end
 
--- Roblox's classic thumbstick (ControlScript.MasterControl.Thumbstick), as its script made it
-local function buildOldStick(gui)
+-- Roblox's classic thumbstick (ControlScript.MasterControl.Thumbstick), as its script made it. With mobile controls
+-- (withJump) it is as big as their jump button and sits where their joystick did, level with the jump button.
+local function buildOldStick(gui, withJump)
 	local frame = Instance.new("Frame")
 	frame.Name = "ThumbstickFrame"
 	frame.Active = true
@@ -173,11 +179,17 @@ local function buildOldStick(gui)
 		-- (the knob's corner, so that its middle is the stick's middle moved by dx, dy)
 		knob.Position = UDim2.new(0, size / 4 + dx, 0, size / 4 + dy)
 	end
-	-- 70 across on a screen up to 500 high, 120 on a bigger one, and its place in the corner (as Roblox's)
+	-- 70 across on a screen up to 500 high, 120 on a bigger one, and its place in the corner (as Roblox's); with
+	-- mobile controls the jump button's size, in the 2013 joystick's place
 	local function layout()
-		local small = gui.AbsoluteSize.Y <= 500
-		size = small and 70 or 120
-		restPosition = small and UDim2.new(0, size / 2 - 10, 1, -size - 20) or UDim2.new(0, size / 2, 1, -size * 1.75)
+		if withJump then
+			size = SIZE_2013
+			restPosition = STICK_PLACE_2013
+		else
+			local small = gui.AbsoluteSize.Y <= 500
+			size = small and 70 or 120
+			restPosition = small and UDim2.new(0, size / 2 - 10, 1, -size - 20) or UDim2.new(0, size / 2, 1, -size * 1.75)
+		end
 		frame.Size = UDim2.new(0, size, 0, size)
 		outer.Size = UDim2.new(0, size, 0, size)
 		knob.Size = UDim2.new(0, size / 2, 0, size / 2)
@@ -543,7 +555,7 @@ local function showLook()
 	gui.Parent = guiHolder()
 
 	look = {}
-	look.stick = oldStickOn and buildOldStick(gui) or build2013Stick(gui)
+	look.stick = oldStickOn and buildOldStick(gui, controlsOn) or build2013Stick(gui)
 	if controlsOn then look.jump = build2013Jump(gui) end
 
 	track(lookConns, look.stick.frame.InputBegan:Connect(function(input)

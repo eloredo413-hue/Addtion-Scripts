@@ -5525,7 +5525,7 @@ task.spawn(function()
 		stateKey      = "isOldThumbstickEnabled",
 		onEnable      = actions.syncMobileControls,
 		onDisable     = actions.syncMobileControls,
-		helpText      = "Roblox's classic thumbstick from the old control script (2014-2016), with its own pictures and the way it worked: in the bottom-left corner, 70 across on a phone. Put your thumb on it and it centres under your thumb; drag, and once your thumb goes past its edge the whole stick comes along with it, anywhere on the screen. Let go and it goes back to its corner. It only replaces the thumbstick: with Roblox's regular controls their jump button (and Bloxy's old jump button) stays; with mobile controls it takes the 2013 joystick's place. It drives cars too, and works with hide controls. Untick for the thumbstick you had before."
+		helpText      = "Roblox's classic thumbstick from the old control script (2014-2016), with its own pictures and the way it worked: in the bottom-left corner, 70 across on a phone. Put your thumb on it and it centres under your thumb; drag, and once your thumb goes past its edge the whole stick comes along with it, anywhere on the screen. Let go and it goes back to its corner. It only replaces the thumbstick: with Roblox's regular controls their jump button (and Bloxy's old jump button) stays; with mobile controls it takes the 2013 joystick's place, as big as their jump button. It drives cars too, and works with hide controls. Untick for the thumbstick you had before."
 	})
 
 	createAddonRow({
