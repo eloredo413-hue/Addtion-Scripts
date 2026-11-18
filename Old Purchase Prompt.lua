@@ -39,18 +39,9 @@ local WATCHDOG_SECONDS = 6
 local requests, fallbacks = 0, 0
 local nativeConns = {}
 
--- what happens is also said on screen (Roblox's own notification), so it can be seen without the console:
--- set getgenv().OldPurchasePromptQuiet = true before running to leave that out
+-- what happens goes to the console only (no on-screen message)
 local function say(text)
 	print("[Old Purchase Prompt] " .. text)
-	if genv.OldPurchasePromptDebug ~= true then return end -- (on screen only when asked: getgenv().OldPurchasePromptDebug = true)
-	pcall(function()
-		game:GetService("StarterGui"):SetCore("SendNotification", {
-			Title = "Old purchase prompt",
-			Text = string.sub(text, 1, 140),
-			Duration = 7,
-		})
-	end)
 end
 
 local function guiHolder()
