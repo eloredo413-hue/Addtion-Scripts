@@ -222,8 +222,8 @@ local function startClassicBubbles()
             entry.frame.Size = UDim2.new(0, entry.width, 0, entry.height)
             entry.frame.Position = UDim2.new(0.5, -entry.width / 2, 0, y)
             entry.label.Text = entry.text
-            entry.label.Size = UDim2.new(1, -16, 0, entry.textHeight)
-            entry.label.Position = UDim2.new(0, 8, 0, TEXT_Y)
+            entry.label.Size = UDim2.new(0, entry.textWidth, 0, entry.textHeight)
+            entry.label.Position = UDim2.new(0.5, -entry.textWidth / 2, 0, TEXT_Y)
             y = y - BUBBLE_GAP
         end
         stack.tail.Position = UDim2.new(0.5, -TAIL_WIDTH / 2, 0, total - TAIL_OVERLAP)
@@ -327,6 +327,11 @@ local function startClassicBubbles()
         end
 
         local measured = TextService:GetTextSize(text, FONT_SIZE, Enum.Font.Arial, Vector2.new(MAX_WIDTH, 1000))
+        -- The text is drawn exactly as wide as it was measured (a hair over, never past the wrap width), so it
+        -- wraps the same way it was measured. It used to be drawn in the whole bubble less 16: 8 px wider than
+        -- the measured wrap on long messages, so a word more fitted on a line and that line ran into the grey edge.
+        -- (The bubble itself is as wide as before.)
+        local textWidth = math.min(math.ceil(measured.X) + 2, MAX_WIDTH)
 
         local frame = Instance.new("Frame")
         frame.Name = "Bubble"
@@ -359,6 +364,7 @@ local function startClassicBubbles()
         local entry = {
             text = text,
             width = math.clamp(measured.X + PAD_X, MIN_WIDTH, MAX_WIDTH + PAD_X),
+            textWidth = textWidth,
             height = measured.Y + PAD_Y,
             textHeight = measured.Y,
             frame = frame,
