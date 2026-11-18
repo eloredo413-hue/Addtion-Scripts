@@ -2800,7 +2800,48 @@ end
             pcall(api.Stop)
         end
     end
-    getgenv().BPRefreshHealthBar = function() pcall(updateOldHealthBar) end
+
+    --========================================================
+    -- CLASSIC NOTIFICATIONS (Classic Notifications.lua in this repo): the 2013-2014 badge and friend request
+    -- notifications. With the 2014 GUI, and with the 2013 and 2013 mobile GUIs while the old health bar is OFF (it
+    -- sits where they slide in). Not with 2015 early, nor any other GUI.
+    --========================================================
+    local URL_NOTIFICATIONS = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Classic%20Notifications.lua"
+    local notificationsLoading = false
+    local updateNotifications
+    updateNotifications = function()
+        local env = getgenv()
+        local era = env.BloxyEra
+        local pick = tostring(env.BloxyTopbarPick or env.BloxyTopbarRaw or "")
+        local year = tonumber(string.match(pick, "(20%d%d)"))
+        local wanted = era == "classic" and (year == 2013 or year == 2014)
+        if wanted and year == 2013 then
+            -- 2013 and 2013 mobile: only while the old health bar is off
+            wanted = not (env.BPOldHealthBar2013 == true or env.BPOldHealthBar2013Mobile == true)
+        end
+        local api = env.ClassicNotifications
+        if wanted then
+            if api then pcall(api.Start) return end
+            if notificationsLoading then return end
+            notificationsLoading = true
+            task.spawn(function()
+                local _, why = loadUrl(URL_NOTIFICATIONS, "Classic Notifications")
+                notificationsLoading = false
+                if why == "download" then
+                    warn("[Loader] Classic Notifications.lua couldn't be downloaded")
+                    return
+                end
+                pcall(updateNotifications) -- (the GUI may have changed while it downloaded)
+            end)
+        elseif api then
+            pcall(api.Stop)
+        end
+    end
+    -- (Hammer stuff 2 calls this when "old healthbar" is ticked or unticked)
+    getgenv().BPRefreshHealthBar = function()
+        pcall(updateOldHealthBar)
+        pcall(updateNotifications)
+    end
 
     local legacyDisconnectOn = false
     local function evaluateAndLoad()
@@ -2836,6 +2877,7 @@ end
             end
         end
         pcall(updateOldHealthBar)
+        pcall(updateNotifications)
         -- the bubble script each era runs (none for "none", 2015 early, 2010, 2006 and 2005)
         local bubbleEra = era
         if era == "none" or era == "early2015" or era == "y2010" or era == "y2006" or era == "y2005" then
