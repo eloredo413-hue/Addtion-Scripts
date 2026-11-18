@@ -38,7 +38,7 @@ local Settings = {
 	FriendLifetime = 14,   -- seconds a friend request stays (until you answer it)
 	MaxShown       = 4,    -- most at once: the oldest slides out first
 	Width          = 200,  -- small box width in pixels
-	TopScale       = 0.43, -- how far down the right edge they start (Roblox's own notices start there and stack downward)
+	BottomScale    = 0.92, -- the stack's bottom edge, as a fraction of the screen height (0.92 = near the bottom)
 	SideOffset     = 4,    -- pixels from the right edge
 	Gap            = 6,    -- pixels between notifications
 	AskWidth       = 270,  -- the middle box: width in pixels
@@ -448,13 +448,13 @@ function api.Start()
 	holder = Instance.new("Frame")
 	holder.Name = "Holder"
 	holder.BackgroundTransparency = 1
-	holder.AnchorPoint = Vector2.new(1, 0)
-	holder.Position = UDim2.new(1, -Settings.SideOffset, Settings.TopScale, 0) -- where Roblox's own notices appear
+	holder.AnchorPoint = Vector2.new(1, 1)
+	holder.Position = UDim2.new(1, -Settings.SideOffset, Settings.BottomScale, 0) -- low on the right edge; newer ones stack upward
 	holder.Size = UDim2.new(0, Settings.Width, 0, 600)
 	holder.Parent = gui
 	local list = Instance.new("UIListLayout")
 	list.SortOrder = Enum.SortOrder.LayoutOrder
-	list.VerticalAlignment = Enum.VerticalAlignment.Top
+	list.VerticalAlignment = Enum.VerticalAlignment.Bottom
 	list.HorizontalAlignment = Enum.HorizontalAlignment.Right
 	list.Padding = UDim.new(0, Settings.Gap)
 	list.Parent = holder
