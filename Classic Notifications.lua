@@ -42,6 +42,8 @@ local Settings = {
 	Gap            = 6,    -- pixels between notifications
 	AskWidth       = 270,  -- the middle box: width in pixels
 	AskHeight      = 290,  -- ...and height
+	StartupNotice  = true, -- a short box when it starts, saying which events it could connect to (set
+	                       -- getgenv().ClassicNotificationsQuiet = true before running to leave it out)
 	SlideTime      = 0.3,
 }
 
@@ -49,6 +51,7 @@ local GUI_NAME = "ClassicNotifications"
 local running = false
 local gui, holder = nil, nil
 local ask = nil            -- the Accept / Decline box in the middle: { frame, userId }
+local sources = {}         -- which events could be connected: badges, requests, friended
 local conns = {}
 local active = {}          -- notifications on screen, oldest first
 local friendNotes = {}     -- userId -> its friend request notification
@@ -373,6 +376,8 @@ function api.Start()
 	list.Parent = holder
 	gui.Parent = guiHolder()
 
+	-- the events these come from are Roblox's own (restricted): an executor may or may not be allowed to connect to
+	-- them, so each one is tried on its own and the result is shown
 	local okBadge, badgeErr = pcall(function()
 		local BadgeService = game:GetService("BadgeService")
 		track(BadgeService.BadgeAwarded:Connect(onBadge))
@@ -381,14 +386,37 @@ function api.Start()
 	local okFriend, friendErr = pcall(function()
 		track(LocalPlayer.FriendStatusChanged:Connect(onFriendStatus))
 	end)
-	if not okFriend then warn("[Classic Notifications] friend notifications unavailable here: " .. tostring(friendErr)) end
+	if not okFriend then warn("[Classic Notifications] friend request notifications unavailable here: " .. tostring(friendErr)) end
+	-- the "you are now friends" event of Roblox's core scripts: a second way to know a friend was added
+	local okFriended = pcall(function()
+		local StarterGui = game:GetService("StarterGui")
+		local event = StarterGui:GetCore("PlayerFriendedEvent")
+		track(event.Event:Connect(function(player)
+			if not running or not player then return end
+			if lastStatus[player.UserId] ~= Enum.FriendStatus.Friend then
+				lastStatus[player.UserId] = Enum.FriendStatus.Friend
+				notify("Friends", "You are now friends with " .. tostring(player.Name) .. ".", headshot(player.UserId))
+			end
+		end))
+	end)
+	sources = { badges = okBadge, requests = okFriend, friended = okFriended }
 
 	genv.ClassicNotificationsStop = api.Stop
-	print("[Classic Notifications] on.")
+	local function word(ok) return ok and "yes" or "blocked" end
+	local report = "Badges: " .. word(sources.badges) .. ". Friend requests: " .. word(sources.requests) .. "."
+	print("[Classic Notifications] on. " .. report .. " (getgenv().ClassicNotifications.Test() shows a sample.)")
+	if Settings.StartupNotice and genv.ClassicNotificationsQuiet ~= true then
+		notify("Notifications on", report, nil, { lifetime = 6 })
+	end
 end
 
 function api.Running()
 	return running
+end
+
+-- which events were connected: { badges = bool, requests = bool, friended = bool }
+function api.Sources()
+	return sources
 end
 
 function api.Notify(title, text, image)

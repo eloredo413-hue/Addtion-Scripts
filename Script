@@ -2822,6 +2822,7 @@ end
             wanted = not (env.BPOldHealthBar2013 == true or env.BPOldHealthBar2013Mobile == true)
         end
         local api = env.ClassicNotifications
+        print("[Loader] classic notifications: " .. tostring(year) .. " GUI (era " .. tostring(era) .. ") -> " .. (wanted and "on" or "off"))
         if wanted then
             if api then pcall(api.Start) return end
             if notificationsLoading then return end
@@ -2878,10 +2879,11 @@ end
                 local stop = getgenv().LegacyDisconnectStop
                 if type(stop) == "function" then pcall(stop) end
             end
-            -- OLD PURCHASE PROMPT: the same 2015 - 2019 GUIs get the 2016 purchase prompt in place of Roblox's modern
-            -- one (it starts Roblox's own back if it cannot run, see Old Purchase Prompt.lua)
+            -- OLD PURCHASE PROMPT: the 2013 - 2019 GUIs (the 2013 / 2014 GUIs and 2015 - 2019) get the 2016 purchase
+            -- prompt in place of Roblox's modern one (Roblox's own comes back if it cannot run, see Old Purchase Prompt.lua)
             local promptApi = getgenv().OldPurchasePrompt
-            if year and year >= 2015 and year <= 2019 then
+            if year and year >= 2013 and year <= 2019 then
+                print("[Loader] old purchase prompt: " .. year .. " GUI -> on")
                 if promptApi then
                     pcall(promptApi.Start)
                 elseif not oldPurchaseLoading then
