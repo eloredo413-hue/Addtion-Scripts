@@ -4344,8 +4344,7 @@ task.spawn(function()
 	-- The joystick and the jump button can't be seen but still work: each part of them gets a see-through
 	-- UIGradient (it hides what is drawn, and doesn't fight the controls' own fading in and out), and they
 	-- stay shown and active, so taps still reach them. Roblox's touch controls (TouchGui, also Bloxy's old
-	-- jump button on it) and Mobile Controls.lua's (LegacyTouchControls: "mobile controls" and "old thumbstick",
-	-- whose ring is an outline, a UIStroke, hidden the same way).
+	-- jump button on it) and Mobile Controls.lua's (LegacyTouchControls: "mobile controls" and "old thumbstick").
 	------------------------------------------------------------
 	do
 		local TOUCH_GUIS = { TouchGui = true, LegacyTouchControls = true }
@@ -4355,7 +4354,7 @@ task.spawn(function()
 		local hidden = false
 
 		local function hideObject(obj)
-			if not (obj:IsA("GuiObject") or obj:IsA("UIStroke")) or obj:FindFirstChild(MARK) then return end
+			if not obj:IsA("GuiObject") or obj:FindFirstChild(MARK) then return end
 			local gradient = Instance.new("UIGradient")
 			gradient.Name = MARK
 			gradient.Transparency = NumberSequence.new(1)
@@ -4411,8 +4410,9 @@ task.spawn(function()
 	------------------------------------------------------------
 	-- 21b. MOBILE CONTROLS and OLD THUMBSTICK (Mobile Controls.lua, downloaded once and kept)
 	-- "mobile controls": the 2013 mobile GUI's joystick and jump button, now for any GUI (Roblox's own touch
-	-- controls hidden while on). "old thumbstick": the classic thumbstick you can drag everywhere (past its edge
-	-- the whole stick follows your thumb; let go and it goes back to its corner). It replaces only the stick: the
+	-- controls hidden while on). "old thumbstick": Roblox's classic thumbstick (its own pictures and the way its
+	-- script worked: past its edge the whole stick follows your thumb, anywhere; let go and it goes back to its
+	-- corner). It replaces only the stick: the
 	-- 2013 joystick with mobile controls, Roblox's own thumbstick without (Roblox's or Bloxy's jump button stays).
 	-- "hide controls" hides these too (they still work). One copy runs: the first tick downloads and starts it,
 	-- later ticks only change what it shows.
@@ -5525,7 +5525,7 @@ task.spawn(function()
 		stateKey      = "isOldThumbstickEnabled",
 		onEnable      = actions.syncMobileControls,
 		onDisable     = actions.syncMobileControls,
-		helpText      = "The classic thumbstick you can drag everywhere: a thin ring with a see-through knob in the bottom-left corner. Put your thumb on it (or anywhere in that corner) and drag: once your thumb goes past the ring's edge the whole stick comes along with it, anywhere on the screen, and you keep walking that way. Let go and it goes back to its corner. It only replaces the thumbstick: with Roblox's regular controls their jump button (and Bloxy's old jump button) stays; with mobile controls it takes the 2013 joystick's place. It drives cars too, and works with hide controls. Untick for the thumbstick you had before."
+		helpText      = "Roblox's classic thumbstick from the old control script (2014-2016), with its own pictures and the way it worked: in the bottom-left corner, 70 across on a phone. Put your thumb on it and it centres under your thumb; drag, and once your thumb goes past its edge the whole stick comes along with it, anywhere on the screen. Let go and it goes back to its corner. It only replaces the thumbstick: with Roblox's regular controls their jump button (and Bloxy's old jump button) stays; with mobile controls it takes the 2013 joystick's place. It drives cars too, and works with hide controls. Untick for the thumbstick you had before."
 	})
 
 	createAddonRow({
