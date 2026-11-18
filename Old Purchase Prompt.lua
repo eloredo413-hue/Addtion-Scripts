@@ -43,7 +43,7 @@ local nativeConns = {}
 -- set getgenv().OldPurchasePromptQuiet = true before running to leave that out
 local function say(text)
 	print("[Old Purchase Prompt] " .. text)
-	if genv.OldPurchasePromptQuiet == true then return end
+	if genv.OldPurchasePromptDebug ~= true then return end -- (on screen only when asked: getgenv().OldPurchasePromptDebug = true)
 	pcall(function()
 		game:GetService("StarterGui"):SetCore("SendNotification", {
 			Title = "Old purchase prompt",
