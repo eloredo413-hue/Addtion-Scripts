@@ -4469,7 +4469,7 @@ task.spawn(function()
 	-- with the same text. Works with any GUI; unticking removes it.
 	------------------------------------------------------------
 	do
-		local URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Classic%20Notifications.lua"
+		local URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Classic%20Notifications.lua?v=" .. tostring(os.time())
 		local genv = (getgenv and getgenv()) or _G
 		local source = nil
 		local busy = false

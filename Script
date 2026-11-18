@@ -454,7 +454,7 @@ local URL_OLD_GUI_FIX = "https://raw.githubusercontent.com/eloredo413-hue/Addtio
 -- the old red disconnect bar for the 2015 - 2019 GUIs (Legacy Disconnect.lua in this repo, see evaluateAndLoad)
 local URL_LEGACY_DISCONNECT = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Legacy%20Disconnect.lua"
 -- the 2016 purchase prompt for the same GUIs (Old Purchase Prompt.lua in this repo, see evaluateAndLoad)
-local URL_OLD_PURCHASE = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Old%20Purchase%20Prompt.lua"
+local URL_OLD_PURCHASE = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Old%20Purchase%20Prompt.lua?v=" .. tostring(os.time())
 task.spawn(function()
     local _, why = loadUrl(URL_OLD_GUI_FIX, "Old Gui Fix")
     if why == "download" then warn("[Loader] Old Gui Fix.lua couldn't be downloaded") end
