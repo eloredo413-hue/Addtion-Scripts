@@ -1,4 +1,4 @@
--- [[ (Addtion-Scripts copy: Remove Pro keeps shadows) HEALTH ESP + REMOVE PRO + CLASSIC OUTLINE + LENS FLARE + AVATAR DROPDOWN (OLD / 2006)
+-- [[ (Addtion-Scripts copy: Remove Pro keeps shadows; the outline is Classic Outlines.lua) HEALTH ESP + REMOVE PRO + CLASSIC OUTLINE + LENS FLARE + AVATAR DROPDOWN (OLD / 2006)
 --    + CLASSIC FACE + COLOR LIMITER DROPDOWN (2012 / 2006 / 2005) + HIDE GAME GUI + LEGACY LIGHTING
 --    + OLD DECAL RENDERING BUTTON + 2008 NIGHT SKY ]]
 -- Execute Hammer stuff 1 first, then this.
@@ -585,147 +585,52 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
-	-- 3. CLASSIC OUTLINE LOGIC
+	-- 3. CLASSIC OUTLINE: Classic Outlines.lua, the lighting era script's outlines on their own (downloaded once
+	-- and kept). Thin dark grey edges on plain bricks within 120 studs of the camera, checked once a second, under
+	-- the camera so only you see them; nothing in the map is changed. One copy runs: the first tick downloads and
+	-- starts it, later ticks only switch it off and on. (It replaced a version that outlined every brick in the map
+	-- and nudged each brick's colour.)
 	------------------------------------------------------------
 	do
-		local OUTLINE_COLOR       = Color3.fromRGB(50, 50, 50)
-		local LINE_THICKNESS      = 0.001
-		local TRANSPARENCY        = 0.95
-		local JITTER_AMPLITUDE    = 100
-		local TRANSPARENCY_CUTOFF = 0
-		local ALLOWED_CLASS       = "Part"
-
-		local DISQUALIFYING_CHILDREN = {
-			"SpecialMesh", "BlockMesh", "CylinderMesh", "SphereMesh",
-			"BevelMesh", "FileMesh", "MeshPart", "Decal", "Texture", "SurfaceAppearance"
-		}
-
-		local olState = {
-			active = false,
-			tracked = {},
-			boxes = {},
-			connections = {},
-			partConnections = {}
-		}
-
-		local function isInLocalCharacter(p)
-			local char = player and player.Character
-			return char and p:IsDescendantOf(char) or false
+		local URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Classic%20Outlines.lua"
+		local genv = (getgenv and getgenv()) or _G
+		local source = nil
+		local busy = false
+		local function running()
+			local api = genv.BPClassicOutlines
+			if type(api) == "table" and type(api.Start) == "function" and type(api.Stop) == "function" then return api end
+			return nil
 		end
-
-		local function hasDisqualifyingChild(p)
-			for _, className in ipairs(DISQUALIFYING_CHILDREN) do
-				if p:FindFirstChildOfClass(className) then return true end
-			end
-			return false
+		local function follow(api)
+			if state.isOutlineEnabled then pcall(api.Start) else pcall(api.Stop) end
 		end
-
-		local function removePartOutline(p)
-			if olState.boxes[p] then
-				olState.boxes[p]:Destroy()
-				olState.boxes[p] = nil
-			end
-			olState.tracked[p] = nil
-		end
-
-		local function applyPartOutline(p)
-			if not olState.active then return end
-			if p.ClassName ~= ALLOWED_CLASS then return end
-			if p.Shape ~= Enum.PartType.Block then return end
-			if hasDisqualifyingChild(p) then return end
-			if isInLocalCharacter(p) then return end
-
-			if p.Transparency > TRANSPARENCY_CUTOFF then
-				removePartOutline(p)
+		local function sync()
+			if busy then return end -- the download in progress follows the latest tick when it is done
+			local api = running()
+			if api then
+				follow(api)
 				return
 			end
-
-			if olState.tracked[p] then return end
-			olState.tracked[p] = true
-
-			local h, s, v = p.Color:ToHSV()
-			local roll = math.random(-JITTER_AMPLITUDE, JITTER_AMPLITUDE) * 0.0002
-			p.Color = Color3.fromHSV(h, s, math.clamp(v + roll, 0, 1))
-
-			if p:FindFirstChild("outline") then return end
-
-			local box = Instance.new("SelectionBox")
-			box.Name          = "outline"
-			box.Adornee       = p
-			box.Color3        = OUTLINE_COLOR
-			box.LineThickness = LINE_THICKNESS
-			box.Transparency  = TRANSPARENCY
-			box.Parent        = p
-
-			olState.boxes[p] = box
+			if not state.isOutlineEnabled then return end
+			busy = true
+			local ok, err = pcall(function()
+				local src = source or game:HttpGet(URL)
+				local fn, compileErr = loadstring(src)
+				if not fn then error(compileErr, 0) end
+				source = src
+				if not state.isOutlineEnabled then return end -- (unticked while it downloaded)
+				fn()
+			end)
+			busy = false
+			if not ok then
+				warn("[Addon] Classic outlines couldn't load: " .. tostring(err))
+				return
+			end
+			local api2 = running()
+			if api2 then follow(api2) end
 		end
-
-		local function setupOutlinePart(p)
-			if not olState.active then return end
-			if p:IsA("BasePart") then
-				applyPartOutline(p)
-				if not olState.partConnections[p] then
-					olState.partConnections[p] = p:GetPropertyChangedSignal("Transparency"):Connect(function()
-						applyPartOutline(p)
-					end)
-				end
-			end
-		end
-
-		local function cleanupOutlinePart(p)
-			removePartOutline(p)
-			if olState.partConnections[p] then
-				olState.partConnections[p]:Disconnect()
-				olState.partConnections[p] = nil
-			end
-		end
-
-		function actions.applyOutline()
-			if olState.active then return end
-			olState.active = true
-
-			local Workspace = game:GetService("Workspace")
-			for _, v in ipairs(Workspace:GetDescendants()) do
-				setupOutlinePart(v)
-			end
-
-			table.insert(olState.connections, Workspace.DescendantAdded:Connect(setupOutlinePart))
-			table.insert(olState.connections, Workspace.DescendantRemoving:Connect(cleanupOutlinePart))
-
-			local function onCharacter(char)
-				task.wait()
-				for _, v in ipairs(char:GetDescendants()) do
-					cleanupOutlinePart(v)
-				end
-			end
-
-			if player then
-				table.insert(olState.connections, player.CharacterAdded:Connect(onCharacter))
-				if player.Character then onCharacter(player.Character) end
-			end
-			print("[Classic Outline] Applied.")
-		end
-
-		function actions.restoreOutline()
-			if not olState.active then return end
-			olState.active = false
-
-			for _, conn in ipairs(olState.connections) do
-				if conn then conn:Disconnect() end
-			end
-			for _, conn in pairs(olState.partConnections) do
-				if conn then conn:Disconnect() end
-			end
-			for _, box in pairs(olState.boxes) do
-				if box and box.Parent then box:Destroy() end
-			end
-
-			olState.boxes = {}
-			olState.tracked = {}
-			olState.connections = {}
-			olState.partConnections = {}
-			print("[Classic Outline] Cleaned up.")
-		end
+		actions.applyOutline = sync
+		actions.restoreOutline = sync
 	end
 
 	------------------------------------------------------------
@@ -5246,7 +5151,7 @@ task.spawn(function()
 		stateKey      = "isOutlineEnabled",
 		onEnable      = actions.applyOutline,
 		onDisable     = actions.restoreOutline,
-		helpText      = "Classic 2013-era SelectionBox outlines for plain block Parts with subtle brightness jitter. Automatically adapts to dynamic transparency changes."
+		helpText      = "The thin dark edges on bricks from 2016-2017, as the lighting era script draws them: plain block parts within 120 studs of you get a faint 1-pixel outline, updated once a second as you move (up to 1200 at once). Characters, see-through parts, tiny parts and meshes get none. Only you see them, and no part is changed. Untick to remove them."
 	})
 
 	createAddonRow({
