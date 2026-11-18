@@ -453,6 +453,8 @@ end
 local URL_OLD_GUI_FIX = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Old%20Gui%20Fix.lua"
 -- the old red disconnect bar for the 2015 - 2019 GUIs (Legacy Disconnect.lua in this repo, see evaluateAndLoad)
 local URL_LEGACY_DISCONNECT = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Legacy%20Disconnect.lua"
+-- the 2016 purchase prompt for the same GUIs (Old Purchase Prompt.lua in this repo, see evaluateAndLoad)
+local URL_OLD_PURCHASE = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Old%20Purchase%20Prompt.lua"
 task.spawn(function()
     local _, why = loadUrl(URL_OLD_GUI_FIX, "Old Gui Fix")
     if why == "download" then warn("[Loader] Old Gui Fix.lua couldn't be downloaded") end
@@ -2844,6 +2846,7 @@ end
     end
 
     local legacyDisconnectOn = false
+    local oldPurchaseLoading = false
     local function evaluateAndLoad()
         local era, raw = getSelectedEra()
         if confirmedVariant then
@@ -2874,6 +2877,23 @@ end
                 legacyDisconnectOn = false
                 local stop = getgenv().LegacyDisconnectStop
                 if type(stop) == "function" then pcall(stop) end
+            end
+            -- OLD PURCHASE PROMPT: the same 2015 - 2019 GUIs get the 2016 purchase prompt in place of Roblox's modern
+            -- one (it starts Roblox's own back if it cannot run, see Old Purchase Prompt.lua)
+            local promptApi = getgenv().OldPurchasePrompt
+            if year and year >= 2015 and year <= 2019 then
+                if promptApi then
+                    pcall(promptApi.Start)
+                elseif not oldPurchaseLoading then
+                    oldPurchaseLoading = true
+                    task.spawn(function()
+                        local _, why = loadUrl(URL_OLD_PURCHASE, "Old Purchase Prompt")
+                        oldPurchaseLoading = false
+                        if why == "download" then warn("[Loader] Old Purchase Prompt.lua couldn't be downloaded") end
+                    end)
+                end
+            elseif promptApi then
+                pcall(promptApi.Stop)
             end
         end
         pcall(updateOldHealthBar)
