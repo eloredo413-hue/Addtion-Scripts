@@ -76,6 +76,7 @@ task.spawn(function()
 		isHideMobileControlsEnabled = config.isHideMobileControlsEnabled or false,
 		isMobileControlsEnabled = config.isMobileControlsEnabled or false,
 		isOldThumbstickEnabled  = config.isOldThumbstickEnabled or false,
+		isClassicNotificationsEnabled = config.isClassicNotificationsEnabled or false,
 		isIWLegacyLightingEnabled = config.isIWLegacyLightingEnabled or false, -- (the dropdown's "normal")
 		isIWLighting2014Enabled = config.isIWLighting2014Enabled or false,
 		isIWLighting2015Enabled = config.isIWLighting2015Enabled or false,
@@ -4462,6 +4463,49 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
+	-- 21c. CLASSIC NOTIFICATIONS (Classic Notifications.lua, downloaded once and kept)
+	-- The 2013-2014 badge and friend request notifications: a small box at the bottom right (tap a friend request
+	-- for the Accept / Decline box in the middle). Roblox's own badge notice is hidden and shown in the classic box
+	-- with the same text. Works with any GUI; unticking removes it.
+	------------------------------------------------------------
+	do
+		local URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Classic%20Notifications.lua"
+		local genv = (getgenv and getgenv()) or _G
+		local source = nil
+		local busy = false
+		local function running()
+			local api = genv.ClassicNotifications
+			if type(api) == "table" and type(api.Start) == "function" and type(api.Stop) == "function" then return api end
+			return nil
+		end
+		function actions.syncClassicNotifications()
+			if busy then return end -- the download in progress follows the latest tick when it is done
+			local api = running()
+			if api then
+				if state.isClassicNotificationsEnabled then pcall(api.Start) else pcall(api.Stop) end
+				return
+			end
+			if not state.isClassicNotificationsEnabled then return end
+			busy = true
+			local ok, err = pcall(function()
+				local src = source or game:HttpGet(URL)
+				local fn, compileErr = loadstring(src)
+				if not fn then error(compileErr, 0) end
+				source = src
+				if not state.isClassicNotificationsEnabled then return end -- (unticked while it downloaded)
+				fn()
+			end)
+			busy = false
+			if not ok then
+				warn("[Addon] Classic notifications couldn't load: " .. tostring(err))
+				return
+			end
+			local api2 = running()
+			if api2 and not state.isClassicNotificationsEnabled then pcall(api2.Stop) end
+		end
+	end
+
+	------------------------------------------------------------
 	-- 20. FPS CAP
 	-- The frame rate capped at the number typed in. The executor's setfpscap does it; when there is none, or
 	-- the frame rate stays above the cap anyway (some executors have one that does nothing), a frame limiter
@@ -5529,6 +5573,18 @@ task.spawn(function()
 	})
 
 	createAddonRow({
+		containerName = "ClassicNotificationsContainer",
+		checkboxName  = "ClassicNotificationsCheckbox",
+		helpName      = "ClassicNotificationsHelpButton",
+		label         = "notifications",
+		yPos          = startY,
+		stateKey      = "isClassicNotificationsEnabled",
+		onEnable      = actions.syncClassicNotifications,
+		onDisable     = actions.syncClassicNotifications,
+		helpText      = "The 2013-2014 notifications, with any GUI: a small dark box slides in at the bottom right when you win a badge (Roblox's own badge notice is hidden and shown this way, with the same text) or get a friend request; tap a friend request and a box opens in the middle with Accept and Decline. Untick to remove it and get Roblox's own notices back."
+	})
+
+	createAddonRow({
 		containerName = "Pre2018CameraContainer",
 		checkboxName  = "Pre2018CameraCheckbox",
 		helpName      = "Pre2018CameraHelpButton",
@@ -5803,6 +5859,7 @@ task.spawn(function()
 	if state.isFpsCapEnabled then task.spawn(actions.applyFpsCap) end
 	if state.isHideMobileControlsEnabled then task.spawn(actions.applyHideMobileControls) end
 	if state.isMobileControlsEnabled or state.isOldThumbstickEnabled then task.spawn(actions.syncMobileControls) end
+	if state.isClassicNotificationsEnabled then task.spawn(actions.syncClassicNotifications) end
 	if state.isChatBarEnabled then task.spawn(actions.applyChatBar) end
 	if state.isPre2018CameraEnabled then task.spawn(actions.applyPre2018Camera) end
 	-- iw legacy lighting and / or a lighting era (one script, worked out from the saved ticks)

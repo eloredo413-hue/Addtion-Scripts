@@ -39,6 +39,20 @@ local WATCHDOG_SECONDS = 6
 local requests, fallbacks = 0, 0
 local nativeConns = {}
 
+-- what happens is also said on screen (Roblox's own notification), so it can be seen without the console:
+-- set getgenv().OldPurchasePromptQuiet = true before running to leave that out
+local function say(text)
+	print("[Old Purchase Prompt] " .. text)
+	if genv.OldPurchasePromptQuiet == true then return end
+	pcall(function()
+		game:GetService("StarterGui"):SetCore("SendNotification", {
+			Title = "Old purchase prompt",
+			Text = string.sub(text, 1, 140),
+			Duration = 7,
+		})
+	end)
+end
+
 local function guiHolder()
 	local h = CoreGui
 	pcall(function()
@@ -173,6 +187,7 @@ end
 local function onRequest()
 	if not running then return end
 	requests = requests + 1
+	say("A purchase was requested: waiting for the old prompt.")
 	if next(hiddenNative) == nil then hideAllNative() end -- (given back after an earlier request: hidden again)
 	local mine = {}
 	watchdog = mine
@@ -182,6 +197,7 @@ local function onRequest()
 		fallbacks = fallbacks + 1
 		showNative()
 		warn("[Old Purchase Prompt] the old prompt did not appear " .. WATCHDOG_SECONDS .. " s after a purchase request: Roblox's own prompt is shown instead.")
+		say("The old prompt did not appear: Roblox's own prompt is shown instead.")
 	end)
 end
 
@@ -236,6 +252,7 @@ function api.Start()
 	if not okObjects or type(objs) ~= "table" or not objs[1] then
 		running, status = false, "failed: the 2016 GUI asset did not load (" .. tostring(objs) .. ")"
 		warn("[Old Purchase Prompt] " .. status .. ". Roblox's own prompt is kept.")
+		say(status .. ". Roblox's own prompt is kept.")
 		return
 	end
 
@@ -246,6 +263,7 @@ function api.Start()
 	if not (modules and syn) then
 		running, status = false, "failed: the 2016 GUI asset has no Modules / CoreScriptSyn"
 		warn("[Old Purchase Prompt] " .. status .. ". Roblox's own prompt is kept.")
+		say(status .. ". Roblox's own prompt is kept.")
 		return
 	end
 	for _, child in ipairs(root:GetChildren()) do
@@ -279,19 +297,21 @@ function api.Start()
 	if token ~= mine then return end
 
 	for _, e in ipairs(errors) do warn("[Old Purchase Prompt] " .. e) end
+	if errors[1] and not promptStarted then say("Error: " .. errors[1]) end
 	-- PurchasePromptScript2 is the prompt itself: without it, nothing is switched off
 	if not promptStarted then
 		pcall(function() root:Destroy() end)
 		host = nil
 		running, status = false, "failed: the 2016 prompt did not start"
 		warn("[Old Purchase Prompt] " .. status .. ". Roblox's own prompt is kept.")
+		say(status .. ". Roblox's own prompt is kept.")
 		return
 	end
 	hideAllNative()
 	listenForRequests()
 	status = "on"
 	genv.OldPurchasePromptStop = api.Stop
-	print("[Old Purchase Prompt] on: " .. started .. " of " .. #SCRIPTS .. " 2016 scripts started; Roblox's own prompt is hidden.")
+	say("On: " .. started .. " of " .. #SCRIPTS .. " 2016 scripts started. Roblox's prompt is hidden until a purchase is requested.")
 end
 
 function api.Running()
