@@ -4795,7 +4795,9 @@ task.spawn(function()
 		obj.Position = UDim2.new(p.X.Scale, p.X.Offset, 0, y)
 	end
 
+	local layingOut = false
 	local function relayout()
+		layingOut = true
 		-- The base script's dropdown moves our rows by position, so read where the
 		-- first one is now instead of trusting startY.
 		local first = layoutEntries[1]
@@ -4820,6 +4822,23 @@ task.spawn(function()
 		if scroll:IsA("ScrollingFrame") and scroll.AutomaticCanvasSize == Enum.AutomaticSize.None then
 			scroll.CanvasSize = UDim2.new(scroll.CanvasSize.X.Scale, scroll.CanvasSize.X.Offset, 0, y + 40 + 30)
 		end
+		layingOut = false
+	end
+
+	-- (Addtion-Scripts) Other scripts move rows by their position (Hammer stuff 1's and Bloxy's dropdowns move
+	-- everything below them), and a row moved without the rest ended up on top of another one. When any of our rows
+	-- is moved from outside, they are all laid out again right after, one under the other from the first.
+	local relayoutQueued = false
+	local function queueRelayout()
+		if layingOut or relayoutQueued then return end
+		relayoutQueued = true
+		task.defer(function()
+			relayoutQueued = false
+			pcall(relayout)
+		end)
+	end
+	local function watchEntry(frame)
+		frame:GetPropertyChangedSignal("Position"):Connect(queueRelayout)
 	end
 
 	-- Label + box + "?" row. Rows inside a dropdown get a small indent and smaller text.
@@ -4899,6 +4918,7 @@ task.spawn(function()
 		local cont, cb, help = buildRow(parent or scroll, rowSpec.containerName, rowSpec.label, rowSpec.yPos, rowSpec.checkboxName, rowSpec.helpName)
 		if not parent then
 			table.insert(layoutEntries, { frame = cont, extra = function() return 0 end })
+			watchEntry(cont)
 		end
 		cb.Text = state[rowSpec.stateKey] and "✓" or ""
 		rows[rowSpec.stateKey] = { spec = rowSpec, checkbox = cb }
@@ -4972,6 +4992,7 @@ task.spawn(function()
 			frame = cont,
 			extra = function() return expanded and height or 0 end,
 		})
+		watchEntry(cont)
 
 		arrow.MouseButton1Click:Connect(function()
 			playClick()
@@ -5023,6 +5044,7 @@ task.spawn(function()
 		line.Parent = cont
 
 		table.insert(layoutEntries, { frame = cont, extra = function() return 0 end })
+		watchEntry(cont)
 	end
 
 	createCategory("BPCategoryGraphics", "graphics & lighting")

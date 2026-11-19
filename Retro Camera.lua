@@ -1,7 +1,9 @@
 -- (Addtion-Scripts) The "2013 Camera" of the physics / camera setup step (Old physics camera addon.lua loads this
 -- file; the Retro camera gist is the fallback). Changed here: FIRST PERSON works like the 2012-2013 Classic camera:
---   * zooming in to 1 stud or closer goes into first person (the zoom is then 0.5); one step out of it leaves
---     first person (mouse wheel, I / O keys, and a pinch on a phone)
+--   * zooming in straight into first person: the step that would bring the camera closer than 2 studs (where your
+--     character starts being hidden) goes right into the head (the zoom is then 0.5), so there is one first person,
+--     not a few steps inside the head first; one step out of it goes back to 2 studs (mouse wheel, I / O keys, and a
+--     pinch on a phone)
 --   * in first person the camera sits right in the head, with no smoothing, and the character is hidden, except
 --     the tool in your hand, which stays visible; out of it the character is fully shown (no see-through stage
 --     in between). The mouse stays locked in the middle, as before.
@@ -68,8 +70,10 @@ do
 
 	-- (Addtion-Scripts) first person like the 2012-2013 Classic camera
 	local FIRST_PERSON_ZOOM = 0.5        -- the zoom first person is kept at (the camera itself sits in the head)
-	local LEAVE_FIRST_PERSON_ZOOM = 0.5  -- a zoom past this is out of first person (one step out of it leaves it)
-	local ENTER_FIRST_PERSON_ZOOM = 1.0  -- zooming in to this or closer goes into first person
+	local LEAVE_FIRST_PERSON_ZOOM = 0.5  -- a zoom past this is out of first person
+	local ENTER_FIRST_PERSON_ZOOM = 2.0  -- zooming in closer than this goes into first person (your character is hidden
+	                                     -- from here in, so a third person closer than this only looked like first person)
+	local OUT_OF_FIRST_PERSON_ZOOM = 2.0 -- one step out of first person lands here
 
 	local humanoid
 
@@ -290,12 +294,12 @@ do
 		local zoom = this:GetCameraActualZoom()
 		if zoom then
 			if isFirstPerson then
-				-- (Addtion-Scripts) one step out of the head leaves first person
-				zoom = input < 0 and FIRST_PERSON_ZOOM * (1 - ZOOM_FACTOR*input) or FIRST_PERSON_ZOOM
+				-- (Addtion-Scripts) one step out of the head: 2 studs, where you see your character again
+				zoom = input < 0 and OUT_OF_FIRST_PERSON_ZOOM or FIRST_PERSON_ZOOM
 			elseif input > 0 then
 				zoom = zoom / (1 + ZOOM_FACTOR*input)
-				-- (Addtion-Scripts) 1 stud or closer: first person
-				if zoom <= ENTER_FIRST_PERSON_ZOOM then zoom = FIRST_PERSON_ZOOM end
+				-- (Addtion-Scripts) closer than 2 studs: straight into first person
+				if zoom < ENTER_FIRST_PERSON_ZOOM then zoom = FIRST_PERSON_ZOOM end
 			elseif input < 0 then
 				zoom = math.min(5000, zoom * (1 - ZOOM_FACTOR*input))
 			end
@@ -391,17 +395,18 @@ do
 					local scale = difference / math_max(0.01, StartingDiff)
 					local clampedScale = clamp(0.1, 10, scale)
 					if this.ZoomEnabled then
-						-- (Addtion-Scripts) in and out of first person like the 2012-2013 camera: fingers spread to
-						-- 1 stud or closer -> first person; in first person, fingers pinched in by one zoom step -> out
+						-- (Addtion-Scripts) in and out of first person like the wheel: fingers spread to closer than
+						-- 2 studs -> straight into first person; in first person, fingers pinched in by one zoom step
+						-- -> out to 2 studs
 						local snapTo = nil
 						if isFirstPerson then
-							if clampedScale <= 1 / (1 + ZOOM_FACTOR) then snapTo = FIRST_PERSON_ZOOM * (1 + ZOOM_FACTOR) end
+							if clampedScale <= 1 / (1 + ZOOM_FACTOR) then snapTo = OUT_OF_FIRST_PERSON_ZOOM end
 						else
 							local desired = pinchBeginZoom / clampedScale
-							if clampedScale > 1 and desired <= ENTER_FIRST_PERSON_ZOOM then
+							if clampedScale > 1 and desired < ENTER_FIRST_PERSON_ZOOM then
 								snapTo = FIRST_PERSON_ZOOM
 							else
-								this:ZoomCamera(math.max(desired, FIRST_PERSON_ZOOM * (1 + ZOOM_FACTOR)))
+								this:ZoomCamera(math.max(desired, ENTER_FIRST_PERSON_ZOOM))
 							end
 						end
 						if snapTo then

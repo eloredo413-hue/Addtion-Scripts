@@ -8,8 +8,8 @@
 -- for one line: ReplicatedStorage.TimePeriod (Retro Studio's own value) is read if the game has it, instead of being
 -- waited for forever. (The newer copy of it, decompiled more cleanly.)
 -- What it does, like the original: Roblox's own camera is replaced by these modules, and the camera is set to Follow
--- and kept there: it swings round behind you as you walk, waits 2 s after you look around, the old zoom (each wheel
--- click / pinch, no gliding), PopperCam (the camera pops in front of walls and eases back out).
+-- and kept there: it swings round behind you as you walk, waits 2 s after you look around, PopperCam (the camera pops
+-- in front of walls and eases back out). Zooming is the 2013 Camera's: a quarter in or out a click, no gliding.
 -- Added, because the CameraScript leaves it to a module it doesn't include: in first person your character is hidden,
 -- except the tool in your hand (the 2016 TransparencyController).
 -- Run alone or from the physics / camera step ("2007 Camera").
@@ -92,29 +92,9 @@ MODULES.RootCamera = function(require)
 		end
 	end
 
-	-- the old zoom: each step goes further the further out you are
-	local function rk4Integrator(position, velocity, t)
-		local direction = velocity < 0 and -1 or 1
-		local function acceleration(p, v)
-			local accel = direction * math.max(1, (p / 3.3) + 0.5)
-			return accel
-		end
-		local p1 = position
-		local v1 = velocity
-		local a1 = acceleration(p1, v1)
-		local p2 = p1 + v1 * (t / 2)
-		local v2 = v1 + a1 * (t / 2)
-		local a2 = acceleration(p2, v2)
-		local p3 = p1 + v2 * (t / 2)
-		local v3 = v1 + a2 * (t / 2)
-		local a3 = acceleration(p3, v3)
-		local p4 = p1 + v3 * t
-		local v4 = v1 + a3 * t
-		local a4 = acceleration(p4, v4)
-		local positionResult = position + (v1 + 2 * v2 + 2 * v3 + v4) * (t / 6)
-		local velocityResult = velocity + (a1 + 2 * a2 + 2 * a3 + a4) * (t / 6)
-		return positionResult, velocityResult
-	end
+	-- (Addtion-Scripts) zooming as the 2013 Camera does: each wheel click, I / O key a quarter of the way in or out,
+	-- straight to the new distance (its first person isn't taken: this camera's own stays, under 2 studs)
+	local ZOOM_FACTOR = 0.25
 
 	local function CreateCamera()
 		local this = {}
@@ -275,10 +255,15 @@ MODULES.RootCamera = function(require)
 			return self:GetCameraZoom()
 		end
 
-		function this:ZoomCameraBy(zoomScale)
+		-- input > 0: in, < 0: out (one step each)
+		function this:ZoomCameraBy(input)
 			local zoom = this:GetCameraActualZoom()
 			if zoom then
-				zoom = rk4Integrator(zoom, zoomScale, 1)
+				if input > 0 then
+					zoom = zoom / (1 + ZOOM_FACTOR * input)
+				elseif input < 0 then
+					zoom = zoom * (1 - ZOOM_FACTOR * input)
+				end
 				self:ZoomCamera(zoom)
 			end
 			return self:GetCameraZoom()
@@ -428,7 +413,7 @@ MODULES.RootCamera = function(require)
 
 		local function OnMouseWheel(input, processed)
 			if not processed and this.ZoomEnabled then
-				this:ZoomCameraBy(clamp(-1, 1, -input.Position.Z) * 1.4)
+				this:ZoomCameraBy(clamp(-1, 1, input.Position.Z))
 			end
 		end
 
@@ -447,9 +432,9 @@ MODULES.RootCamera = function(require)
 			if processed then return end
 			if this.ZoomEnabled then
 				if input.KeyCode == Enum.KeyCode.I then
-					this:ZoomCameraBy(-1.4)
+					this:ZoomCameraBy(1)
 				elseif input.KeyCode == Enum.KeyCode.O then
-					this:ZoomCameraBy(1.4)
+					this:ZoomCameraBy(-1)
 				end
 			end
 			if panBeginLook == nil and this.KeyPanEnabled then
