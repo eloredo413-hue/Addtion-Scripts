@@ -928,7 +928,18 @@ local scriptToRun = "local SHOW_STATUS = " .. tostring(SHOW_STATUS) .. "\n"
     print("[Payload] workspace object loaded")
 
     local launched, launchError = pcall(function()
-        local rbxmSuite = loadstring(game:HttpGet("https://raw.githubusercontent.com/yeku/forks/refs/heads/main/Scripts/RBXMSuite.luau"))()
+        local rbxmSuite = (function() -- (Addtion-Scripts) RBXM Suite: the loader's, else each link in turn (this repo has a copy)
+            local env = (getgenv and getgenv()) or _G
+            if type(env.BP_Legacy) == "table" and env.BP_Legacy.LoadSuite then
+                local okSuite, suite = pcall(env.BP_Legacy.LoadSuite)
+                if okSuite and type(suite) == "table" then return suite end
+            end
+            for _, url in ipairs({ "https://raw.githubusercontent.com/yeku/forks/refs/heads/main/Scripts/RBXMSuite.luau", "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/RBXM%20Suite.lua" }) do
+                local okSuite, suite = pcall(function() return loadstring(game:HttpGet(url))() end)
+                if okSuite and type(suite) == "table" then return suite end
+            end
+            error("RBXM Suite couldn't be loaded", 0)
+        end)()
         task.wait()
         rbxmSuite.launch("rbxassetid://111872120766790", {
             runscripts     = true,

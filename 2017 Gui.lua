@@ -63,11 +63,13 @@ local TweenService = game:GetService("TweenService")
 
 -- Variables
 
-local RobloxGui = CoreGui:WaitForChild("RobloxGui")
+local RobloxGui = CoreGui:WaitForChild("RobloxGui", 30) or CoreGui:FindFirstChild("RobloxGui")
 
-local ExperienceChat = CoreGui:WaitForChild("ExperienceChat")
+-- (Addtion-Scripts) some clients (phones, a game with the legacy chat) are late with ExperienceChat or don't have it:
+-- never wait for it forever (it stopped the whole GUI from loading), as in the 2019 GUI
+local ExperienceChat = CoreGui:FindFirstChild("ExperienceChat") or CoreGui:WaitForChild("ExperienceChat", 5)
 
-local ChatBubbles = ExperienceChat:WaitForChild("bubbleChat")
+local ChatBubbles = ExperienceChat and (ExperienceChat:FindFirstChild("bubbleChat") or ExperienceChat:WaitForChild("bubbleChat", 3))
 
 -- (Addtion-Scripts) a touch-screen PC (it has a keyboard) is a PC, not a phone
 local IsTouchDevice = UserInputService.TouchEnabled and not (UserInputService.KeyboardEnabled and UserInputService.MouseEnabled)
@@ -146,7 +148,11 @@ local Run = function(Bool: boolean, Callback: () -> ())
 
 end
 
-ExperienceChat.Enabled = false
+if ExperienceChat then
+	pcall(function()
+		ExperienceChat.Enabled = false
+	end)
+end
 
 -- Module
 

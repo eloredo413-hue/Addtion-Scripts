@@ -31,21 +31,56 @@ do
 	local SIG_2014      = "h5AEhK7N" -- the 2014 topbar's pastebin
 	local URL_2014FIX   = "https://gist.githubusercontent.com/eloredo413-hue/ed1b24318326687c9dc93033af880bf9/raw/2053cd3b7fb00377179c45194bd702a23e133819/2014%2520gui%2520fix"
 
-	local function fetchURL(url, label)
-		print("[" .. label .. "] Fetching...")
+	-- (Addtion-Scripts) each GUI's own gist, for when its link (this repo's copy, put in by the loader) doesn't answer:
+	-- an older version, but the GUI still loads
+	local GIST_FALLBACKS = {
+		["2024"] = "https://gist.githubusercontent.com/eloredo413-hue/f0cf527c3c42f43fb90b33613f2f9a94/raw/2f8e97781c1403836df58510decebe961cc97074/2024%2520Gui",
+		["2023 new"] = "https://gist.githubusercontent.com/eloredo413-hue/4a556148bc45d14ac710a87efef6bcc6/raw/4893deb9647440ba0f9058e0666272fb20e48eba/2023%2520New%2520Gui",
+		["2023 old"] = "https://gist.githubusercontent.com/eloredo413-hue/44e796be1b5b79e8548c5d6dc564ceef/raw/af64fb124e52e9e1a339148d7f5b3e7ae34eb6e6/2023%2520old",
+		["2021"] = "https://gist.githubusercontent.com/eloredo413-hue/af5130bac10fee921f0109950db368b7/raw/43dff4a41650829135f55674f098b3e8608a3740/2021%2520gui",
+		["2019"] = "https://gist.githubusercontent.com/eloredo413-hue/c30bf30c51fb8116506e2015bbe0c3ec/raw/be760fc9ea32d86d73be6b6206a5f3d161ae5965/2019%2520gui",
+		["2017"] = "https://gist.githubusercontent.com/eloredo413-hue/11756686e69413c5bc6933e2e800af6f/raw/69d595b5b51becaed1303b22a6f95a967ce0ad5e/2017%2520gui",
+		["2015 early"] = "https://gist.githubusercontent.com/eloredo413-hue/68973429a7a93b67dd0acfea666de508/raw/e461f4f6c1e169cc36f6b662b9265ce17b07effd/E2015%2520Gui",
+		["2013 mobile"] = "https://gist.githubusercontent.com/eloredo413-hue/86c21fe27caf9a3c358d15d1b74dff93/raw/2f73f4947a9f13c987141bdc8af5fe7e4c5dfafd/2013%2520Mobile%2520gui",
+		["2011"] = "https://gist.githubusercontent.com/eloredo413-hue/d8af6f1767898993154225e9aed06301/raw/1fe72f4c693cd359aeadb743f3d4233a6c9f843d/2011gui",
+		["2008"] = "https://gist.githubusercontent.com/eloredo413-hue/f60d1caf2307cefb517c11d84289ed1f/raw/1d45ddfb92fc749e5184f9a6cd05109fde9046c7/2008%2520gui",
+		["2006"] = "https://gist.githubusercontent.com/eloredo413-hue/a0101af36dd4a890607d7788a59382cf/raw/d0f911e883289cb7444cdf7dc2b562119c2355c0/2006-2007%2520Gui",
+		["2005"] = "https://gist.githubusercontent.com/eloredo413-hue/7eca661bd68389b3fb2ec5b762b3fb7a/raw/17af25bbea489d0e47334f0f72b183421522536e/2005%2520gui",
+		["2014 fix"] = "https://gist.githubusercontent.com/eloredo413-hue/ed1b24318326687c9dc93033af880bf9/raw/2053cd3b7fb00377179c45194bd702a23e133819/2014%2520gui%2520fix",
+	}
+
+	local ownLegacy -- (below: the Legacy and RBXM Suite fixes, also used on every GUI downloaded here)
+
+	-- (Addtion-Scripts) a download is tried twice (a phone's connection drops a request now and then), then the gist
+	local function fetchOnce(url)
 		local ok, src = pcall(function()
 			return game:HttpGet(url, true)
 		end)
-		if not ok then
-			warn("[" .. label .. "] HTTP fetch failed: " .. tostring(src))
-			return nil
+		if not ok then return nil, tostring(src) end
+		if type(src) ~= "string" or #src < 50 or src:find("^%s*<") or src:find("^404") then
+			return nil, "bad response (" .. tostring(type(src) == "string" and #src or 0) .. " bytes)"
 		end
-		if type(src) ~= "string" or #src < 50 then
-			warn("[" .. label .. "] Bad response (" .. tostring(#src) .. " bytes)")
-			return nil
-		end
-		print("[" .. label .. "] Fetched " .. #src .. " bytes.")
 		return src
+	end
+
+	local function fetchURL(url, label)
+		print("[" .. label .. "] Fetching...")
+		local tries = { url, url }
+		local gist = GIST_FALLBACKS[label]
+		if gist and gist ~= url then table.insert(tries, gist) end
+		local lastProblem = nil
+		for i, link in ipairs(tries) do
+			local src, problem = fetchOnce(link)
+			if src then
+				print("[" .. label .. "] Fetched " .. #src .. " bytes" .. (link ~= url and " (from its gist: the usual link didn't answer)" or "") .. ".")
+				if ownLegacy then src = ownLegacy(src) end
+				return src
+			end
+			lastProblem = problem
+			if i < #tries then task.wait(1) end
+		end
+		warn("[" .. label .. "] HTTP fetch failed: " .. tostring(lastProblem))
+		return nil
 	end
 
 	-- 2023 old only queues its GUI to load after a rejoin, so nothing
@@ -98,11 +133,27 @@ do
 		table.insert(out, string.sub(text, from))
 		return table.concat(out), count
 	end
-	local function ownLegacy(code)
+	-- RBXM Suite, wherever a script loads it from yeku's link: the loader's (with this repo's copy as a backup) when the
+	-- loader is there, else yeku's link as before (so code that runs after a rejoin, without the loader, still works)
+	local SAFE_SUITE = '((type(getgenv().BP_Legacy) == "table" and getgenv().BP_Legacy.LoadSuite) and getgenv().BP_Legacy.LoadSuite()'
+		.. ' or loadstring(game:HttpGet("https://raw.githubusercontent.com/yeku/forks/refs/heads/main/Scripts/" .. "RBXMSuite.luau"))())'
+	ownLegacy = function(code)
+		if string.find(code, "ADDTION_LEGACY", 1, true) then return code end -- (this repo's copy: already safe)
+		local suites
+		code, suites = string.gsub(code,
+			'loadstring%(%s*game:HttpGet%(%s*["\']https://raw%.githubusercontent%.com/yeku/forks/refs/heads/main/Scripts/RBXMSuite%.luau["\']%s*%)%s*%)%(%)',
+			function() return SAFE_SUITE end)
+		if suites > 0 then print("[Hooks] RBXM Suite: with this repo's copy as a backup (" .. suites .. ")") end
 		local redirected
 		code, redirected = string.gsub(code, 'https://raw%.githubusercontent%.com/yeku/legacy/[^"\'%s]-/Source%.luau',
 			function() return OWN_LEGACY_URL end) -- (a function: "%20" in the link is not a capture)
 		if redirected > 0 then print("[Hooks] Legacy: loading this repo's copy (Legacy Gui.lua)") end
+		if type(getgenv().BP_Legacy) == "table" and getgenv().BP_Legacy.Get2014 then
+			local pastebin
+			code, pastebin = string.gsub(code, 'game:HttpGet%(%s*["\']https?://pastebin%.com/raw/h5AEhK7N["\'][^%)]*%)',
+				function() return 'getgenv().BP_Legacy.Get2014("h5AEhK7N")' end)
+			if pastebin > 0 then print("[Hooks] 2014: pastebin first, this repo's copy if it doesn't answer") end
+		end
 		if type(getgenv().BP_Legacy) == "table" and string.find(code, "Suite.require(Legacy):Start(", 1, true)
 			and not string.find(code, "ADDTION_LEGACY", 1, true) then
 			local fixed = 0

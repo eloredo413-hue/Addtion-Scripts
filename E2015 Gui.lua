@@ -671,7 +671,9 @@ return Playerlist]=] },
 
 	local env = getgenv()
 	local previous = env.Suite
-	local suite = previous or loadstring(game:HttpGet(SUITE_URL))()
+	local suite = previous
+		or (type(env.BP_Legacy) == "table" and env.BP_Legacy.LoadSuite and env.BP_Legacy.LoadSuite())
+		or loadstring(game:HttpGet(SUITE_URL))()
 	env.Suite = setmetatable({
 		launch = function(path, options)
 			if type(path) ~= "string" or not string.find(path, "Legacy", 1, true) then
@@ -826,7 +828,19 @@ local function createClassicBubble(head, messageText)
 end
 ]]
 
-	local base = game:HttpGet("https://pastebin.com/raw/h5AEhK7N")
+	-- (Addtion-Scripts) pastebin often blocks executors: the loader's Get2014 tries it, then this repo's copy (2014 Gui.lua)
+	local base
+	local helpers = getgenv().BP_Legacy
+	if type(helpers) == "table" and helpers.Get2014 then
+		base = helpers.Get2014()
+	else
+		local ok, src = pcall(function() return game:HttpGet("https://pastebin.com/raw/h5AEhK7N") end)
+		if ok and type(src) == "string" and string.find(src, "LegacySettings", 1, true) then
+			base = src
+		else
+			base = game:HttpGet("https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2014%20Gui.lua")
+		end
+	end
 	local a = string.find(base, "local function createClassicBubble(head, messageText)", 1, true)
 	local b = string.find(base, "\nlocal function handleBubbleSpawn(player, text)", 1, true)
 	if a and b and a < b then

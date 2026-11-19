@@ -148,7 +148,8 @@ end
 --     it is taken straight from the release, and else from an earlier download (BP_Legacy.rbxm)
 --   * waiting forever for the modern chat's bubbleChat (BP_Legacy.Bubbles waits 10 s, then goes on without the
 --     old bubble look), and a phone without RobloxGui.NotificationFrame (that line threw, so the rest never ran)
--- The 2014 pastebin's built-in copy gets the same fixes as it is loaded (More guis.lua).
+-- The 2014 pastebin's built-in copy gets the same fixes as it is loaded (More guis.lua), and when pastebin doesn't
+-- answer, this repo's copy of it (2014 Gui.lua) is used (BP_Legacy.Get2014).
 --========================================================
 do
     local env = getgenv()
@@ -211,6 +212,23 @@ do
             end
         end
         error("the Legacy model couldn't be downloaded", 0)
+    end
+    -- Bloxy's 2014 GUI (also the early 2015 GUI's base) is on pastebin, which often blocks executors: this repo's copy
+    -- (2014 Gui.lua) when pastebin doesn't answer
+    local PASTEBIN_2014 = "https://pastebin.com/raw/h5AEhK7N"
+    local REPO_2014 = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2014%20Gui.lua"
+    function helpers.Get2014()
+        for _, url in ipairs({ PASTEBIN_2014, REPO_2014 }) do
+            for _ = 1, 2 do
+                local ok, src = pcall(function() return game:HttpGet(url) end)
+                if ok and type(src) == "string" and #src > 5000 and string.find(src, "LegacySettings", 1, true) then
+                    if url == REPO_2014 then print("[Loader] 2014 GUI: pastebin didn't answer, this repo's copy is used") end
+                    return src
+                end
+                task.wait(0.5)
+            end
+        end
+        error("the 2014 GUI couldn't be downloaded (pastebin and this repo's copy)", 0)
     end
     function helpers.Bubbles()
         local CoreGuiService = game:GetService("CoreGui")
@@ -641,7 +659,17 @@ end
 
 -- patch (optional): changes the downloaded code before it runs (the speed-ups above always apply)
 local function loadUrl(url, label, patch)
-    local ok, src = pcall(game.HttpGet, game, url)
+    -- (tried twice: a phone's connection drops a request now and then; a "404" or an error page counts as failed, so
+    -- the callers' gist fallbacks are used)
+    local ok, src = false, nil
+    for attempt = 1, 2 do
+        ok, src = pcall(game.HttpGet, game, url)
+        if ok and type(src) == "string" and #src > 0 and not string.find(src, "^%s*<") and not string.find(src, "^404") then
+            break
+        end
+        ok = false
+        if attempt < 2 then task.wait(1) end
+    end
     if not ok or type(src) ~= "string" then return false, "download" end
     if patch then src = patch(src) end
     src = applySpeedups(src)

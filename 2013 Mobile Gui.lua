@@ -522,7 +522,13 @@ end
 ]]
 
 local success, errorMessage = pcall(function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/yeku/legacy/refs/heads/main/Source.luau"))()
+    -- (Addtion-Scripts) this repo's copy of Legacy (Legacy Gui.lua: yeku's Source.luau made safe where it could stop);
+    -- yeku's own file if that can't be downloaded
+    local okLegacy, legacySource = pcall(function() return game:HttpGet("https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Legacy%20Gui.lua") end)
+    if not okLegacy or type(legacySource) ~= "string" or #legacySource < 1000 then
+        legacySource = game:HttpGet("https://raw.githubusercontent.com/yeku/legacy/refs/heads/main/Source.luau")
+    end
+    loadstring(legacySource)()
 end)
 
 if not success then
