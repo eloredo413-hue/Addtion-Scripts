@@ -141,7 +141,6 @@ local HAMMER_BOXES = {
 	HideMobileControlsCheckbox = "isHideMobileControlsEnabled",
 	MobileControlsCheckbox = "isMobileControlsEnabled",
 	OldThumbstickCheckbox = "isOldThumbstickEnabled",
-	ClassicNotificationsCheckbox = "isClassicNotificationsEnabled",
 	IWLegacyLightingCheckbox = "isIWLegacyLightingEnabled",
 	-- the lighting era dropdown
 	IWLighting2014Checkbox = "isIWLighting2014Enabled",
@@ -154,7 +153,6 @@ local HAMMER_BOXES = {
 	Shadows2014Checkbox = "is2014ShadowsEnabled",
 	SlipperyWalkCheckbox = "isSlipperyWalkEnabled",
 	ChatBarCheckbox = "isChatBarEnabled",
-	Pre2018CameraCheckbox = "isPre2018CameraEnabled",
 }
 local OLD_DECAL_BUTTON, OLD_DECAL_KEY = "BPOldDecalButton", "isOldDecalEnabled"
 
@@ -588,9 +586,15 @@ end
 
 -- (an answer that means "open the dropdown": the button with a "▼" label in it, as in the physics step)
 local DROPDOWN = "\1dropdown"
+local CAMERA_DROPDOWN = "\1dropdown camera" -- the physics step's camera dropdown (the other one is the physics one)
 
 local function answerButton(frame, text)
-	if text == DROPDOWN then
+	if text == DROPDOWN or text == CAMERA_DROPDOWN then
+		local want = (text == CAMERA_DROPDOWN) and "CameraDropdown" or "PhysicsDropdown"
+		for _, d in ipairs(frame:GetDescendants()) do
+			if d:IsA("TextButton") and d.Visible and d.Name == want then return d end
+		end
+		if text == CAMERA_DROPDOWN then return nil end
 		for _, d in ipairs(frame:GetDescendants()) do
 			if d:IsA("TextButton") and d.Visible then
 				for _, c in ipairs(d:GetChildren()) do
@@ -689,13 +693,13 @@ local function fromSettings(title, files)
 	end
 	if has("physics") and has("camera") then
 		local choice = config.physicsCameraChoice
-		if choice == "camera" then return { "Old Camera" } end
 		if choice == "none" then return { "None" } end
-		if choice == "physics" or choice == "both" then
-			-- the dropdown shows the type picked last time, which may not be this one: open it, pick, then press
-			local label = ({ ["2006"] = "2006", ["2007"] = "2007" })[config.physicsVariant] or "Old"
-			return { DROPDOWN, label .. " Physics", choice == "both" and "Both" or (label .. " Physics") }
-		end
+		-- the dropdowns show the types picked last time, which may not be these: open each, pick, then press
+		local label = ({ ["2006"] = "2006", ["2007"] = "2007" })[config.physicsVariant] or "Old"
+		local cam = ({ ["2018"] = "2018", ["2007"] = "2007" })[config.cameraVariant] or "2013"
+		if choice == "camera" then return { CAMERA_DROPDOWN, cam .. " Camera", cam .. " Camera" } end
+		if choice == "physics" then return { DROPDOWN, label .. " Physics", label .. " Physics" } end
+		if choice == "both" then return { DROPDOWN, label .. " Physics", CAMERA_DROPDOWN, cam .. " Camera", "Both" } end
 		return nil
 	end
 	if has("safe chat") then return yesNo(choices.SafeChat) end
@@ -879,12 +883,12 @@ local function answerSetup(answers, files, name, firstWait)
 				if tookOver then stopReason = "you answered the setup yourself: the rest of it is up to you" break end
 				-- still the same question and button (an addon may have just turned it into its own step, like the
 				-- Particles addon does with "old particles"): else looked at again
-				local same = (text == DROPDOWN) and (answerButton(frame, DROPDOWN) == btn)
+				local same = (text == DROPDOWN or text == CAMERA_DROPDOWN) and (answerButton(frame, text) == btn)
 					or string.lower(btn.Text or "") == string.lower(text)
 				if questionTitle(frame) == title and btn.Parent and btn.Visible and same then
 					pressesOn[frame] = pressesOn[frame] or {}
 					pressesOn[frame][title] = (pressesOn[frame][title] or 0) + 1
-					if pressesOn[frame][title] > 3 then
+					if pressesOn[frame][title] > 6 then -- (the physics step can take 5: two dropdowns, two picks, Both)
 						stopReason = "\"" .. title .. "\" doesn't go on when answered: the rest of the setup is up to you"
 						break
 					end

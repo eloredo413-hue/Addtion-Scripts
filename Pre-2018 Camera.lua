@@ -1,5 +1,5 @@
--- (Addtion-Scripts) Hammer stuff 2's "pre-2018 camera" loads this file; unticking calls
--- getgenv().LegacyZoomStop(), which gives the game's camera back.
+-- (Addtion-Scripts) The "2018 Camera" of the physics / camera setup step (Old physics camera addon.lua loads this
+-- file). getgenv().LegacyZoomStop() gives the game's camera back.
 --[[
 	LEGACY ZOOM  -  the scroll-wheel zoom from before the 2018 camera update. Client side only.
 
