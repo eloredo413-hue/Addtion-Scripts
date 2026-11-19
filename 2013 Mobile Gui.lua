@@ -104,7 +104,8 @@ local screenGui = Instance.new("ScreenGui")
 screenGui.Name = guiName
 screenGui.IgnoreGuiInset = true
 screenGui.ResetOnSpawn = false
-screenGui.DisplayOrder = 999999999 
+screenGui.DisplayOrder = 999999990 -- (Addtion-Scripts) the hotbar and backpack: under the classic NPC dialog (999999995),
+                                   -- which is under this GUI's leave box (dialogGui, 999999999)
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
 screenGui.Parent = targetParent
 

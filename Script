@@ -137,6 +137,102 @@ do
 end
 
 --========================================================
+-- 2016 GUI: THE 2017 LEADERBOARD
+-- Bloxy's 2016 GUI is Legacy (github.com/yeku/legacy) running its 2016 core scripts. Its leaderboard is swapped for
+-- the 2017 one, which has the right icons: when Legacy is launched for the 2016 pick, the PlayerlistModule of the 2017
+-- GUI's model (Legacy2017.rbxm) is put in place of the 2016 one, with any module it asks for that the 2016 GUI
+-- doesn't have. The same way the early 2015 GUI (E2015 Gui.lua) brings in the 2016 leaderboard. If anything isn't
+-- there, the 2016 leaderboard stays, and the console says why.
+--========================================================
+do
+    local SUITE_URL = "https://raw.githubusercontent.com/yeku/forks/refs/heads/main/Scripts/RBXMSuite.luau"
+    local env = getgenv()
+    if not env.BP_Leaderboard2017Hook then
+        env.BP_Leaderboard2017Hook = true
+        local previous = env.Suite
+        local real = nil
+        local function base()
+            if not real then real = previous or loadstring(game:HttpGet(SUITE_URL))() end
+            return real
+        end
+        local function find(obj, ...)
+            for _, name in ipairs({ ... }) do obj = obj and obj:FindFirstChild(name) end
+            return obj
+        end
+        local function is2016()
+            local pick = tostring(env.BloxyTopbarPick or env.BP_PendingTopbar or "")
+            return string.match(pick, "^%s*2016%s*$") ~= nil
+        end
+        -- the modules a script asks for by name (WaitForChild("X"), FindFirstChild("X"), Modules.X)
+        local function namesIn(source)
+            local names = {}
+            for name in string.gmatch(source, 'WaitForChild%(%s*["\']([%w_]+)["\']') do names[name] = true end
+            for name in string.gmatch(source, 'FindFirstChild%(%s*["\']([%w_]+)["\']') do names[name] = true end
+            for name in string.gmatch(source, 'Modules%.([%w_]+)') do names[name] = true end
+            return names
+        end
+        local function swapLeaderboard(legacy)
+            local modules2016 = find(legacy, "Core", "2016", "NewRobloxGui", "Modules")
+            local list2016 = modules2016 and modules2016:FindFirstChild("PlayerlistModule")
+            if not list2016 then
+                warn("[Loader] 2016 leaderboard: the 2016 PlayerlistModule wasn't found, the 2016 one stays")
+                return
+            end
+            local suite = base()
+            local model2017 = suite.launch(suite.download("letsafe/something@v1.0.0", "Legacy2017.rbxm"), {
+                runscripts = false, deferred = true, nocache = false, nocirculardeps = true, debug = false, verbose = false,
+            })
+            local modules2017 = find(model2017, "Core", "2017", "NewRobloxGui", "Modules")
+            local list2017 = modules2017 and modules2017:FindFirstChild("PlayerlistModule")
+            if not (list2017 and type(list2017.Source) == "string" and #list2017.Source > 100) then
+                warn("[Loader] 2016 leaderboard: the 2017 PlayerlistModule wasn't found, the 2016 one stays")
+                return
+            end
+            -- what the 2017 leaderboard asks for and the 2016 GUI doesn't have: brought over (nothing is replaced)
+            local brought = {}
+            for name in pairs(namesIn(list2017.Source)) do
+                if modules2016:FindFirstChild(name, true) == nil then
+                    local piece = modules2017:FindFirstChild(name, true)
+                    if piece then
+                        -- the same folders as in 2017
+                        local chain, holder = {}, piece.Parent
+                        while holder and holder ~= modules2017 do
+                            table.insert(chain, 1, holder.Name)
+                            holder = holder.Parent
+                        end
+                        local parent = modules2016
+                        for _, folderName in ipairs(chain) do
+                            local folder = parent:FindFirstChild(folderName)
+                            if not folder then
+                                folder = Instance.new("Folder")
+                                folder.Name = folderName
+                                folder.Parent = parent
+                            end
+                            parent = folder
+                        end
+                        piece.Parent = parent
+                        table.insert(brought, name)
+                    end
+                end
+            end
+            list2016.Source = list2017.Source
+            print("[Loader] 2016 GUI: the 2017 leaderboard is in" .. (#brought > 0 and (" (with " .. table.concat(brought, ", ") .. ")") or ""))
+        end
+        env.Suite = setmetatable({
+            launch = function(path, options)
+                local legacy = base().launch(path, options)
+                if is2016() and type(path) == "string" and string.find(path, "Legacy", 1, true)
+                    and not string.find(path, "2017", 1, true) then
+                    local ok, err = pcall(swapLeaderboard, legacy)
+                    if not ok then warn("[Loader] 2016 leaderboard: " .. tostring(err) .. " (the 2016 one stays)") end
+                end
+                return legacy
+            end,
+        }, { __index = function(_, key) return base()[key] end })
+    end
+end
+
+--========================================================
 -- KEEP ROBLOX'S NPC DIALOG BOX
 -- Roblox's NPC dialog builds its choice box ("Goodbye!" etc.) and its message box inside
 -- CoreGui.RobloxGui. The 2014 base (2014 / 2015 early), 2015 and 2016 GUIs delete ControlFrame
@@ -694,6 +790,24 @@ task.spawn(function()
         local stacks = {}                -- player -> { gui, head, tail, entries, far, connection }
         local lastMessages = {}
 
+        -- every stack's near / far check in one update, 10 times a second (it was one callback per player, every frame)
+        local stackSteps = {}
+        local stackDriver = nil
+        local stackAcc = 0
+        local function onStackStep(step)
+            stackSteps[step] = true
+            if not stackDriver then
+                stackDriver = RunService.RenderStepped:Connect(function(dt)
+                    stackAcc = stackAcc + (dt or 0)
+                    if stackAcc < 0.1 then return end
+                    stackAcc = 0
+                    for fn in pairs(stackSteps) do fn() end
+                end)
+                table.insert(connections, stackDriver)
+            end
+            return { Disconnect = function() stackSteps[step] = nil end }
+        end
+
         -- the old (legacy) bubble chat is switched off while these bubbles run
         local savedLegacyBubbles = nil
         pcall(function()
@@ -841,7 +955,7 @@ task.spawn(function()
 
             local stack = { player = player, gui = gui, head = head, tail = tail, entries = {}, far = false }
 
-            stack.connection = RunService.RenderStepped:Connect(function()
+            stack.connection = onStackStep(function()
                 if not gui.Parent then
                     if stacks[player] == stack then destroyStack(player) else stack.connection:Disconnect() end
                     return
@@ -1873,6 +1987,24 @@ end
         local SESSION_ID = tostring(os.clock())
         local parentGui = (gethui and gethui()) or CoreGui or pg
 
+        -- every NPC icon's size-by-distance in one update, 15 times a second (it was one callback per NPC, every frame)
+        local iconSteps = {}
+        local iconDriver = nil
+        local iconAcc = 0
+        local function onIconStep(step)
+            iconSteps[step] = true
+            if not iconDriver then
+                iconDriver = RunService.RenderStepped:Connect(function(dt)
+                    iconAcc = iconAcc + (dt or 0)
+                    if iconAcc < 1 / 15 then return end
+                    iconAcc = 0
+                    for fn in pairs(iconSteps) do fn() end
+                end)
+                table.insert(connections, iconDriver)
+            end
+            return { Disconnect = function() iconSteps[step] = nil end }
+        end
+
         local activeNPC, activeDialog = nil, nil
         local dialogGeneration = 0
         local hookedNPCs = {}
@@ -1929,8 +2061,22 @@ end
         local gui = Instance.new("ScreenGui")
         gui.Name = "ClassicDialogExecutorGui"
         gui.ResetOnSpawn = false
-        gui.DisplayOrder = 100
+        -- above every GUI's hotbar and backpack (the 2013 backpack is 999999, the 2013 mobile GUI's hotbar
+        -- 999999990), below the menus: an open old menu goes to 1000000000 (Old Gui Fix.lua), 2013 mobile's
+        -- leave box is 999999999, and Roblox's own menu hides the dialog while it is open
+        gui.DisplayOrder = 999999995
         gui.Parent = parentGui
+        pcall(function()
+            local GuiService = game:GetService("GuiService")
+            local function followMenu()
+                local open = false
+                pcall(function() open = GuiService.MenuIsOpen end)
+                if gui.Enabled == open then gui.Enabled = not open end
+            end
+            table.insert(connections, GuiService.MenuOpened:Connect(followMenu))
+            table.insert(connections, GuiService.MenuClosed:Connect(followMenu))
+            followMenu()
+        end)
 
         if getgenv().ClassicDialogDebug == nil then getgenv().ClassicDialogDebug = true end
         local function dbg(...)
@@ -2465,7 +2611,7 @@ end
             needNativeSweep = true
 
             local stepConn
-            stepConn = RunService.RenderStepped:Connect(function()
+            stepConn = onIconStep(function()
                 if not head.Parent or not dialog.Parent then
                     if bb.Parent then bb:Destroy() end
                     hookedNPCs[dialog] = nil
