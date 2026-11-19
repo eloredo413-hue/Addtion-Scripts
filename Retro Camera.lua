@@ -1,10 +1,12 @@
 -- (Addtion-Scripts) The "2013 Camera" of the physics / camera setup step (Old physics camera addon.lua loads this
--- file; the Retro camera gist is the fallback). Changed here: FIRST PERSON works like the classic 2012 camera:
---   * zooming in when the camera is 5 studs away or closer goes straight into first person, and zooming out
---     of it goes straight back to 5 studs (mouse wheel, I / O keys, and a pinch on a phone)
---   * in first person the camera sits right in the head, with no smoothing, and the whole character is hidden
---     (hats, face and the tool in your hand too); out of it the character is fully shown (no see-through
---     stage in between). The mouse stays locked in the middle, as before.
+-- file; the Retro camera gist is the fallback). Changed here: FIRST PERSON works like the 2012-2013 Classic camera:
+--   * zooming in to 1 stud or closer goes into first person (the zoom is then 0.5); one step out of it leaves
+--     first person (mouse wheel, I / O keys, and a pinch on a phone)
+--   * in first person the camera sits right in the head, with no smoothing, and the character is hidden, except
+--     the tool in your hand, which stays visible; out of it the character is fully shown (no see-through stage
+--     in between). The mouse stays locked in the middle, as before.
+--   * zooming makes no sound (the switch3.wav tick left the default camera on January 30, 2012); the 2007 Camera
+--     below keeps it
 -- Everything else (third person, turning, the zoom steps further out) is the Retro camera as it was.
 -- The "2007 Camera" is this file too, run with CAMERA_ERA = "2007" (2007 Camera.lua): the 2016 FollowCamera that
 -- Retro Studio's 2007 CameraScript switches on. As you walk, the camera swings round behind you; dragging to look
@@ -65,10 +67,10 @@ do
 	local DEADZONE = 0.1
 	local ZOOM_FACTOR = 0.25
 
-	-- (Addtion-Scripts) first person like the 2012 camera
-	local FIRST_PERSON_ZOOM = 0.5       -- the zoom first person is kept at (the camera itself sits in the head)
-	local LEAVE_FIRST_PERSON_ZOOM = 5   -- zooming out of first person lands here; zooming in from here or closer goes in
-	local ENTER_FIRST_PERSON_ZOOM = LEAVE_FIRST_PERSON_ZOOM / (1 + ZOOM_FACTOR) -- a pinch past this goes in (4 studs)
+	-- (Addtion-Scripts) first person like the 2012-2013 Classic camera
+	local FIRST_PERSON_ZOOM = 0.5        -- the zoom first person is kept at (the camera itself sits in the head)
+	local LEAVE_FIRST_PERSON_ZOOM = 0.5  -- a zoom past this is out of first person (one step out of it leaves it)
+	local ENTER_FIRST_PERSON_ZOOM = 1.0  -- zooming in to this or closer goes into first person
 
 	local humanoid
 
@@ -260,6 +262,8 @@ do
 	end
 
 	function this:PlayTick()
+		-- (Addtion-Scripts) silent from 2012 on: only the 2007 Camera still ticks
+		if not FOLLOW_2007 then return end
 		local now = tick()
 		local lastTickSound = this.LastTickSound
 		if not lastTickSound then
@@ -278,7 +282,7 @@ do
 
 	function this:ZoomCamera(desiredZoom)
 		this.currentZoom = clamp(0.25, 400, desiredZoom)
-		isFirstPerson = self:GetCameraZoom() < 1.5
+		isFirstPerson = self:GetCameraZoom() <= LEAVE_FIRST_PERSON_ZOOM
 		self:UpdateMouseBehavior()
 		return self:GetCameraZoom()
 	end
@@ -287,22 +291,19 @@ do
 		local zoom = this:GetCameraActualZoom()
 		if zoom then
 			if isFirstPerson then
-				-- (Addtion-Scripts) out of first person: straight back to 5 studs
-				zoom = input < 0 and LEAVE_FIRST_PERSON_ZOOM or FIRST_PERSON_ZOOM
+				-- (Addtion-Scripts) one step out of the head leaves first person
+				zoom = input < 0 and FIRST_PERSON_ZOOM * (1 - ZOOM_FACTOR*input) or FIRST_PERSON_ZOOM
 			elseif input > 0 then
-				if this:GetCameraZoom() <= LEAVE_FIRST_PERSON_ZOOM then
-					-- (Addtion-Scripts) 5 studs or closer: straight into first person
-					zoom = FIRST_PERSON_ZOOM
-				else
-					zoom = math.max(ENTER_FIRST_PERSON_ZOOM, zoom / (1 + ZOOM_FACTOR*input))
-				end
+				zoom = zoom / (1 + ZOOM_FACTOR*input)
+				-- (Addtion-Scripts) 1 stud or closer: first person
+				if zoom <= ENTER_FIRST_PERSON_ZOOM then zoom = FIRST_PERSON_ZOOM end
 			elseif input < 0 then
 				zoom = math.min(5000, zoom * (1 - ZOOM_FACTOR*input))
 			end
 			self:ZoomCamera(zoom)
 		end
 		
-		self:PlayTick()
+		self:PlayTick() -- (silent except in the 2007 Camera)
 		return self:GetCameraZoom()
 	end
 
@@ -391,23 +392,21 @@ do
 					local scale = difference / math_max(0.01, StartingDiff)
 					local clampedScale = clamp(0.1, 10, scale)
 					if this.ZoomEnabled then
-						-- (Addtion-Scripts) in and out of first person like the 2012 camera: fingers spread past
-						-- 4 studs -> first person; in first person, fingers pinched in by one zoom step -> 5 studs
+						-- (Addtion-Scripts) in and out of first person like the 2012-2013 camera: fingers spread to
+						-- 1 stud or closer -> first person; in first person, fingers pinched in by one zoom step -> out
 						local snapTo = nil
 						if isFirstPerson then
-							if clampedScale <= 1 / (1 + ZOOM_FACTOR) then snapTo = LEAVE_FIRST_PERSON_ZOOM end
+							if clampedScale <= 1 / (1 + ZOOM_FACTOR) then snapTo = FIRST_PERSON_ZOOM * (1 + ZOOM_FACTOR) end
 						else
 							local desired = pinchBeginZoom / clampedScale
 							if clampedScale > 1 and desired <= ENTER_FIRST_PERSON_ZOOM then
 								snapTo = FIRST_PERSON_ZOOM
 							else
-								this:ZoomCamera(desired)
-								this:PlayTick()
+								this:ZoomCamera(math.max(desired, FIRST_PERSON_ZOOM * (1 + ZOOM_FACTOR)))
 							end
 						end
 						if snapTo then
 							this:ZoomCamera(snapTo)
-							this:PlayTick()
 							-- the pinch carries on from here
 							StartingDiff = difference
 							pinchBeginZoom = snapTo
@@ -959,9 +958,16 @@ do
 	local ToolDescendantRemovingConns = {}
 	local CachedParts = {}
 
-	-- (Addtion-Scripts) the tool in your hand is hidden in first person too, like the 2012 camera
+	local Character = nil -- the character being hidden in first person
+
 	local function IsValidPartToModify(part)
 		return part:IsA('BasePart') or part:IsA('Decal')
+	end
+
+	-- (Addtion-Scripts) a part of the tool in your hand (a Tool held by the character): it stays visible in first person
+	local function IsInHeldTool(part)
+		local tool = part:FindFirstAncestorOfClass("Tool")
+		return tool ~= nil and Character ~= nil and tool.Parent == Character
 	end
 
 	local function TeardownTransparency()
@@ -971,6 +977,7 @@ do
 			end
 		end
 		CachedParts = {}
+		Character = nil
 		TransparencyDirty = true
 		LastTransparency = nil
 
@@ -983,6 +990,7 @@ do
 
 	local function SetupTransparency(character)
 		TeardownTransparency()
+		Character = character
 		if DescendantAddedConn then DescendantAddedConn:Disconnect() end
 		
 		DescendantAddedConn = character.DescendantAdded:Connect(function (object)
@@ -1046,10 +1054,11 @@ do
 			if TransparencyDirty or LastTransparency ~= transparency then
 				for child in pairs(CachedParts) do
 					if child:IsA("BasePart") or child:IsA("Decal") then
+						local value = IsInHeldTool(child) and 0 or transparency
 						if child.ClassName == "Decal" then
-							child.LocalTransparencyModifier = math.floor(transparency)
+							child.LocalTransparencyModifier = math.floor(value)
 						else
-							child.LocalTransparencyModifier = transparency
+							child.LocalTransparencyModifier = value
 						end
 					end
 				end
