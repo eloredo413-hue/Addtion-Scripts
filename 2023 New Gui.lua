@@ -225,7 +225,18 @@ local scriptToRun = string.format([[
     end
 
     local success, rbxmsuite = pcall(function()
-        return loadstring(game:HttpGet("https://webview2.vercel.app/RBXMSuite.luau"))()
+        return (function() -- (Addtion-Scripts) RBXM Suite: the loader's, else each link in turn (this repo has a copy)
+            local env = (getgenv and getgenv()) or _G
+            if type(env.BP_Legacy) == "table" and env.BP_Legacy.LoadSuite then
+                local okSuite, suite = pcall(env.BP_Legacy.LoadSuite)
+                if okSuite and type(suite) == "table" then return suite end
+            end
+            for _, url in ipairs({ "https://webview2.vercel.app/RBXMSuite.luau", "https://raw.githubusercontent.com/yeku/forks/refs/heads/main/Scripts/RBXMSuite.luau", "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/RBXM%%20Suite.lua" }) do
+                local okSuite, suite = pcall(function() return loadstring(game:HttpGet(url))() end)
+                if okSuite and type(suite) == "table" then return suite end
+            end
+            error("RBXM Suite couldn't be loaded", 0)
+        end)()
     end)
 
     if success and type(rbxmsuite) == "table" then
@@ -243,17 +254,26 @@ local scriptToRun = string.format([[
         local selected = ChatVersions[Mode]
 
         if selected then
-            local modelData = game:HttpGet(selected.url)
-            writefile(selected.path, modelData)
+            -- (Addtion-Scripts) a failed download (or launch) no longer stops the rest of this GUI (the top bar
+            -- below); the copy downloaded on an earlier day is used when the download fails
+            local okChat, chatErr = pcall(function()
+                local okData, modelData = pcall(function() return game:HttpGet(selected.url) end)
+                if okData and type(modelData) == "string" and #modelData > 1000 then
+                    writefile(selected.path, modelData)
+                elseif not (isfile and isfile(selected.path)) then
+                    error("the chat model couldn't be downloaded", 0)
+                end
 
-            local chatInstance = rbxmsuite.launch(selected.path, {
-                runscripts = true,
-                debug = false
-            })
+                local chatInstance = rbxmsuite.launch(selected.path, {
+                    runscripts = true,
+                    debug = false
+                })
 
-            if chatInstance then
-                chatInstance.Parent = CoreGui
-            end
+                if chatInstance then
+                    chatInstance.Parent = CoreGui
+                end
+            end)
+            if not okChat then warn("[EzperienceChat] not loaded: " .. tostring(chatErr)) end
         else
             warn("[EzperienceChat] Invalid mode selected.")
         end
