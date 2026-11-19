@@ -974,11 +974,11 @@ print("[Retro Master] Full script loaded successfully.")
 
 	-- three cameras, picked in the camera dropdown: 2018 (the zoom from before the 2018 camera update, Pre-2018
 	-- Camera.lua), 2013 (the Retro camera with 2012 first person, Retro Camera.lua) and 2007 (Retro Studio's 2007
-	-- camera: the Follow camera, 2007 Camera.lua)
+	-- camera: the same old camera with its FollowCamera on, so it swings round behind you as you walk)
 	local CAMERA_VARIANTS = {
 		{id = "2018", label = "2018", urls = { "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Pre-2018%20Camera.lua" }},
 		{id = "2013", label = "2013", urls = { CAMERA_URL, CAMERA_GIST }},
-		{id = "2007", label = "2007", urls = { "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2007%20Camera.lua" }},
+		{id = "2007", label = "2007", urls = { CAMERA_URL }, prefix = 'local CAMERA_ERA = "2007"\n'},
 	}
 	local selectedCamera = "2013"
 	local cameraSources = {}
@@ -1279,7 +1279,7 @@ print("[Retro Master] Full script loaded successfully.")
 							if opt.choice == "camera" or opt.choice == "both" then
 								task.spawn(function()
 									local src = fetchCameraScript(camera)
-									if src then runScript(src, camera .. " camera") end
+									if src then runScript((cameraVariant(camera).prefix or "") .. src, camera .. " camera") end
 								end)
 							end
 

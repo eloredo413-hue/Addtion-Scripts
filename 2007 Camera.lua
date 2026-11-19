@@ -1,64 +1,28 @@
 --========================================================
 -- 2007 CAMERA (Addtion-Scripts)
--- The camera from Retro Studio's 2007 CameraScript, made to run from a script executor. That script loads the
--- 2016 camera modules (RootCamera: ClassicCamera, FollowCamera and so on) and then, at its very end, turns the
--- camera to Follow and keeps it there. An executor doesn't have those modules, but Roblox's own camera still has
--- the same Follow camera built in: this file turns it on and keeps it on, like the original does.
---   * the camera swings round behind you as you walk, instead of staying where you left it
---   * you can still drag (or right-click drag) to look around, and zoom as usual
--- Unlike the original, only the normal player camera is changed: a game that takes the camera over for a cutscene
--- or a menu (Scriptable and the like) keeps it, and Follow comes back when the game gives the camera back.
---
--- Run alone or from the physics / camera step. getgenv().Camera2007Stop() gives the normal camera back.
+-- Retro Studio's 2007 CameraScript, made to run from a script executor. That script runs the old (2016) camera
+-- modules and switches on their Follow camera. An executor doesn't have those modules, so this runs the old camera
+-- of this repo (Retro Camera.lua, the "2013 Camera": the old camera code in place of Roblox's own) with that same
+-- FollowCamera switched on:
+--   * as you walk, the camera swings round behind you
+--   * dragging to look around stops that for 2 seconds, then it follows again
+--   * small sideways steps are let through, so it doesn't twitch; never in first person
+-- (Just switching Roblox's own camera to Follow, as the original does, changes nothing on a phone: there Roblox's
+-- camera is already Follow.)
+-- Run alone or from the physics / camera step ("2007 Camera").
 --========================================================
 
-local genv = (getgenv and getgenv()) or _G
-if type(genv.Camera2007Stop) == "function" then
-	pcall(genv.Camera2007Stop)
+local URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Retro%20Camera.lua"
+
+local ok, src = pcall(function() return game:HttpGet(URL, true) end)
+if not ok or type(src) ~= "string" or #src < 100 then
+	warn("[2007 Camera] couldn't download the old camera: " .. tostring(src))
+	return
 end
-
-local Workspace = game:GetService("Workspace")
-
-local FOLLOW = Enum.CameraType.Follow
-local CUSTOM = Enum.CameraType.Custom
-
-local stopped = false
-local typeConn, cameraConn = nil, nil
-local held = nil -- the camera it changed
-
-local function keep(cam)
-	if stopped or not cam then return end
-	if cam.CameraType == CUSTOM then
-		pcall(function() cam.CameraType = FOLLOW end)
-	end
+local fn, err = loadstring('local CAMERA_ERA = "2007"\n' .. src, "2007 Camera")
+if not fn then
+	warn("[2007 Camera] the old camera didn't compile: " .. tostring(err))
+	return
 end
-
-local function watch(cam)
-	if typeConn then typeConn:Disconnect() typeConn = nil end
-	held = cam
-	if not cam then return end
-	keep(cam)
-	typeConn = cam:GetPropertyChangedSignal("CameraType"):Connect(function()
-		keep(cam)
-	end)
-end
-
-cameraConn = Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
-	watch(Workspace.CurrentCamera)
-end)
-watch(Workspace.CurrentCamera)
-
-genv.Camera2007Stop = function()
-	if stopped then return end
-	stopped = true
-	if typeConn then typeConn:Disconnect() typeConn = nil end
-	if cameraConn then cameraConn:Disconnect() cameraConn = nil end
-	if held and held.CameraType == FOLLOW then
-		pcall(function() held.CameraType = CUSTOM end)
-	end
-	held = nil
-	genv.Camera2007Stop = nil
-	print("[2007 Camera] off: the normal camera is back.")
-end
-
-print("[2007 Camera] on: the Follow camera (it swings round behind you as you walk).")
+fn()
+print("[2007 Camera] on: the old camera, following behind you as you walk.")
