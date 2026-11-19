@@ -1,13 +1,15 @@
 -- [[ 2007 PHYSICS (Addtion-Scripts) ]]
 -- The CharacterPhysics script as it was given (StarterPlayer.StarterCharacterScripts.CharacterPhysics, FWM's), made to
--- run from a script executor, on R6 and R15. It is the same script the 2006 physics is made from; here it runs as it
--- came, at the 2007 time period (TIME_PERIOD below), with nothing of ours added:
+-- run from a script executor, on R6 and R15: FWM's (Flex's Wayback Machine's) 2008-2009 physics. It is the same script
+-- the 2006 physics is made from; what makes it 2008-2009 is FWM's era number, TIME_PERIOD below (2009's). It runs as
+-- it came, with nothing of ours added:
 --   * jumping keeps the speed you had (the jump glide) and bounces you off walls you hit mid-jump; you can't turn in
 --     the air
 --   * the first landing after a jump or fall throws you back up (at three quarters of the speed you landed with, for
 --     two frames), and after a landing you can't jump again for 0.65 s
---   * a hard landing (48 studs a second or faster) tilts you forward, more the faster you were going
---   * the arms collide, and a heavy tool makes you lean when you turn
+--   * a hard landing (48 studs a second or faster) tilts you forward half the time (every time in 2006), more the
+--     faster you were going
+--   * the arms don't collide (they did in 2006), and a heavy tool makes you lean when you turn
 -- Climbing is the 2013 climbing, the same as the Old physics' (Retro Studio's CustomClimbing; see CLIMBING below), in
 -- place of the script's own "fly bug" climbing (walking into any small part climbed it, so on a map made of small parts
 -- the climbing pose kept coming up): ladders, trusses and the like are climbed while the stick is held, up at 70% of
@@ -36,8 +38,15 @@ if not LocalPlayer then return end
 -- (Addtion-Scripts) FWM's era number. What each value turns on in this script: below 1 no jumping; below 11.5 the arms
 -- collide; up to 14 the jump glide, the landing bounce and tilt, and the old climbing (not used here: see CLIMBING);
 -- 12 to 14 the tilt only half the time; above 14 a turning delay after landing; 17 and up the landing squash.
--- 2007 is 7. (Any value from 1 to 11 does exactly the same.)
-local TIME_PERIOD = 7
+-- FWM doesn't publish what number each year has. The 2006 physics this repo started from has 10 for 2006, which makes
+-- 2009 13: FWM's 2008-2009 physics (12, 13 and 14 all do the same: no colliding arms, the tilt half the time). Set
+-- getgenv().FWMTimePeriod to a number before running this to use another (the game's own TimePeriod in FWM reads it:
+-- print(game.ReplicatedStorage.TimePeriod.Value)).
+local TIME_PERIOD = 13
+do
+	local genv = (getgenv and getgenv()) or _G
+	if type(genv.FWMTimePeriod) == "number" then TIME_PERIOD = genv.FWMTimePeriod end
+end
 
 -- (Addtion-Scripts) one copy at a time, and one physics at a time
 if BPGenv.__Physics2007Cleanup then pcall(BPGenv.__Physics2007Cleanup) end
@@ -656,4 +665,4 @@ BPGenv.__Physics2007Cleanup = function()
 	if stopCurrent then pcall(stopCurrent) stopCurrent = nil end
 	BPGenv.__Physics2007Cleanup = nil
 end
-print("[2007 Physics] on: FWM's CharacterPhysics, at the 2007 time period.")
+print("[2007 Physics] on: FWM's CharacterPhysics, its 2008-2009 physics (time period " .. tostring(TIME_PERIOD) .. ").")

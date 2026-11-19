@@ -10,8 +10,8 @@
 --  along at the whole WalkSpeed; let go and you drop. And the sink of the first 2007 physics (Super Nostalgia Zone's
 --  FloorDrag): falling fast, the body goes a little way into the legs, so you land a bit in the ground and come back
 --  up out of it (see SINKING INTO THE GROUND below).
---  "2007": the CharacterPhysics script the user gave (FWM's, at the 2007 time period), in its own file (2007
---  Physics.lua). Only if that can't be fetched: the first 2007 physics, this script as it was first made from Super
+--  "2007": the CharacterPhysics script the user gave (FWM's 2008-2009 physics, at its 2009 time period), in its own
+--  file (2007 Physics.lua). Only if that can't be fetched: the first 2007 physics, this script as it was first made from Super
 --  Nostalgia Zone's character scripts (the small bounce on every landing, SNZ Bounciness; the sink, SNZ FloorDrag;
 --  tripping when flung faster than 200 studs a second, SNZ GoofyMotion; Roblox's own turning).
 --  All three climb the 2013 way: the Old physics' climbing (Retro Studio's CustomClimbing).
