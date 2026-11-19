@@ -7,10 +7,10 @@
 -- R6 works exactly as before.
 -- Climbing is FWM's own, as it came: walking into something small in front of the feet climbs it (the "fly bug"
 -- ladders of old Roblox), moving the stick keeps you on it, and letting go of the stick drops you.
--- Sinking into the ground when landing from a high place: a landing faster than HARD_FALL (a fall from about 12 studs
--- up; an ordinary jump lands at about 50 studs a second and does not) puts the legs into the ground, from 0.4 of a
--- stud to a whole stud the higher the fall, kept through FWM's landing bounce, held for a moment once you are back on
--- the ground, and the body rises back out within about half a second after that.
+-- Sinking into the ground after a fall from a high place, the way the old 2007 physics did it (Super Nostalgia Zone's
+-- FloorDrag): once you have fallen further than HIGH_PLACE (more than an ordinary jump falls), the legs go into the
+-- ground as you keep falling, the higher the fall the deeper (up to a stud), and once you are on the ground the body
+-- comes back up out of it, a bit at a time, within about half a second. An ordinary jump or a step down: no sink.
 -- FWM: FWM's own CharacterPhysics script is switched off, also when it comes into the character after this started,
 -- and FWM's TimePeriod / ExtraUtil / Protocols are used when they are there. Run again (or the "Old" / "2007" physics
 -- picked): the earlier copy stops first.
@@ -24,11 +24,12 @@ local LocalPlayer = Players.LocalPlayer
 
 -- Fallback configuration if executed outside the original game
 -- (Addtion-Scripts) FWM's era number, used outside FWM (inside FWM the game's own TimePeriod is used). What each value
--- turns on, from FWM's CharacterPhysics: below 1 no jumping; 6 and up the arms fling you off big parts you touch;
--- below 11.5 the arms collide; up to 14 the jump glide, the landing tilt and the old ladder climbing (let go of the
--- stick and you drop); 12 to 14 the tilt only half the time; above 14 a turning delay after landing; 17 and up the
--- landing squash. 10 is 2006: every one of the 2006 things is on (fling, colliding arms, glide, the tilt on every
--- hard landing, the old climbing) and none of the later ones. (Any value from 6 to 11 does exactly the same.)
+-- turns on, from FWM's CharacterPhysics: below 1 no jumping; below 11.5 the arms collide; up to 14 the jump glide,
+-- the landing tilt and the old ladder climbing (let go of the stick and you drop); 12 to 14 the tilt only half the
+-- time; above 14 a turning delay after landing; 17 and up the landing squash. 10 is 2006: every one of the 2006 things
+-- is on (colliding arms, glide, the tilt on every hard landing, the old climbing) and none of the later ones. (Any
+-- value from 1 to 11 does exactly the same. FWM's script also has an arm fling for 6 and up, but never switches it
+-- on.)
 local DEFAULT_TIME_PERIOD = 10
 
 -- Safe reference or fallback for ExtraUtil
@@ -80,9 +81,10 @@ end
 
 local activeConnections = {}
 
--- (Addtion-Scripts) run again, or picked after the "Old" / "2007" physics: the earlier copy stops first, so two
+-- (Addtion-Scripts) run again, or picked after the "Old" / "2007" physics: the earlier one stops first, so two
 -- physics never fight over the character
 if BPGenv.__Physics2006Cleanup then pcall(BPGenv.__Physics2006Cleanup) end
+if BPGenv.__Physics2007Cleanup then pcall(BPGenv.__Physics2007Cleanup) end
 for _, env in ipairs({ _G, BPGenv }) do
     if env.__RetroMasterCleanup then pcall(env.__RetroMasterCleanup) end
 end
@@ -143,23 +145,22 @@ local function setupCharacterPhysics(character)
     -- (and followed if Roblox changes it, e.g. when the body is scaled).
     local r15HipHeight = humanoid.HipHeight > 0 and humanoid.HipHeight or 2
     local lastSetHipHeight = nil
-    -- (Addtion-Scripts) SINKING INTO THE GROUND when landing from a high place: a landing faster than HARD_FALL puts
-    -- the legs into the ground, the higher the fall the deeper (SINK_MIN just past HARD_FALL, SINK_MAX from about 30
-    -- studs up). It is set the moment you land, not while falling: it used to build up slowly during the fall (only
-    -- 0.2 of a stud from 15 studs up) and was spent in the air, because FWM's landing bounce throws you back up a frame
-    -- after you land. Now it is kept while that bounce has you in the air, held for a moment once you are on the
-    -- ground again, and then the body rises back out. An ordinary jump lands at about 50 studs a second: no sink.
-    -- Walking onto a higher or lower floor brings it straight back up. R6: through the hip height. R15: the body is
-    -- moved down on its root joint instead (a lower hip height makes Roblox's R15 animations run faster).
-    local HARD_FALL = 70     -- studs a second: landing faster than this sinks you (from about 12 studs up)
-    local SINK_MIN = 0.4     -- studs: the sink of a landing just past HARD_FALL
-    local SINK_MAX = 1       -- studs: the deepest sink, landing at HARD_FALL + 40 or faster (about 30 studs up)
-    local SINK_HOLD = 0.25   -- seconds the legs stay in the ground once you are on it, before rising back out
-    local SINK_KEEP = 1.5    -- seconds a hard landing's sink waits for you to be on the ground (the landing bounce)
-    local SINK_DECAY = 0.925 -- kept each 1/60 s while rising back out
+    -- (Addtion-Scripts) SINKING INTO THE GROUND after a fall from a high place, as the old 2007 physics did it (Super
+    -- Nostalgia Zone's FloorDrag): falling fast, the body moves down into the legs at SINK_RATE, up to SINK_DEPTH, and
+    -- back on the ground it comes back up, keeping SINK_DECAY of the sink each 1/60 s. Here only once you have fallen
+    -- further than HIGH_PLACE (the old 2007 physics did it on every jump and step down): about 0.2 of a stud from 10
+    -- studs up, 0.4 from 12, 0.6 from 15 and about the whole stud from 18 up. FWM's landing bounce (it throws you back
+    -- up as you land) keeps the sink until you are on the ground again. Walking onto a higher or lower floor brings it
+    -- straight back up. R6: through the hip height. R15: the body is moved down on its root joint instead (a lower hip
+    -- height makes Roblox's R15 animations run faster).
+    local HIGH_PLACE = 8     -- studs fallen before the legs start going into the ground (an ordinary jump falls 6.4)
+    local FAST_FALL = 8      -- studs a second: falling faster than this is falling fast (SNZ's FloorDrag)
+    local SINK_RATE = 20 / 3 -- studs a second the body goes into the legs while falling fast (SNZ's FloorDrag)
+    local SINK_DEPTH = 1     -- studs: the deepest it goes
+    local SINK_DECAY = 0.925 -- kept each 1/60 s while coming back up (SNZ's FloorDrag)
     local sinkOffset = 0
     local sinkFloorY = nil
-    local peakFall, sinkHoldUntil, sinkKeepUntil = 0, 0, 0
+    local fallTop = nil -- where the root was when this fall began (the highest point since you were last going up)
 
     local function setHipHeight(value)
         if isR15 then
@@ -473,35 +474,27 @@ local function setupCharacterPhysics(character)
     local function updateSink(dt)
         local state = humanoid:GetState()
         local level = floorBelow()
+        local y = rootPart.Position.Y
         if humanoid.Sit or humanoid.SeatPart or humanoid.Health <= 0
             or state == Enum.HumanoidStateType.Climbing or state == Enum.HumanoidStateType.Swimming then
             sinkOffset = 0
-            peakFall, sinkHoldUntil, sinkKeepUntil = 0, 0, 0
+            fallTop = y
         else
-            local now = os.clock()
             local vy = rootPart.AssemblyLinearVelocity.Y
             local airborne = humanoid.FloorMaterial == Enum.Material.Air
                 or state == Enum.HumanoidStateType.Freefall or state == Enum.HumanoidStateType.Jumping
-            if vy < -8 then
-                peakFall = math.max(peakFall, -vy) -- falling: how fast, for the landing
-            elseif peakFall > 0 then
-                -- the fall has just ended: a landing from high up puts the legs into the ground
-                if peakFall > HARD_FALL then
-                    local depth = SINK_MIN + (SINK_MAX - SINK_MIN) * math.clamp((peakFall - HARD_FALL) / 40, 0, 1)
-                    sinkOffset = math.min(sinkOffset, -depth)
-                    sinkKeepUntil = now + SINK_KEEP
-                    sinkHoldUntil = now + SINK_HOLD
-                end
-                peakFall = 0
+            if vy >= 0 or not airborne or not fallTop then
+                fallTop = y -- (going up, or on the ground: a fall starts from here)
             end
-            if sinkOffset < 0 and now < sinkKeepUntil and airborne then
-                -- thrown back up by the landing bounce: the sink waits for you to be on the ground again
-                sinkHoldUntil = now + SINK_HOLD
-            elseif now < sinkHoldUntil then
-                -- (in the ground for a moment)
+            if vy < -FAST_FALL and airborne and fallTop - y > HIGH_PLACE then
+                -- falling from a high place: into the legs, a bit more each moment
+                sinkOffset = math.max(-SINK_DEPTH, sinkOffset - SINK_RATE * dt)
+            elseif airborne then
+                -- (in the air, e.g. thrown back up by FWM's landing bounce: the sink stays as it is)
             elseif level and sinkFloorY and math.abs(level - sinkFloorY) > 0.5 then
                 sinkOffset = 0 -- walked onto a higher or lower floor
             else
+                -- on the ground: coming back up out of it
                 sinkOffset = sinkOffset * SINK_DECAY ^ (dt * 60)
                 if math.abs(sinkOffset) < 0.001 then sinkOffset = 0 end
             end
