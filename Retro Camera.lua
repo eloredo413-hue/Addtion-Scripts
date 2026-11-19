@@ -6,6 +6,11 @@
 --     (hats, face and the tool in your hand too); out of it the character is fully shown (no see-through
 --     stage in between). The mouse stays locked in the middle, as before.
 -- Everything else (third person, turning, the zoom steps further out) is the Retro camera as it was.
+-- The "2007 Camera" is this file too, run with CAMERA_ERA = "2007" (2007 Camera.lua): the 2016 FollowCamera that
+-- Retro Studio's 2007 CameraScript switches on. As you walk, the camera swings round behind you; dragging to look
+-- around stops that for 2 seconds; small sideways steps are let through (it doesn't twitch on every one); never in
+-- first person.
+local FOLLOW_2007 = (CAMERA_ERA == "2007")
 -- [[ EXECUTOR CLEANUP & SAFETY ]]
 local RunService = game:GetService("RunService")
 local ContextActionService = game:GetService("ContextActionService")
@@ -425,6 +430,7 @@ do
 				panBeginLook = nil
 				startPos = nil
 				lastPos = nil
+				this.UserPanningTheCamera = false -- (Addtion-Scripts) the finger is up: no longer looking around
 			elseif NumUnsunkTouches == 2 then
 				StartingDiff = nil
 				pinchBeginZoom = nil
@@ -889,7 +895,17 @@ do
 			local zoom = self:GetCameraZoom()
 			if zoom < 0.25 then zoom = 0.25 end
 
-			if TeleportService:GetTeleportSetting("FollowCamera") then
+			if FOLLOW_2007 then
+				-- (2007 Camera) the old FollowCamera: turns towards where you walk, unless you have just looked around
+				local recentlyPanned = now - (self.LastUserPanCamera or 0) < 2
+				if self.LastCameraTransform and not userPanningTheCamera and not recentlyPanned and not self:IsInFirstPerson() then
+					local lastVec = -(self.LastCameraTransform.p - subjectPosition)
+					local y = findAngleBetweenXZVectors(lastVec, self:GetCameraLook())
+					if IsFinite(y) and math.abs(y) > 0.0001 and math.abs(y) > 0.4 * timeDelta then
+						self.RotateInput = self.RotateInput + Vector2.new(y, 0)
+					end
+				end
+			elseif TeleportService:GetTeleportSetting("FollowCamera") then
 				if self.LastCameraTransform and not self:IsInFirstPerson() then
 					local lastVec = -(self.LastCameraTransform.p - subjectPosition)
 					local y = findAngleBetweenXZVectors(lastVec, self:GetCameraLook())
