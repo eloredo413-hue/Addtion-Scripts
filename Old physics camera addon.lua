@@ -972,22 +972,39 @@ end))
 print("[Retro Master] Full script loaded successfully.")
 ]==]
 
-	local CAMERA_SRC = nil
+	-- three cameras, picked in the camera dropdown: 2018 (the zoom from before the 2018 camera update, Pre-2018
+	-- Camera.lua), 2013 (the Retro camera with 2012 first person, Retro Camera.lua) and 2007 (Retro Studio's 2007
+	-- camera: the Follow camera, 2007 Camera.lua)
+	local CAMERA_VARIANTS = {
+		{id = "2018", label = "2018", urls = { "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Pre-2018%20Camera.lua" }},
+		{id = "2013", label = "2013", urls = { CAMERA_URL, CAMERA_GIST }},
+		{id = "2007", label = "2007", urls = { "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2007%20Camera.lua" }},
+	}
+	local selectedCamera = "2013"
+	local cameraSources = {}
 
-	local function fetchCameraScript()
-		if CAMERA_SRC then return CAMERA_SRC end
-		print("[Physics/Camera] Fetching camera script...")
-		for _, url in ipairs({ CAMERA_URL, CAMERA_GIST }) do
+	local function cameraVariant(id)
+		for _, v in ipairs(CAMERA_VARIANTS) do
+			if v.id == id then return v end
+		end
+		return CAMERA_VARIANTS[2]
+	end
+
+	local function fetchCameraScript(id)
+		local v = cameraVariant(id)
+		if cameraSources[v.id] then return cameraSources[v.id] end
+		print("[Physics/Camera] Fetching the " .. v.label .. " camera script...")
+		for i, url in ipairs(v.urls) do
 			local ok, src = pcall(function()
 				return game:HttpGet(url, true)
 			end)
-			if ok and type(src) == "string" and #src > 100 then
-				CAMERA_SRC = src
-				print("[Physics/Camera] Camera script fetched (" .. #src .. " bytes)" .. (url == CAMERA_GIST and ", from the gist" or "") .. ".")
+			if ok and type(src) == "string" and #src > 100 and not src:find("^%s*<") and not src:find("^404") then
+				cameraSources[v.id] = src
+				print("[Physics/Camera] " .. v.label .. " camera script fetched (" .. #src .. " bytes)" .. (i > 1 and ", from the gist" or "") .. ".")
 				return src
 			end
 		end
-		warn("[Physics/Camera] Failed to fetch camera script.")
+		warn("[Physics/Camera] Failed to fetch the " .. v.label .. " camera script.")
 		return nil
 	end
 
@@ -1052,7 +1069,7 @@ print("[Retro Master] Full script loaded successfully.")
 		end
 	end
 
-	local function saveChoice(choice, variant)
+	local function saveChoice(choice, variant, camera)
 		local cfg = {}
 		if readfile and isfile and isfile(CONFIG_FILE) then
 			pcall(function() cfg = HttpService:JSONDecode(readfile(CONFIG_FILE)) end)
@@ -1060,6 +1077,7 @@ print("[Retro Master] Full script loaded successfully.")
 		if type(cfg) ~= "table" then cfg = {} end
 		cfg.physicsCameraChoice = choice
 		cfg.physicsVariant = variant
+		cfg.cameraVariant = camera
 		if writefile then
 			pcall(function() writefile(CONFIG_FILE, HttpService:JSONEncode(cfg)) end)
 		end
@@ -1137,87 +1155,126 @@ print("[Retro Master] Full script loaded successfully.")
 					local oldClips = frame.ClipsDescendants
 					frame.ClipsDescendants = false
 
+					-- [Camera][camera ▼][Physics][physics ▼][Both][None]: each dropdown next to the button it changes
+					local W, GAP, X0 = 54, 4, 8
+					local function col(i) return X0 + (i - 1) * (W + GAP) end
 					local opts = {
-						{text = "Old Camera",  x = 10,  width = 64, choice = "camera"},
-						{text = "Old Physics", x = 79,  width = 64, choice = "physics"},
-						{text = "Both",        x = 217, width = 64, choice = "both"},
-						{text = "None",        x = 286, width = 64, choice = "none"},
+						{text = "2013 Camera", x = col(1), width = W, choice = "camera"},
+						{text = "Old Physics", x = col(3), width = W, choice = "physics"},
+						{text = "Both",        x = col(5), width = W, choice = "both"},
+						{text = "None",        x = col(6), width = W, choice = "none"},
 					}
 
 					local myButtons = {}
-					local physicsBtn
+					local physicsBtn, cameraBtn
+					local lists = {}
 
-					-- Physics type dropdown, sits between the two buttons it affects (Physics and Both)
-					local dropdownBtn = makeButton("", UDim2.new(0, 148, 0, 45), 64, frame)
-					table.insert(myButtons, dropdownBtn)
+					local function setListOpen(which, open)
+						for name, items in pairs(lists) do
+							local show = open and name == which
+							for _, item in ipairs(items) do item.Visible = show end
+						end
+					end
+					local function closeLists() setListOpen(nil, false) end
 
-					local dropdownPad = Instance.new("UIPadding", dropdownBtn)
-					dropdownPad.PaddingRight = UDim.new(0, 12)
+					local function makeDropdown(name, x)
+						local btn = makeButton("", UDim2.new(0, x, 0, 45), W, frame)
+						btn.Name = name
+						table.insert(myButtons, btn)
+						local pad = Instance.new("UIPadding", btn)
+						pad.PaddingRight = UDim.new(0, 12)
+						local arrow = Instance.new("TextLabel")
+						arrow.Size = UDim2.new(0, 12, 1, 0)
+						arrow.Position = UDim2.new(1, 0, 0, 0)
+						arrow.BackgroundTransparency = 1
+						arrow.Text = "▼"
+						arrow.FontFace = fontBold
+						arrow.TextSize = 10
+						arrow.TextColor3 = btn.TextColor3
+						arrow.ZIndex = btn.ZIndex + 1
+						arrow.Parent = btn
+						btn:GetPropertyChangedSignal("TextColor3"):Connect(function()
+							arrow.TextColor3 = btn.TextColor3
+						end)
+						return btn
+					end
 
-					local arrow = Instance.new("TextLabel")
-					arrow.Size = UDim2.new(0, 12, 1, 0)
-					arrow.Position = UDim2.new(1, 0, 0, 0)
-					arrow.BackgroundTransparency = 1
-					arrow.Text = "▼"
-					arrow.FontFace = fontBold
-					arrow.TextSize = 10
-					arrow.TextColor3 = dropdownBtn.TextColor3
-					arrow.ZIndex = dropdownBtn.ZIndex + 1
-					arrow.Parent = dropdownBtn
-					dropdownBtn:GetPropertyChangedSignal("TextColor3"):Connect(function()
-						arrow.TextColor3 = dropdownBtn.TextColor3
-					end)
+					-- Camera type dropdown (2018 / 2013 / 2007), between the Camera and Physics buttons
+					local cameraDropdown = makeDropdown("CameraDropdown", col(2))
+					-- Physics type dropdown, between the two buttons it affects (Physics and Both)
+					local dropdownBtn = makeDropdown("PhysicsDropdown", col(4))
 
 					local function refreshVariantText()
 						local label = variantLabel(selectedVariant)
 						dropdownBtn.Text = label
 						if physicsBtn then physicsBtn.Text = label .. " Physics" end
+						local cam = cameraVariant(selectedCamera).label
+						cameraDropdown.Text = cam
+						if cameraBtn then cameraBtn.Text = cam .. " Camera" end
 					end
 
-					local listItems = {}
-					local function setListOpen(open)
-						for _, item in ipairs(listItems) do item.Visible = open end
-					end
-
-					for i, v in ipairs(PHYSICS_VARIANTS) do
-						local item = makeButton(v.label .. " Physics", UDim2.new(0, 148, 0, 45 + 32 * i), 64, frame)
+					-- (the list items are made before the answer buttons, so Saved Settings finds an item first)
+					lists.camera = {}
+					for i, v in ipairs(CAMERA_VARIANTS) do
+						local item = makeButton(v.label .. " Camera", UDim2.new(0, col(2), 0, 45 + 32 * i), W, frame)
 						item.ZIndex = 10
 						item.Visible = false
-						table.insert(listItems, item)
+						table.insert(lists.camera, item)
+						table.insert(myButtons, item)
+						item.MouseButton1Click:Connect(function()
+							playClick()
+							selectedCamera = v.id
+							refreshVariantText()
+							closeLists()
+						end)
+					end
+
+					lists.physics = {}
+					for i, v in ipairs(PHYSICS_VARIANTS) do
+						local item = makeButton(v.label .. " Physics", UDim2.new(0, col(4), 0, 45 + 32 * i), W, frame)
+						item.ZIndex = 10
+						item.Visible = false
+						table.insert(lists.physics, item)
 						table.insert(myButtons, item)
 
 						item.MouseButton1Click:Connect(function()
 							playClick()
 							selectedVariant = v.id
 							refreshVariantText()
-							setListOpen(false)
+							closeLists()
 						end)
 					end
 
+					cameraDropdown.MouseButton1Click:Connect(function()
+						playClick()
+						setListOpen("camera", not lists.camera[1].Visible)
+					end)
 					dropdownBtn.MouseButton1Click:Connect(function()
 						playClick()
-						setListOpen(not listItems[1].Visible)
+						setListOpen("physics", not lists.physics[1].Visible)
 					end)
 
 					for _, opt in ipairs(opts) do
 						local btn = makeButton(opt.text, UDim2.new(0, opt.x, 0, 45), opt.width, frame)
 						table.insert(myButtons, btn)
 						if opt.choice == "physics" then physicsBtn = btn end
+						if opt.choice == "camera" then cameraBtn = btn end
 
 						btn.MouseButton1Click:Connect(function()
 							playClick()
-							setListOpen(false)
+							closeLists()
 							local variant = selectedVariant
-							print("[Physics/Camera] Picked " .. opt.choice .. " (physics: " .. variant .. ")")
-							saveChoice(opt.choice, variant)
+							local camera = selectedCamera
+							print("[Physics/Camera] Picked " .. opt.choice .. " (physics: " .. variant .. ", camera: " .. camera .. ")")
+							saveChoice(opt.choice, variant, camera)
 
 							if opt.choice == "physics" or opt.choice == "both" then
 								task.spawn(function() runPhysics(variant) end)
 							end
 							if opt.choice == "camera" or opt.choice == "both" then
 								task.spawn(function()
-									local src = fetchCameraScript()
-									if src then runScript(src, "camera") end
+									local src = fetchCameraScript(camera)
+									if src then runScript(src, camera .. " camera") end
 								end)
 							end
 
@@ -1258,12 +1315,15 @@ print("[Retro Master] Full script loaded successfully.")
 		end
 	end)
 
-	-- Only restore the dropdown's last physics type; nothing runs until a button is clicked.
+	-- Only restore the dropdowns' last physics and camera types; nothing runs until a button is clicked.
 	if readfile and isfile and isfile(CONFIG_FILE) then
 		pcall(function()
 			local cfg = HttpService:JSONDecode(readfile(CONFIG_FILE))
 			if type(cfg) == "table" and type(cfg.physicsVariant) == "string" then
 				selectedVariant = cfg.physicsVariant
+			end
+			if type(cfg) == "table" and type(cfg.cameraVariant) == "string" then
+				selectedCamera = cameraVariant(cfg.cameraVariant).id
 			end
 		end)
 	end

@@ -1,4 +1,4 @@
--- (Addtion-Scripts) The "Old Camera" of the physics / camera setup step (Old physics camera addon.lua loads this
+-- (Addtion-Scripts) The "2013 Camera" of the physics / camera setup step (Old physics camera addon.lua loads this
 -- file; the Retro camera gist is the fallback). Changed here: FIRST PERSON works like the classic 2012 camera:
 --   * zooming in when the camera is 5 studs away or closer goes straight into first person, and zooming out
 --     of it goes straight back to 5 studs (mouse wheel, I / O keys, and a pinch on a phone)

@@ -11,9 +11,14 @@
 --     BadgeService.BadgeAwarded event is listened to as well, when the executor is allowed to.
 -- Nothing is changed in the game.
 --
--- The loader starts it with the 2014 GUI, and with the 2013 and 2013 mobile GUIs when the old health bar is off.
--- Run alone: this file starts it. Switch off: getgenv().ClassicNotificationsStop()
--- getgenv().ClassicNotifications: Start(), Stop(), Running(), Notify(title, text, image), Test()
+-- Three ways it can work (the loader picks one for each GUI):
+--   "classic": the boxes above (the 2014 GUI, and the 2013 and 2013 mobile GUIs while the old health bar is off)
+--   "silent":  nothing is shown or played, and Roblox's own badge and friend request notices are hidden (2011, 2012,
+--              and 2013 / 2013 mobile with the old health bar on)
+--   "sound":   no boxes, Roblox's own notices hidden, and a badge plays victory.wav (the GUIs before 2011)
+-- Run alone: this file starts it ("classic", or getgenv().ClassicNotificationsMode). Switch off:
+-- getgenv().ClassicNotificationsStop(). getgenv().ClassicNotifications: Start(mode), Stop(), Running(), Mode(),
+-- Notify(title, text, image), Test()
 --========================================================
 
 local Players = game:GetService("Players")
@@ -51,6 +56,9 @@ local Settings = {
 }
 
 local GUI_NAME = "ClassicNotifications"
+local VICTORY_SOUND = "rbxasset://sounds/victory.wav"
+local MODES = { classic = true, silent = true, sound = true }
+local mode = MODES[genv.ClassicNotificationsMode] and genv.ClassicNotificationsMode or "classic"
 local running = false
 local gui, holder = nil, nil
 local ask = nil            -- the Accept / Decline box in the middle: { frame, userId }
@@ -101,7 +109,7 @@ end
 
 -- opts: userId (friend request), lifetime, onClick (a tap on the box; the box goes after it)
 local function notify(title, text, image, opts)
-	if not running or not holder then return nil end
+	if not running or not holder or mode ~= "classic" then return nil end -- (no boxes when "silent" or "sound")
 	opts = opts or {}
 	local width = Settings.Width
 	local textX = image and 52 or 12
@@ -178,7 +186,7 @@ local function notify(title, text, image, opts)
 			local ok, err = pcall(opts.onClick, note)
 			if not ok then warn("[Classic Notifications] " .. tostring(err)) end
 		end
-		dismiss(note)
+		if not opts.sticky then dismiss(note) end
 	end)
 
 	-- the small circled x in the corner
@@ -209,7 +217,9 @@ local function notify(title, text, image, opts)
 	pcall(function()
 		inner:TweenPosition(UDim2.new(0, 0, 0, 0), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, Settings.SlideTime, true)
 	end)
-	task.delay(opts.lifetime or Settings.Lifetime, function() dismiss(note) end)
+	if not opts.sticky then
+		task.delay(opts.lifetime or Settings.Lifetime, function() dismiss(note) end)
+	end
 	return note
 end
 
@@ -303,11 +313,15 @@ local function friendRequest(player)
 	friendNotes[player.UserId] = true -- (set again to the notification below)
 	local note = notify("Friend Request", "From " .. player.Name, headshot(player.UserId), {
 		userId = player.UserId,
-		lifetime = Settings.FriendLifetime,
+		sticky = true, -- stays until its x is pressed (tapping it only opens the Accept / Decline box)
 		onClick = function()
 			openAsk("Accept Friend Request from " .. player.Name .. "?", player.UserId, function()
+				local n = friendNotes[player.UserId]
+				if type(n) == "table" then dismiss(n) end
 				LocalPlayer:RequestFriendship(player) -- (answering an incoming request accepts it)
 			end, function()
+				local n = friendNotes[player.UserId]
+				if type(n) == "table" then dismiss(n) end
 				LocalPlayer:RevokeFriendship(player)
 			end)
 		end,
@@ -332,10 +346,24 @@ local function onFriendStatus(player, status)
 	end
 end
 
+-- "sound": the old victory sound for a badge, in place of any box
+local function playVictory()
+	pcall(function()
+		local sound = Instance.new("Sound")
+		sound.Name = "ClassicBadgeVictory"
+		sound.SoundId = VICTORY_SOUND
+		sound.Volume = 1
+		sound.Parent = game:GetService("SoundService")
+		sound:Play()
+		task.delay(10, function() pcall(function() sound:Destroy() end) end)
+	end)
+end
+
 local function onBadge(message, userId, badgeId)
 	if not running or userId ~= LocalPlayer.UserId then return end
 	if recentBadges[tostring(message)] then return end -- (the modern notice was just shown here)
 	recentBadges[tostring(message)] = os.clock()
+	if mode == "sound" then playVictory() return end
 	notify("Badge Awarded", tostring(message or "You earned a badge!"),
 		badgeId and ("rbxthumb://type=BadgeIcon&id=" .. tostring(badgeId) .. "&w=150&h=150") or nil)
 end
@@ -356,15 +384,27 @@ local function badgeShownRecently(message)
 	return false
 end
 
+local function titleText(label)
+	return string.lower((string.gsub(tostring(label.Text), "^%s*(.-)%s*$", "%1")))
+end
+
 local function isBadgeTitle(label)
-	local text = string.lower(string.gsub(tostring(label.Text), "^%s*(.-)%s*$", "%1"))
-	return text == "badge awarded"
+	return titleText(label) == "badge awarded"
+end
+
+-- Roblox's own friend request notice (hidden when "silent" or "sound")
+local function isFriendTitle(label)
+	return titleText(label) == "friend request"
+end
+
+local function isNoticeTitle(label)
+	return isBadgeTitle(label) or isFriendTitle(label)
 end
 
 local function countBadgeTitles(root)
 	local n = 0
 	for _, d in ipairs(root:GetDescendants()) do
-		if d:IsA("TextLabel") and isBadgeTitle(d) then n = n + 1 end
+		if d:IsA("TextLabel") and isNoticeTitle(d) then n = n + 1 end
 	end
 	return n
 end
@@ -398,8 +438,17 @@ end
 
 local function inspectNative(label)
 	if not running or nativeSeen[label] or not label.Parent then return end
-	if not label:IsA("TextLabel") or not isBadgeTitle(label) then return end
+	if not label:IsA("TextLabel") then return end
 	if gui and label:IsDescendantOf(gui) then return end -- our own notification
+	if isFriendTitle(label) then
+		-- (with the boxes, Roblox's friend request notice is left as it is)
+		if mode == "classic" then return end
+		nativeSeen[label] = true
+		local item = noticeOf(label)
+		if item then holdHidden(item) end
+		return
+	end
+	if not isBadgeTitle(label) then return end
 	nativeSeen[label] = true
 	local item = noticeOf(label)
 	if not item then return end
@@ -413,8 +462,9 @@ local function inspectNative(label)
 			image = d.Image
 		end
 	end
-	if Settings.HideNativeBadges then holdHidden(item) end
+	if Settings.HideNativeBadges or mode ~= "classic" then holdHidden(item) end
 	if badgeShownRecently(body or "badge") then return end
+	if mode == "sound" then playVictory() return end
 	notify("Badge Awarded", body or "You earned a badge!", image)
 end
 
@@ -435,7 +485,16 @@ function api.Stop()
 	print("[Classic Notifications] off.")
 end
 
-function api.Start()
+function api.Start(newMode)
+	if MODES[newMode] and newMode ~= mode then
+		mode = newMode
+		print("[Classic Notifications] now " .. mode .. ".")
+		if mode ~= "classic" then
+			-- (the boxes on screen go)
+			for _, note in ipairs({ table.unpack(active) }) do pcall(dismiss, note) end
+			pcall(closeAsk)
+		end
+	end
 	if running then return end
 	running = true
 	gui = Instance.new("ScreenGui")
@@ -496,7 +555,7 @@ function api.Start()
 	genv.ClassicNotificationsStop = api.Stop
 	local function word(ok) return ok and "yes" or "blocked" end
 	local report = "Badges: " .. word(sources.badges) .. ". Friend requests: " .. word(sources.requests) .. "."
-	print("[Classic Notifications] on. " .. report .. " (getgenv().ClassicNotifications.Test() shows a sample.)")
+	print("[Classic Notifications] on (" .. mode .. "). " .. report .. " (getgenv().ClassicNotifications.Test() shows a sample.)")
 	if (Settings.StartupNotice or genv.ClassicNotificationsDebug == true) and genv.ClassicNotificationsQuiet ~= true then
 		notify("Notifications on", report, nil, { lifetime = 6 })
 	end
@@ -504,6 +563,10 @@ end
 
 function api.Running()
 	return running
+end
+
+function api.Mode()
+	return mode
 end
 
 -- which events were connected: { badges = bool, requests = bool, friended = bool }

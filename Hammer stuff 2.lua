@@ -76,7 +76,6 @@ task.spawn(function()
 		isHideMobileControlsEnabled = config.isHideMobileControlsEnabled or false,
 		isMobileControlsEnabled = config.isMobileControlsEnabled or false,
 		isOldThumbstickEnabled  = config.isOldThumbstickEnabled or false,
-		isClassicNotificationsEnabled = config.isClassicNotificationsEnabled or false,
 		isIWLegacyLightingEnabled = config.isIWLegacyLightingEnabled or false, -- (the dropdown's "normal")
 		isIWLighting2014Enabled = config.isIWLighting2014Enabled or false,
 		isIWLighting2015Enabled = config.isIWLighting2015Enabled or false,
@@ -88,7 +87,6 @@ task.spawn(function()
 		is2014ShadowsEnabled    = config.is2014ShadowsEnabled or false,
 		isSlipperyWalkEnabled   = config.isSlipperyWalkEnabled or false,
 		isChatBarEnabled        = config.isChatBarEnabled or false,
-		isPre2018CameraEnabled  = config.isPre2018CameraEnabled or false,
 		fpsCap                  = math.max(0, math.floor(tonumber(config.fpsCap) or 0)),
 	}
 
@@ -4294,53 +4292,6 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
-	-- 24. PRE-2018 CAMERA (Pre-2018 Camera.lua in this repo)
-	-- The zoom from before the 2018 camera update: no gliding (the camera jumps to the new distance) and the
-	-- old step for each wheel click. It changes Roblox's own camera scripts (PlayerModule), so it waits for
-	-- your character (the camera scripts are running by then). Downloaded once and kept; unticking calls its
-	-- getgenv().LegacyZoomStop, which gives the camera back.
-	------------------------------------------------------------
-	do
-		local CAMERA_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Pre-2018%20Camera.lua"
-		local genv = (getgenv and getgenv()) or _G
-		local loading = false
-		local source = nil
-		local function stopIt()
-			local stop = genv.LegacyZoomStop
-			if type(stop) == "function" then pcall(stop) end
-		end
-		function actions.applyPre2018Camera()
-			if loading then return end
-			loading = true
-			task.spawn(function()
-				-- the camera scripts are there once you have a character
-				local t0 = os.clock()
-				while not player.Character and os.clock() - t0 < 15 do task.wait(0.25) end
-				task.wait(0.5)
-				local ok, err = pcall(function()
-					source = source or game:HttpGet(CAMERA_URL)
-					local fn, compileErr = loadstring(source)
-					if not fn then
-						source = nil
-						error(compileErr, 0)
-					end
-					if state.isPre2018CameraEnabled then fn() end
-				end)
-				loading = false
-				if not ok then
-					warn("[pre-2018 camera] couldn't load: " .. tostring(err))
-					return
-				end
-				-- unticked while it was downloading
-				if not state.isPre2018CameraEnabled then stopIt() end
-			end)
-		end
-		function actions.restorePre2018Camera()
-			stopIt()
-		end
-	end
-
-	------------------------------------------------------------
 	-- 21. HIDE MOBILE CONTROLS
 	-- The joystick and the jump button can't be seen but still work: each part of them gets a see-through
 	-- UIGradient (it hides what is drawn, and doesn't fight the controls' own fading in and out), and they
@@ -4459,49 +4410,6 @@ task.spawn(function()
 			end
 			local api2 = running()
 			if api2 then pcall(api2.Set, wanted()) end
-		end
-	end
-
-	------------------------------------------------------------
-	-- 21c. CLASSIC NOTIFICATIONS (Classic Notifications.lua, downloaded once and kept)
-	-- The 2013-2014 badge and friend request notifications: a small box at the bottom right (tap a friend request
-	-- for the Accept / Decline box in the middle). Roblox's own badge notice is hidden and shown in the classic box
-	-- with the same text. Works with any GUI; unticking removes it.
-	------------------------------------------------------------
-	do
-		local URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Classic%20Notifications.lua?v=" .. tostring(os.time())
-		local genv = (getgenv and getgenv()) or _G
-		local source = nil
-		local busy = false
-		local function running()
-			local api = genv.ClassicNotifications
-			if type(api) == "table" and type(api.Start) == "function" and type(api.Stop) == "function" then return api end
-			return nil
-		end
-		function actions.syncClassicNotifications()
-			if busy then return end -- the download in progress follows the latest tick when it is done
-			local api = running()
-			if api then
-				if state.isClassicNotificationsEnabled then pcall(api.Start) else pcall(api.Stop) end
-				return
-			end
-			if not state.isClassicNotificationsEnabled then return end
-			busy = true
-			local ok, err = pcall(function()
-				local src = source or game:HttpGet(URL)
-				local fn, compileErr = loadstring(src)
-				if not fn then error(compileErr, 0) end
-				source = src
-				if not state.isClassicNotificationsEnabled then return end -- (unticked while it downloaded)
-				fn()
-			end)
-			busy = false
-			if not ok then
-				warn("[Addon] Classic notifications couldn't load: " .. tostring(err))
-				return
-			end
-			local api2 = running()
-			if api2 and not state.isClassicNotificationsEnabled then pcall(api2.Stop) end
 		end
 	end
 
@@ -5573,30 +5481,6 @@ task.spawn(function()
 	})
 
 	createAddonRow({
-		containerName = "ClassicNotificationsContainer",
-		checkboxName  = "ClassicNotificationsCheckbox",
-		helpName      = "ClassicNotificationsHelpButton",
-		label         = "notifications",
-		yPos          = startY,
-		stateKey      = "isClassicNotificationsEnabled",
-		onEnable      = actions.syncClassicNotifications,
-		onDisable     = actions.syncClassicNotifications,
-		helpText      = "The 2013-2014 notifications, with any GUI: a small dark box slides in at the bottom right when you win a badge (Roblox's own badge notice is hidden and shown this way, with the same text) or get a friend request; tap a friend request and a box opens in the middle with Accept and Decline. Untick to remove it and get Roblox's own notices back."
-	})
-
-	createAddonRow({
-		containerName = "Pre2018CameraContainer",
-		checkboxName  = "Pre2018CameraCheckbox",
-		helpName      = "Pre2018CameraHelpButton",
-		label         = "pre-2018 camera",
-		yPos          = startY,
-		stateKey      = "isPre2018CameraEnabled",
-		onEnable      = actions.applyPre2018Camera,
-		onDisable     = actions.restorePre2018Camera,
-		helpText      = "The camera zoom from before the 2018 camera update: no gliding, the camera jumps straight to the new distance (and back when a wall is no longer in the way), with the old step for each scroll click. Works with Roblox's own camera, not a game's custom one. Untick for the normal zoom."
-	})
-
-	createAddonRow({
 		containerName = "SlipperyWalkContainer",
 		checkboxName  = "SlipperyWalkCheckbox",
 		helpName      = "SlipperyWalkHelpButton",
@@ -5859,9 +5743,7 @@ task.spawn(function()
 	if state.isFpsCapEnabled then task.spawn(actions.applyFpsCap) end
 	if state.isHideMobileControlsEnabled then task.spawn(actions.applyHideMobileControls) end
 	if state.isMobileControlsEnabled or state.isOldThumbstickEnabled then task.spawn(actions.syncMobileControls) end
-	if state.isClassicNotificationsEnabled then task.spawn(actions.syncClassicNotifications) end
 	if state.isChatBarEnabled then task.spawn(actions.applyChatBar) end
-	if state.isPre2018CameraEnabled then task.spawn(actions.applyPre2018Camera) end
 	-- iw legacy lighting and / or a lighting era (one script, worked out from the saved ticks)
 	task.spawn(actions.syncIWLighting)
 	if state.is2013DynamicEnabled then task.spawn(actions.apply2013Dynamic) end
