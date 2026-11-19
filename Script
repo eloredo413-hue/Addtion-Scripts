@@ -137,24 +137,111 @@ do
 end
 
 --========================================================
--- 2016 GUI: THE 2017 LEADERBOARD
--- Bloxy's 2016 GUI is Legacy (github.com/yeku/legacy) running its 2016 core scripts. Its leaderboard is swapped for
--- the 2017 one, which has the right icons: when Legacy is launched for the 2016 pick, the PlayerlistModule of the 2017
--- GUI's model (Legacy2017.rbxm) is put in place of the 2016 one, with any module it asks for that the 2016 GUI
--- doesn't have. The same way the early 2015 GUI (E2015 Gui.lua) brings in the 2016 leaderboard. If anything isn't
--- there, the 2016 leaderboard stays, and the console says why.
+-- THE 2012-2016 GUIS (Legacy, github.com/yeku/legacy) ON OUR OWN FOOTING
+-- Bloxy's 2013, 2015 and 2016 GUIs are its settings plus loadstring(game:HttpGet(yeku's Source.luau)), and its 2014
+-- GUI (a pastebin, also the base of the early 2015 GUI) has the same code built in. Each step of that can fail:
+--   * yeku's Source.luau changing or going away: More guis.lua points that link at this repo's copy (Legacy Gui.lua,
+--     the original code, with the fixes below)
+--   * the RBXM Suite library not loading: getgenv().BP_Legacy.LoadSuite tries yeku's, then this repo's copy
+--     (RBXM Suite.lua, MIT, by 0866)
+--   * the Legacy model: "@latest" asks GitHub's API first, which allows only so many requests an hour; if that fails
+--     it is taken straight from the release, and else from an earlier download (BP_Legacy.rbxm)
+--   * waiting forever for the modern chat's bubbleChat (BP_Legacy.Bubbles waits 10 s, then goes on without the
+--     old bubble look), and a phone without RobloxGui.NotificationFrame (that line threw, so the rest never ran)
+-- The 2014 pastebin's built-in copy gets the same fixes as it is loaded (More guis.lua).
 --========================================================
 do
-    local SUITE_URL = "https://raw.githubusercontent.com/yeku/forks/refs/heads/main/Scripts/RBXMSuite.luau"
+    local env = getgenv()
+    local SUITE_URLS = {
+        "https://raw.githubusercontent.com/yeku/forks/refs/heads/main/Scripts/RBXMSuite.luau",
+        "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/RBXM%20Suite.lua",
+    }
+    local MODEL_RELEASE = "https://github.com/yeku/legacy/releases/latest/download/Legacy.rbxm"
+    local MODEL_BACKUP = "BP_Legacy.rbxm"
+    local SUITE_CACHE = "_rbxm-suite-v2/models/yeku-legacy-latest-Legacy_rbxm.rbxm"
+    local function has(path)
+        local ok, yes = pcall(function() return isfile and isfile(path) end)
+        return ok and yes == true
+    end
+    local helpers = env.BP_Legacy or {}
+    env.BP_Legacy = helpers
+    local loadedSuite = nil
+    function helpers.LoadSuite()
+        if loadedSuite then return loadedSuite end
+        local errors = {}
+        for _, url in ipairs(SUITE_URLS) do
+            local ok, result = pcall(function()
+                local src = game:HttpGet(url)
+                assert(type(src) == "string" and #src > 1000, "empty download")
+                local fn = assert(loadstring(src, "RBXMSuite"))
+                local suite = fn()
+                assert(type(suite) == "table" and type(suite.launch) == "function", "not RBXM Suite")
+                return suite
+            end)
+            if ok then
+                loadedSuite = result
+                if url ~= SUITE_URLS[1] then print("[Loader] Legacy: RBXM Suite from this repo's copy") end
+                return result
+            end
+            table.insert(errors, tostring(result))
+        end
+        error("RBXM Suite couldn't be loaded (" .. table.concat(errors, "; ") .. ")", 0)
+    end
+    function helpers.Suite()
+        return env.Suite or helpers.LoadSuite()
+    end
+    function helpers.Model(suite)
+        local ok, path = pcall(function() return suite.download("yeku/legacy@latest", "Legacy.rbxm") end)
+        if ok and type(path) == "string" and (has(path) or not isfile) then
+            -- (a spare copy for a day the download fails)
+            if not has(MODEL_BACKUP) then
+                task.defer(function() pcall(function() writefile(MODEL_BACKUP, readfile(path)) end) end)
+            end
+            return path
+        end
+        warn("[Loader] Legacy: the usual model download failed (" .. tostring(path) .. "), taking it from the release")
+        local okRelease, data = pcall(function() return game:HttpGet(MODEL_RELEASE) end)
+        if okRelease and type(data) == "string" and #data > 10000 and pcall(writefile, MODEL_BACKUP, data) and has(MODEL_BACKUP) then
+            return MODEL_BACKUP
+        end
+        for _, earlier in ipairs({ MODEL_BACKUP, SUITE_CACHE }) do
+            if has(earlier) then
+                warn("[Loader] Legacy: using the model downloaded earlier (" .. earlier .. ")")
+                return earlier
+            end
+        end
+        error("the Legacy model couldn't be downloaded", 0)
+    end
+    function helpers.Bubbles()
+        local CoreGuiService = game:GetService("CoreGui")
+        local chat = CoreGuiService:FindFirstChild("ExperienceChat") or CoreGuiService:WaitForChild("ExperienceChat", 10)
+        local bubbles = chat and (chat:FindFirstChild("bubbleChat") or chat:WaitForChild("bubbleChat", 10))
+        if bubbles then return bubbles end
+        warn("[Loader] Legacy: the modern chat's bubbleChat wasn't found, the GUI loads without the old bubble look")
+        return Instance.new("Folder") -- (an empty stand-in, so the rest of the GUI still loads)
+    end
+end
+
+--========================================================
+-- 2016 GUI: THE 2017 LEADERBOARD
+-- Bloxy's 2016 GUI is Legacy running its 2016 core scripts. Its leaderboard is swapped for the 2017 one, which has
+-- the right icons: when Legacy is launched for the 2016 pick, the 2017 GUI's model (Legacy2017.rbxm) is got ready
+-- first, then the 2016 PlayerlistModule's code is replaced by the 2017 one (its own first line kept: that line ties a
+-- module to the model it was launched with), with any module it asks for that the 2016 GUI doesn't have. All before
+-- the 2016 scripts start. The same way the early 2015 GUI (E2015 Gui.lua) brings in the 2016 leaderboard. If anything
+-- isn't there, the 2016 leaderboard stays, and the console says why.
+--========================================================
+do
     local env = getgenv()
     if not env.BP_Leaderboard2017Hook then
         env.BP_Leaderboard2017Hook = true
         local previous = env.Suite
         local real = nil
         local function base()
-            if not real then real = previous or loadstring(game:HttpGet(SUITE_URL))() end
+            if not real then real = previous or env.BP_Legacy.LoadSuite() end
             return real
         end
+        local HEADER = "^local script, require = unpack%b(); "
         local function find(obj, ...)
             for _, name in ipairs({ ... }) do obj = obj and obj:FindFirstChild(name) end
             return obj
@@ -162,6 +249,10 @@ do
         local function is2016()
             local pick = tostring(env.BloxyTopbarPick or env.BP_PendingTopbar or "")
             return string.match(pick, "^%s*2016%s*$") ~= nil
+        end
+        local function isLegacy(path)
+            return type(path) == "string" and string.find(path, "Legacy", 1, true) ~= nil
+                and not string.find(path, "2017", 1, true)
         end
         -- the modules a script asks for by name (WaitForChild("X"), FindFirstChild("X"), Modules.X)
         local function namesIn(source)
@@ -171,32 +262,38 @@ do
             for name in string.gmatch(source, 'Modules%.([%w_]+)') do names[name] = true end
             return names
         end
-        local function swapLeaderboard(legacy)
-            local modules2016 = find(legacy, "Core", "2016", "NewRobloxGui", "Modules")
-            local list2016 = modules2016 and modules2016:FindFirstChild("PlayerlistModule")
-            if not list2016 then
-                warn("[Loader] 2016 leaderboard: the 2016 PlayerlistModule wasn't found, the 2016 one stays")
-                return
-            end
+        -- the 2017 model, launched without running anything (its modules load only when asked for)
+        local function prepare2017()
             local suite = base()
             local model2017 = suite.launch(suite.download("letsafe/something@v1.0.0", "Legacy2017.rbxm"), {
-                runscripts = false, deferred = true, nocache = false, nocirculardeps = true, debug = false, verbose = false,
+                runscripts = false, deferred = true, nocache = false, nocirculardeps = true, debug = true, verbose = false,
             })
             local modules2017 = find(model2017, "Core", "2017", "NewRobloxGui", "Modules")
             local list2017 = modules2017 and modules2017:FindFirstChild("PlayerlistModule")
-            if not (list2017 and type(list2017.Source) == "string" and #list2017.Source > 100) then
-                warn("[Loader] 2016 leaderboard: the 2017 PlayerlistModule wasn't found, the 2016 one stays")
+            if not (list2017 and type(list2017.Source) == "string" and string.match(list2017.Source, HEADER)) then
+                error("the 2017 PlayerlistModule wasn't found", 0)
+            end
+            return { modules = modules2017, list = list2017 }
+        end
+        -- (no waiting in here: the 2016 scripts start as soon as this thread waits)
+        local function swapLeaderboard(legacy, pieces)
+            local modules2016 = find(legacy, "Core", "2016", "NewRobloxGui", "Modules")
+            local list2016 = modules2016 and modules2016:FindFirstChild("PlayerlistModule")
+            local header2016 = list2016 and string.match(list2016.Source, HEADER)
+            local header2017 = string.match(pieces.list.Source, HEADER)
+            if not (header2016 and header2017) then
+                warn("[Loader] 2016 leaderboard: the 2016 PlayerlistModule wasn't found as expected, the 2016 one stays")
                 return
             end
             -- what the 2017 leaderboard asks for and the 2016 GUI doesn't have: brought over (nothing is replaced)
             local brought = {}
-            for name in pairs(namesIn(list2017.Source)) do
+            local body = string.sub(pieces.list.Source, #header2017 + 1)
+            for name in pairs(namesIn(body)) do
                 if modules2016:FindFirstChild(name, true) == nil then
-                    local piece = modules2017:FindFirstChild(name, true)
+                    local piece = pieces.modules:FindFirstChild(name, true)
                     if piece then
-                        -- the same folders as in 2017
                         local chain, holder = {}, piece.Parent
-                        while holder and holder ~= modules2017 do
+                        while holder and holder ~= pieces.modules do
                             table.insert(chain, 1, holder.Name)
                             holder = holder.Parent
                         end
@@ -215,18 +312,22 @@ do
                     end
                 end
             end
-            list2016.Source = list2017.Source
+            list2016.Source = header2016 .. body
             print("[Loader] 2016 GUI: the 2017 leaderboard is in" .. (#brought > 0 and (" (with " .. table.concat(brought, ", ") .. ")") or ""))
         end
         env.Suite = setmetatable({
             launch = function(path, options)
-                local legacy = base().launch(path, options)
-                if is2016() and type(path) == "string" and string.find(path, "Legacy", 1, true)
-                    and not string.find(path, "2017", 1, true) then
-                    local ok, err = pcall(swapLeaderboard, legacy)
+                local pieces = nil
+                if is2016() and isLegacy(path) then
+                    local ok, result = pcall(prepare2017)
+                    if ok then pieces = result else warn("[Loader] 2016 leaderboard: " .. tostring(result) .. " (the 2016 one stays)") end
+                end
+                local results = table.pack(base().launch(path, options))
+                if pieces then
+                    local ok, err = pcall(swapLeaderboard, results[1], pieces)
                     if not ok then warn("[Loader] 2016 leaderboard: " .. tostring(err) .. " (the 2016 one stays)") end
                 end
-                return legacy
+                return table.unpack(results, 1, results.n)
             end,
         }, { __index = function(_, key) return base()[key] end })
     end
