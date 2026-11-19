@@ -13,8 +13,8 @@
 --  "2007": the CharacterPhysics script the user gave (FWM's, at the 2007 time period), in its own file (2007
 --  Physics.lua). Only if that can't be fetched: the first 2007 physics, this script as it was first made from Super
 --  Nostalgia Zone's character scripts (the small bounce on every landing, SNZ Bounciness; the sink, SNZ FloorDrag;
---  tripping when flung faster than 200 studs a second, SNZ GoofyMotion; Roblox's own turning; its own ladder
---  climbing, at 70% of WalkSpeed while the stick is held, hanging a moment, HANG_TIME, once it is let go).
+--  tripping when flung faster than 200 studs a second, SNZ GoofyMotion; Roblox's own turning).
+--  All three climb the 2013 way: the Old physics' climbing (Retro Studio's CustomClimbing).
 --  "2006": this repo's copy of FWM's (2006 Physics.lua).
 --  R6 and R15 alike: the hip height moves around the avatar's own (an R15 body stands on it), the sink moves an
 --  R15 body on its root joint, and the 2007 climbing check is measured from the feet.)
@@ -59,6 +59,9 @@ local BPGenv = (getgenv and getgenv()) or _G
 -- landing); "2007" = the Old physics as it was first made, with the bounce (only used when 2007 Physics.lua, the 2007
 -- physics now, can't be fetched). Both have the sink into the ground.
 local ERA_2007 = (PHYSICS_ERA == "2007")
+-- every physics climbs the 2013 way (Retro Studio's CustomClimbing, OLD: CLIMBING below), the 2007 one too; the first
+-- 2007 physics' own climbing ("2007: climbing" below) is kept but not used
+local CLIMBING_2013 = true
 
 if _G.__RetroMasterCleanup then pcall(_G.__RetroMasterCleanup) end
 -- the 2006 or 2007 physics, if it was picked before: stopped, so two physics never fight over the character
@@ -677,7 +680,7 @@ local function setupCharacter(char)
 		end
 		return edges > 1 or truss
 	end
-	if not ERA_2007 then
+	if CLIMBING_2013 or not ERA_2007 then
 		setRobloxClimbing(false)
 		table.insert(CharacterObjects, { -- (stopped: Roblox's climbing back on)
 			Parent = true,
@@ -803,8 +806,8 @@ local function setupCharacter(char)
 	addConnection(RunService.RenderStepped:Connect(function()
 		if destroyed or not char.Parent or humanoid.Health <= 0 then return end
 
-		-- (the Old physics climbs as Retro Studio does, above: this is the 2007 climbing)
-		if not ERA_2007 then return end
+		-- (every physics climbs as Retro Studio does, above: this was the first 2007 physics' climbing)
+		if CLIMBING_2013 or not ERA_2007 then return end
 
 		local moveDir = humanoid.MoveDirection
 		local moving = moveDir.Magnitude > 0.01
@@ -929,7 +932,7 @@ local function setupCharacter(char)
 
 	-- Jump lets go of whatever you are climbing (2007; the Old physics leaves that to Roblox too).
 	addConnection(UserInputService.JumpRequest:Connect(function()
-		if destroyed or not ERA_2007 then return end
+		if destroyed or CLIMBING_2013 or not ERA_2007 then return end
 		if humanoid:GetState() == Enum.HumanoidStateType.Climbing then stopClimbing() end
 	end))
 
