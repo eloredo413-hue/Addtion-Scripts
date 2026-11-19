@@ -383,8 +383,13 @@ task.spawn(function()
 		end
 	end
 
-	RunService.RenderStepped:Connect(function()
+	-- (looked for 10 times a second: it went through Bloxy's windows on every frame for the whole game)
+	local lookAcc = 0
+	RunService.RenderStepped:Connect(function(dt)
 		if not sg or not sg.Parent then return end
+		lookAcc = lookAcc + (dt or 0)
+		if lookAcc < 0.1 then return end
+		lookAcc = 0
 
 		for _, frame in ipairs(sg:GetChildren()) do
 			if frame:IsA("Frame") and not handled[frame] then

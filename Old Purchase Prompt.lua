@@ -5,18 +5,23 @@
 -- Invisible_: the 2016 GUI asset (rbxassetid://9139773381) is loaded with game:GetObjects, and its core scripts are
 -- run from their Source. Only the purchase prompt is taken from it: everything else the asset draws is thrown away.
 --
--- Roblox's own prompt is switched off (hidden, not deleted) only AFTER the old one has started without an error, so
--- if the old one cannot run in your executor, you keep Roblox's own prompt and nothing is lost. Stop brings it back.
--- A watchdog covers the rest: when a game asks for a purchase and the old prompt has not appeared 6 seconds later,
--- Roblox's own prompt is shown after all (and hidden again at the next request), so a purchase is never stuck.
--- Buying: the old prompt's Buy button buys the item the way Roblox's own prompt does (it spends real Robux for items
--- that cost Robux). Try it on a free item first.
---
+-- How a purchase goes:
+--   * Roblox's own prompt is kept hidden. When a game asks for a purchase, the request is handed to a fresh copy of
+--     the 2016 prompt scripts (so one purchase can never leave them stuck for the next).
+--   * The request is heard from Roblox's purchase events, the old ones and the newer "V2" ones (the 2016 scripts only
+--     know the old ones, and the modern client may only send the new ones: that is why the old prompt never showed).
+--   * Buy (or Buy Robux) in the old prompt: the old prompt goes and Roblox's own prompt is shown for the same item, so
+--     the purchase is made by Roblox (the 2016 prompt's own way of buying no longer exists). Cancel: both close.
+--   * Never stuck: game passes, bundles, Premium and the like (which the 2016 prompt doesn't know) go straight to
+--     Roblox's prompt; if the old prompt hasn't shown 4 s after a request, Roblox's prompt is shown; and if Roblox's
+--     prompt opens for a purchase no event told us about, it is shown too.
 -- Needs an executor that can run game:GetObjects, read a script's Source, and setfenv. The console says what it did.
 -- Run alone: this file starts it. getgenv().OldPurchasePrompt: Start(), Stop(), Running(), Status()
 --========================================================
 
 local CoreGui = game:GetService("CoreGui")
+local Players = game:GetService("Players")
+local RealMarket = game:GetService("MarketplaceService")
 local genv = (getgenv and getgenv()) or _G
 
 -- an earlier run (this file run again) is stopped first
@@ -27,17 +32,41 @@ end
 local ASSET = "rbxassetid://9139773381" -- the 2016 RobloxGui
 local GUI_NAME = "OldPurchasePrompt"
 local SCRIPTS = { "PurchasePromptScript2", "PurchasePromptScript3" }
+local WATCHDOG_SECONDS = 4 -- (the 2016 prompt looks the item up on the web first)
+
+-- the requests the 2016 scripts know (they listen for these names)
+local OLD_EVENTS = { "PromptPurchaseRequested", "PromptProductPurchaseRequested" }
+-- the client's request events, and what each is for the 2016 scripts (nil: the 2016 prompt doesn't know it)
+local REQUEST_EVENTS = {
+	PromptPurchaseRequested = "PromptPurchaseRequested",
+	PromptPurchaseRequestedV2 = "PromptPurchaseRequested",
+	PromptProductPurchaseRequested = "PromptProductPurchaseRequested",
+	PromptProductPurchaseRequestedV2 = "PromptProductPurchaseRequested",
+	PromptGamePassPurchaseRequested = false,
+	PromptBundlePurchaseRequested = false,
+	PromptPremiumPurchaseRequested = false,
+	PromptSubscriptionPurchaseRequested = false,
+	PromptRobloxPurchaseRequested = false,
+	PromptBulkPurchaseRequested = false,
+	PromptCollectiblesPurchaseRequested = false,
+}
+local FINISHED_EVENTS = { "PromptPurchaseFinished", "PromptProductPurchaseFinished", "PromptGamePassPurchaseFinished", "PromptBundlePurchaseFinished" }
 
 local running = false
 local status = "off"
-local host = nil
+local host, modules, syn = nil, nil, nil
 local token = nil
 local hiddenNative = {}      -- modern purchase GUIs switched off: gui -> { was }
-local requestConns = {}
-local watchdog = nil
-local WATCHDOG_SECONDS = 6
-local requests, fallbacks = 0, 0
 local nativeConns = {}
+local requestConns = {}
+local runConns = {}          -- connections for the current 2016 prompt (its buttons)
+local fakeSignals = {}       -- the request events the 2016 scripts listen to: name -> BindableEvent
+local watchdog = nil
+local nativeShown = false    -- Roblox's own prompt given back for the purchase going on
+local lastRequestAt = -100
+local lastFed = { key = nil, at = -100 }
+local oldHeldHidden = nil    -- the old dialog, kept hidden after Buy / Cancel until the next purchase
+local requests, fallbacks, handoffs = 0, 0, 0
 
 -- what happens goes to the console only (no on-screen message)
 local function say(text)
@@ -51,6 +80,56 @@ local function guiHolder()
 	end)
 	return h
 end
+
+----------------------------------------------------------------------------------------------------
+-- what the 2016 scripts see: the real game, except that MarketplaceService's request events are our own (fed from
+-- the real ones, old and new), so a request always reaches them in the form they know
+----------------------------------------------------------------------------------------------------
+local function fakeSignal(name)
+	local be = fakeSignals[name]
+	if not be then
+		be = Instance.new("BindableEvent")
+		fakeSignals[name] = be
+	end
+	return be.Event
+end
+
+local KNOWN_FAKE = {}
+for _, name in ipairs(OLD_EVENTS) do KNOWN_FAKE[name] = true end
+KNOWN_FAKE.PromptGamePassPurchaseRequested = true
+KNOWN_FAKE.PromptBundlePurchaseRequested = true
+
+local fakeMarket = setmetatable({}, {
+	__index = function(_, key)
+		if KNOWN_FAKE[key] then return fakeSignal(key) end
+		local value = RealMarket[key]
+		if type(value) == "function" then
+			return function(_, ...) return value(RealMarket, ...) end
+		end
+		return value
+	end,
+	__tostring = function() return "MarketplaceService" end,
+})
+
+local function serviceFor(name)
+	if name == "MarketplaceService" then return fakeMarket end
+	return game:GetService(name)
+end
+
+local fakeGame = setmetatable({}, {
+	__index = function(_, key)
+		if key == "GetService" or key == "getService" or key == "service" or key == "FindService" then
+			return function(_, name) return serviceFor(name) end
+		end
+		if key == "MarketplaceService" then return fakeMarket end
+		local value = game[key]
+		if type(value) == "function" then
+			return function(_, ...) return value(game, ...) end
+		end
+		return value
+	end,
+	__tostring = function() return "Game" end,
+})
 
 ----------------------------------------------------------------------------------------------------
 -- running the 2016 scripts from their Source
@@ -92,6 +171,8 @@ local function makeEnv(scriptInst)
 		require = customRequire,
 		settings = safeSettings,
 		Settings = safeSettings,
+		game = fakeGame,
+		Game = fakeGame,
 	}, { __index = baseEnv })
 end
 
@@ -125,9 +206,76 @@ customRequire = function(inst)
 	return value
 end
 
+-- the old dialog (PurchaseDialog) of the current run
+local function findDialog()
+	if not host then return nil end
+	for _, d in ipairs(host:GetDescendants()) do
+		if d.Name == "PurchaseDialog" and d:IsA("GuiObject") then return d end
+	end
+	return nil
+end
+
+local function dialogVisible()
+	local dialog = findDialog()
+	return dialog ~= nil and dialog.Visible == true
+end
+
+-- a fresh run of the 2016 scripts: what the last run made is removed first, so its state (a purchase it is still
+-- "prompting", an error box waiting for OK) never blocks the next purchase
+local function clearRun()
+	for _, c in ipairs(runConns) do pcall(function() c:Disconnect() end) end
+	runConns = {}
+	for _, be in pairs(fakeSignals) do pcall(function() be:Destroy() end) end
+	fakeSignals = {}
+	moduleCache = {}
+	oldHeldHidden = nil
+	if host then
+		for _, child in ipairs(host:GetChildren()) do
+			if child ~= modules and child ~= syn then pcall(function() child:Destroy() end) end
+		end
+	end
+end
+
+local function runScripts()
+	clearRun()
+	local robloxGui = CoreGui:FindFirstChild("RobloxGui")
+	local before = {}
+	if robloxGui then
+		for _, d in ipairs(robloxGui:GetChildren()) do before[d] = true end
+	end
+	local started, errors, promptStarted = 0, {}, false
+	for _, name in ipairs(SCRIPTS) do
+		local src = syn:FindFirstChild(name)
+		if not src then
+			table.insert(errors, name .. ": not in the asset")
+		else
+			local fake = Instance.new("LocalScript")
+			fake.Name = "CoreScripts/" .. name
+			fake.Disabled = true
+			fake.Parent = host
+			local ok, err = pcall(runSource, tostring(src.Source), fake, "CoreScripts/" .. name)
+			if ok then
+				started = started + 1
+				if name == SCRIPTS[1] then promptStarted = true end
+			else
+				table.insert(errors, name .. ": " .. tostring(err))
+			end
+		end
+	end
+	-- a dialog the scripts put in Roblox's own RobloxGui (which some GUIs switch off) is brought here
+	if robloxGui then
+		for _, d in ipairs(robloxGui:GetChildren()) do
+			if not before[d] and d.Name == "PurchaseDialog" then pcall(function() d.Parent = host end) end
+		end
+	end
+	return started, errors, promptStarted
+end
+
 ----------------------------------------------------------------------------------------------------
--- Roblox's modern purchase GUIs: switched off once the old prompt runs, back when it stops
+-- Roblox's modern purchase GUIs: kept hidden, given back when the old prompt can't do a purchase
 ----------------------------------------------------------------------------------------------------
+local onNativeActivity -- (below)
+
 local function isModernPrompt(inst)
 	if inst == host then return false end
 	if not (inst:IsA("ScreenGui") or inst:IsA("LayerCollector")) then return false end
@@ -139,26 +287,30 @@ local function hideNative(inst)
 	hiddenNative[inst] = { was = inst.Enabled }
 	pcall(function() inst.Enabled = false end)
 	-- the app turns itself on when it has a prompt to show: kept off while the old prompt runs
-	local c = inst:GetPropertyChangedSignal("Enabled"):Connect(function()
-		if running and inst.Enabled then pcall(function() inst.Enabled = false end) end
-	end)
-	table.insert(nativeConns, c)
+	table.insert(nativeConns, inst:GetPropertyChangedSignal("Enabled"):Connect(function()
+		if running and not nativeShown and inst.Enabled then pcall(function() inst.Enabled = false end) end
+	end))
+	-- a prompt opening in it: if no request told us about it, it is shown
+	table.insert(nativeConns, inst.DescendantAdded:Connect(function(obj)
+		if running and not nativeShown and obj:IsA("GuiButton") then onNativeActivity() end
+	end))
 end
 
 local function hideAllNative()
+	nativeShown = false
 	for _, container in ipairs({ CoreGui, guiHolder() }) do
 		pcall(function()
 			for _, child in ipairs(container:GetChildren()) do hideNative(child) end
 			table.insert(nativeConns, container.ChildAdded:Connect(function(child)
 				task.defer(function()
-					if running then hideNative(child) end
+					if running and not nativeShown then hideNative(child) end
 				end)
 			end))
 		end)
 	end
 end
 
-local function showNative()
+local function releaseNative()
 	for _, c in ipairs(nativeConns) do pcall(function() c:Disconnect() end) end
 	nativeConns = {}
 	for inst, rec in pairs(hiddenNative) do
@@ -167,47 +319,234 @@ local function showNative()
 	hiddenNative = {}
 end
 
-----------------------------------------------------------------------------------------------------
--- watchdog: a purchase request must make the old prompt appear, or Roblox's own prompt is given back
-----------------------------------------------------------------------------------------------------
-local function dialogVisible()
-	local dialog = host and host:FindFirstChild("PurchaseDialog")
-	return dialog ~= nil and dialog.Visible == true
+-- Roblox's own prompt for this purchase (hidden again for the next one, once it is closed)
+local function showNative(reason)
+	if nativeShown then return end
+	nativeShown = true
+	watchdog = nil
+	releaseNative()
+	for _, container in ipairs({ CoreGui, guiHolder() }) do
+		pcall(function()
+			for _, child in ipairs(container:GetChildren()) do
+				if isModernPrompt(child) then child.Enabled = true end
+			end
+		end)
+	end
+	if reason then say(reason) end
 end
 
-local function onRequest()
+local function nativeHasPrompt()
+	for _, container in ipairs({ CoreGui, guiHolder() }) do
+		local found = false
+		pcall(function()
+			for _, child in ipairs(container:GetChildren()) do
+				if isModernPrompt(child) then
+					for _, d in ipairs(child:GetDescendants()) do
+						if d:IsA("GuiButton") then found = true break end
+					end
+				end
+				if found then break end
+			end
+		end)
+		if found then return true end
+	end
+	return false
+end
+
+-- presses Roblox's own Cancel (with the executor's firesignal / getconnections)
+local function pressNativeCancel()
+	local pressed = false
+	for _, container in ipairs({ CoreGui, guiHolder() }) do
+		pcall(function()
+			for _, child in ipairs(container:GetChildren()) do
+				if isModernPrompt(child) then
+					for _, d in ipairs(child:GetDescendants()) do
+						if d:IsA("GuiButton") then
+							local label = string.lower(d.Name .. " " .. (d:IsA("TextButton") and d.Text or ""))
+							if string.find(label, "cancel", 1, true) or string.find(label, "close", 1, true) then
+								for _, signalName in ipairs({ "Activated", "MouseButton1Click" }) do
+									if firesignal then
+										if pcall(firesignal, d[signalName]) then pressed = true end
+									elseif getconnections then
+										pcall(function()
+											for _, c in ipairs(getconnections(d[signalName])) do c:Fire() pressed = true end
+										end)
+									end
+								end
+							end
+						end
+					end
+				end
+			end
+		end)
+	end
+	return pressed
+end
+
+----------------------------------------------------------------------------------------------------
+-- the old dialog's buttons: Buy goes on in Roblox's prompt, Cancel closes both
+----------------------------------------------------------------------------------------------------
+local function holdOldHidden(dialog)
+	oldHeldHidden = dialog
+	pcall(function() dialog.Visible = false end)
+	table.insert(runConns, dialog:GetPropertyChangedSignal("Visible"):Connect(function()
+		if oldHeldHidden == dialog and dialog.Visible then pcall(function() dialog.Visible = false end) end
+	end))
+end
+
+local function buttonKind(button)
+	local label = string.lower(button.Name .. " " .. (button:IsA("TextButton") and button.Text or ""))
+	if string.find(label, "cancel", 1, true) or string.find(label, "close", 1, true) or string.find(label, "decline", 1, true) then
+		return "cancel"
+	end
+	if string.find(label, "buy", 1, true) or string.find(label, "free", 1, true) or string.find(label, "purchase", 1, true)
+		or string.find(label, "robux", 1, true) or string.find(label, "upgrade", 1, true) then
+		return "buy"
+	end
+	return nil -- OK and the like: the 2016 prompt closes itself
+end
+
+local function onOldButton(button)
 	if not running then return end
-	requests = requests + 1
-	say("A purchase was requested: waiting for the old prompt.")
-	if next(hiddenNative) == nil then hideAllNative() end -- (given back after an earlier request: hidden again)
+	local kind = buttonKind(button)
+	local dialog = findDialog()
+	if kind == "buy" then
+		handoffs = handoffs + 1
+		if dialog then holdOldHidden(dialog) end
+		showNative("Buy pressed: Roblox's own prompt finishes the purchase.")
+	elseif kind == "cancel" then
+		if dialog then holdOldHidden(dialog) end
+		watchdog = nil
+		pressNativeCancel()
+		-- Roblox's prompt is still open (its Cancel couldn't be pressed): shown, so it can be closed and a later
+		-- purchase is not of this item
+		task.delay(0.7, function()
+			if running and not nativeShown and nativeHasPrompt() then
+				showNative("Cancel pressed, but Roblox's own prompt is still open: it is shown so it can be closed.")
+			end
+		end)
+	end
+end
+
+local hookedButtons = setmetatable({}, { __mode = "k" })
+local function hookButton(button)
+	if not button:IsA("GuiButton") or hookedButtons[button] then return end
+	hookedButtons[button] = true
+	local done = false
+	local function pressed()
+		if done then return end
+		done = true
+		task.defer(function() done = false end)
+		onOldButton(button)
+	end
+	pcall(function() table.insert(runConns, button.Activated:Connect(pressed)) end)
+	pcall(function() table.insert(runConns, button.MouseButton1Click:Connect(pressed)) end)
+end
+
+local hookedDialogs = setmetatable({}, { __mode = "k" })
+local function hookDialog()
+	local dialog = findDialog()
+	if not dialog then return end
+	for _, d in ipairs(dialog:GetDescendants()) do hookButton(d) end
+	if hookedDialogs[dialog] then return end
+	hookedDialogs[dialog] = true
+	table.insert(runConns, dialog.DescendantAdded:Connect(function(d) task.defer(hookButton, d) end))
+end
+
+----------------------------------------------------------------------------------------------------
+-- a purchase request
+----------------------------------------------------------------------------------------------------
+local function startWatchdog()
 	local mine = {}
 	watchdog = mine
 	task.delay(WATCHDOG_SECONDS, function()
-		if watchdog ~= mine or not running then return end
+		if watchdog ~= mine or not running or nativeShown then return end
 		if dialogVisible() then return end -- the old prompt is showing: all good
 		fallbacks = fallbacks + 1
-		showNative()
 		warn("[Old Purchase Prompt] the old prompt did not appear " .. WATCHDOG_SECONDS .. " s after a purchase request: Roblox's own prompt is shown instead.")
-		say("The old prompt did not appear: Roblox's own prompt is shown instead.")
+		showNative()
 	end)
 end
 
-local function listenForRequests()
-	pcall(function()
-		local ms = game:GetService("MarketplaceService")
-		for _, name in ipairs({ "PromptPurchaseRequested", "PromptProductPurchaseRequested", "PromptGamePassPurchaseRequested", "PromptBundlePurchaseRequested" }) do
-			pcall(function()
-				table.insert(requestConns, ms[name]:Connect(function() onRequest() end))
-			end)
-		end
-	end)
-	-- the old prompt showing cancels the watchdog
-	local dialog = host and host:FindFirstChild("PurchaseDialog")
-	if dialog then
-		table.insert(requestConns, dialog:GetPropertyChangedSignal("Visible"):Connect(function()
-			if dialog.Visible then watchdog = nil end
-		end))
+local function onRequest(eventName, ...)
+	if not running then return end
+	lastRequestAt = os.clock()
+	local oldName = REQUEST_EVENTS[eventName]
+	local args = table.pack(...)
+	-- the old and the V2 event for the same purchase: handled once
+	local key = tostring(oldName or eventName) .. ":" .. tostring(args[2])
+	if lastFed.key == key and os.clock() - lastFed.at < 1 then return end
+	lastFed.key, lastFed.at = key, os.clock()
+	requests = requests + 1
+	if nativeShown then hideAllNative() end -- (given back for the last purchase: hidden again)
+
+	if not oldName then
+		showNative("A " .. eventName .. " (the 2016 prompt can't do that kind): Roblox's own prompt is shown.")
+		return
 	end
+	say("A purchase was requested (" .. eventName .. ", " .. tostring(args[2]) .. "): the old prompt.")
+	local ok, started, errors, promptStarted = pcall(runScripts)
+	if not ok or not promptStarted then
+		local why = not ok and tostring(started) or tostring(errors and errors[1])
+		showNative("The 2016 prompt couldn't start (" .. why .. "): Roblox's own prompt is shown.")
+		return
+	end
+	hookDialog()
+	if not fakeSignals[oldName] then
+		showNative("The 2016 prompt doesn't listen for " .. oldName .. ": Roblox's own prompt is shown.")
+		return
+	end
+	local be = fakeSignals[oldName]
+	pcall(function() be:Fire(table.unpack(args, 1, args.n)) end)
+	task.defer(hookDialog) -- (buttons it makes when the purchase comes in)
+	startWatchdog()
+end
+
+-- Roblox's prompt is opening (a button appeared in it): a purchase no event told us about is shown there
+onNativeActivity = function()
+	if not running or nativeShown then return end
+	local seen = lastRequestAt
+	task.delay(0.4, function()
+		if not running or nativeShown then return end
+		if os.clock() - lastRequestAt < 1.5 or lastRequestAt ~= seen then return end -- a request we know about
+		if dialogVisible() then return end
+		fallbacks = fallbacks + 1
+		showNative("Roblox's prompt opened for a purchase no event told us about: it is shown.")
+	end)
+end
+
+local function onNativeFinished()
+	if not running then return end
+	watchdog = nil
+	local dialog = findDialog()
+	if dialog then holdOldHidden(dialog) end
+	if nativeShown then
+		-- hidden again for the next purchase, once Roblox's prompt has closed
+		task.delay(0.5, function()
+			if running and nativeShown then
+				releaseNative()
+				hideAllNative()
+			end
+		end)
+	end
+end
+
+local function listenForRequests()
+	local count = 0
+	for eventName in pairs(REQUEST_EVENTS) do
+		pcall(function()
+			table.insert(requestConns, RealMarket[eventName]:Connect(function(...) onRequest(eventName, ...) end))
+			count = count + 1
+		end)
+	end
+	for _, eventName in ipairs(FINISHED_EVENTS) do
+		pcall(function()
+			table.insert(requestConns, RealMarket[eventName]:Connect(function(player)
+				if player == nil or player == Players.LocalPlayer then onNativeFinished() end
+			end))
+		end)
+	end
+	return count
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -222,13 +561,14 @@ function api.Stop()
 	watchdog = nil
 	for _, c in ipairs(requestConns) do pcall(function() c:Disconnect() end) end
 	requestConns = {}
-	showNative()
+	clearRun()
+	nativeShown = false
+	releaseNative()
 	if host then pcall(function() host:Destroy() end) end
-	host = nil
-	moduleCache = {}
+	host, modules, syn = nil, nil, nil
 	status = "off"
 	if genv.OldPurchasePromptStop == api.Stop then genv.OldPurchasePromptStop = nil end
-	print("[Old Purchase Prompt] off: Roblox's own prompt is back. (The old prompt's listeners stay until you rejoin.)")
+	print("[Old Purchase Prompt] off: Roblox's own prompt is back.")
 end
 
 function api.Start()
@@ -243,18 +583,17 @@ function api.Start()
 	if not okObjects or type(objs) ~= "table" or not objs[1] then
 		running, status = false, "failed: the 2016 GUI asset did not load (" .. tostring(objs) .. ")"
 		warn("[Old Purchase Prompt] " .. status .. ". Roblox's own prompt is kept.")
-		say(status .. ". Roblox's own prompt is kept.")
 		return
 	end
 
 	-- only what the purchase scripts need: the Modules and the script sources; everything the asset draws goes
 	local root = objs[1]
-	local modules = root:FindFirstChild("Modules")
-	local syn = root:FindFirstChild("CoreScriptSyn")
+	modules = root:FindFirstChild("Modules")
+	syn = root:FindFirstChild("CoreScriptSyn")
 	if not (modules and syn) then
+		modules, syn = nil, nil
 		running, status = false, "failed: the 2016 GUI asset has no Modules / CoreScriptSyn"
 		warn("[Old Purchase Prompt] " .. status .. ". Roblox's own prompt is kept.")
-		say(status .. ". Roblox's own prompt is kept.")
 		return
 	end
 	for _, child in ipairs(root:GetChildren()) do
@@ -263,46 +602,29 @@ function api.Start()
 	root.Name = GUI_NAME
 	root.ResetOnSpawn = false
 	root.DisplayOrder = 1100
+	pcall(function() root.Enabled = true end)
 	host = root
 	root.Parent = guiHolder()
 
-	local started, errors, promptStarted = 0, {}, false
-	for _, name in ipairs(SCRIPTS) do
-		local src = syn:FindFirstChild(name)
-		if not src then
-			table.insert(errors, name .. ": not in the asset")
-		else
-			local fake = Instance.new("LocalScript")
-			fake.Name = "CoreScripts/" .. name
-			fake.Disabled = true
-			fake.Parent = root
-			local ok, err = pcall(runSource, tostring(src.Source), fake, "CoreScripts/" .. name)
-			if ok then
-				started = started + 1
-				if name == SCRIPTS[1] then promptStarted = true end
-			else
-				table.insert(errors, name .. ": " .. tostring(err))
-			end
-		end
-	end
+	-- a first run, to see that the 2016 prompt starts here (each purchase gets a fresh run of its own)
+	local okRun, started, errors, promptStarted = pcall(runScripts)
 	if token ~= mine then return end
-
+	if not okRun then started, errors, promptStarted = 0, { tostring(started) }, false end
 	for _, e in ipairs(errors) do warn("[Old Purchase Prompt] " .. e) end
-	if errors[1] and not promptStarted then say("Error: " .. errors[1]) end
 	-- PurchasePromptScript2 is the prompt itself: without it, nothing is switched off
 	if not promptStarted then
 		pcall(function() root:Destroy() end)
-		host = nil
+		host, modules, syn = nil, nil, nil
 		running, status = false, "failed: the 2016 prompt did not start"
 		warn("[Old Purchase Prompt] " .. status .. ". Roblox's own prompt is kept.")
-		say(status .. ". Roblox's own prompt is kept.")
 		return
 	end
+	local heard = listenForRequests()
 	hideAllNative()
-	listenForRequests()
 	status = "on"
 	genv.OldPurchasePromptStop = api.Stop
-	say("On: " .. started .. " of " .. #SCRIPTS .. " 2016 scripts started. Roblox's prompt is hidden until a purchase is requested.")
+	say("On: " .. started .. " of " .. #SCRIPTS .. " 2016 scripts started; listening to " .. heard
+		.. " purchase events. Roblox's prompt is hidden until it is needed.")
 end
 
 function api.Running()
@@ -310,7 +632,8 @@ function api.Running()
 end
 
 function api.Status()
-	return status .. " (requests seen: " .. requests .. ", given back to Roblox's prompt: " .. fallbacks .. ")"
+	return status .. " (requests seen: " .. requests .. ", given back to Roblox's prompt: " .. fallbacks
+		.. ", bought through Roblox's prompt: " .. handoffs .. ")"
 end
 
 genv.OldPurchasePrompt = api

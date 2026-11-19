@@ -1122,8 +1122,13 @@ print("[Retro Master] Full script loaded successfully.")
 	local handled = setmetatable({}, {__mode = "k"})
 	local busy = false
 
-	RunService.RenderStepped:Connect(function()
+	-- (looked for 5 times a second: it went through Bloxy's windows on every frame for the whole game)
+	local lookAcc = 0
+	RunService.RenderStepped:Connect(function(dt)
 		if not sg or not sg.Parent then return end
+		lookAcc = lookAcc + (dt or 0)
+		if lookAcc < 0.2 then return end
+		lookAcc = 0
 
 		for _, frame in ipairs(sg:GetChildren()) do
 			if frame:IsA("Frame") and not handled[frame] and not busy then
