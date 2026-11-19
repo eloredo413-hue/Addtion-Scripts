@@ -7,13 +7,16 @@
 --  gyro, a share of the way each frame and more weakly in the air (not snapped round, and still steerable in a
 --  jump), facing the camera in first person / shift lock. Climbing is Retro Studio's CustomClimbing (see OLD:
 --  CLIMBING below): ladders, trusses and the like are climbed while the stick is held, up at 70% of WalkSpeed and
---  along at the whole WalkSpeed; let go and you drop.
---  "2007": the same script, as the Old physics was first made from Super Nostalgia Zone's character scripts: the
---  small bounce on every landing (SNZ Bounciness), sinking into the ground on landing (SNZ FloorDrag) and tripping
---  when flung faster than 200 studs a second (SNZ GoofyMotion), with Roblox's own turning, and its own ladder
---  climbing: only while the stick is held, at 70% of WalkSpeed; let go and you hang a moment (HANG_TIME), then drop.
+--  along at the whole WalkSpeed; let go and you drop. And the sink of the first 2007 physics (Super Nostalgia Zone's
+--  FloorDrag): falling fast, the body goes a little way into the legs, so you land a bit in the ground and come back
+--  up out of it (see SINKING INTO THE GROUND below).
+--  "2007": the CharacterPhysics script the user gave (FWM's, at the 2007 time period), in its own file (2007
+--  Physics.lua). Only if that can't be fetched: the first 2007 physics, this script as it was first made from Super
+--  Nostalgia Zone's character scripts (the small bounce on every landing, SNZ Bounciness; the sink, SNZ FloorDrag;
+--  tripping when flung faster than 200 studs a second, SNZ GoofyMotion; Roblox's own turning; its own ladder
+--  climbing, at 70% of WalkSpeed while the stick is held, hanging a moment, HANG_TIME, once it is let go).
 --  "2006": this repo's copy of FWM's (2006 Physics.lua).
---  R6 and R15 alike: the hip height moves around the avatar's own (an R15 body stands on it), the 2007 sink moves an
+--  R6 and R15 alike: the hip height moves around the avatar's own (an R15 body stands on it), the sink moves an
 --  R15 body on its root joint, and the 2007 climbing check is measured from the feet.)
 
 task.spawn(function()
@@ -30,6 +33,8 @@ task.spawn(function()
 	-- the repo copy works with R15 avatars too; the gist (R6 only) is the fallback
 	local PHYSICS_2006_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2006%20Physics.lua"
 	local PHYSICS_2006_GIST = "https://gist.githubusercontent.com/eloredo413-hue/03ef8e46682bfb53e26e6847abfde344/raw/0fb71153c3b4a369a0390228a2bec3a4a5655c56/2006%2520Physics"
+	-- the 2007 physics: the CharacterPhysics script the user gave, made to run from an executor (R6 and R15)
+	local PHYSICS_2007_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2007%20Physics.lua"
 
 	local player = Players.LocalPlayer
 	local pg = player:WaitForChild("PlayerGui", 15)
@@ -50,13 +55,15 @@ local UserGameSettings = UserSettings():GetService("UserGameSettings")
 local LocalPlayer = Players.LocalPlayer
 if not LocalPlayer then return end
 local BPGenv = (getgenv and getgenv()) or _G
--- Which era (the wizard sets PHYSICS_ERA): "old" = 2010-2013, as Retro Studio and Rowind have it (no sinking into the
--- ground, no bounce on landing); "2007" = the Old physics as it was first made, with both.
+-- Which era (the wizard sets PHYSICS_ERA): "old" = 2010-2013, as Retro Studio and Rowind have it (no bounce on
+-- landing); "2007" = the Old physics as it was first made, with the bounce (only used when 2007 Physics.lua, the 2007
+-- physics now, can't be fetched). Both have the sink into the ground.
 local ERA_2007 = (PHYSICS_ERA == "2007")
 
 if _G.__RetroMasterCleanup then pcall(_G.__RetroMasterCleanup) end
--- the 2006 physics, if it was picked before: stopped, so two physics never fight over the character
+-- the 2006 or 2007 physics, if it was picked before: stopped, so two physics never fight over the character
 if BPGenv.__Physics2006Cleanup then pcall(BPGenv.__Physics2006Cleanup) end
+if BPGenv.__Physics2007Cleanup then pcall(BPGenv.__Physics2007Cleanup) end
 
 local Connections = {}
 local RenderNames = {}
@@ -121,8 +128,8 @@ local HANG_TIME = 0.85          -- 2007: the stick let go on a ladder: you hang 
 local RETRO_RAYS_FROM, RETRO_RAYS_TO = 2, 16 -- its rays, numbered as it does: ray i is i * 0.225 - 2.25 studs above the
 local RETRO_RAY_STEP = 0.225                 -- middle of the body (1.8 below it to 1.35 above), one stud long
 local RETRO_LIFT_FORCE, RETRO_LIFT_P = 25000, 100000
-local SINK_RATE = 20 / 3        -- 2007 only: studs a second the body sinks / rises while falling / rising fast (SNZ FloorDrag)
-local SINK_DECAY = 0.925        -- 2007 only: share of the sink kept each 1/60 s back on the ground
+local SINK_RATE = 20 / 3        -- studs a second the body sinks / rises while falling / rising fast (SNZ FloorDrag)
+local SINK_DECAY = 0.925        -- share of the sink kept each 1/60 s back on the ground
 -- Old only: Rowind's character physics for the 2011-2012 clients (its PhysicsSimulation and HumanoidRotate scripts)
 local ROWIND_SINK = -0.1        -- the body stands this far into the ground (hip height; R15: on its root joint)
 local ROWIND_LANDED = 0.025     -- ...right after a landing it stands here instead
@@ -381,13 +388,15 @@ local function setupCharacter(char)
 	-- true while the climbing below is at work (set there)
 	local climbActive = false
 
-	-- SINKING INTO THE GROUND (2007 only), as the Old physics first had it (SNZ's FloorDrag): falling or rising fast
-	-- moves the body down or up (up to a stud), so a landing ends with the legs in the ground and the body rises back
-	-- out within about half a second. Not while sitting, climbing or swimming. R6: through the hip height. R15: the
-	-- body is moved on its root joint (LowerTorso.Root) instead, as the 2006 physics does it (a lower hip height makes
-	-- Roblox's R15 animations run faster). The Old physics (2010-2013) has Rowind's stance instead: a tenth of a stud
-	-- into the ground, a little higher for a moment after each landing (see the render step below), the same ways.
+	-- SINKING INTO THE GROUND, as the first 2007 physics had it (SNZ's FloorDrag), now on the Old physics too: falling
+	-- or rising fast moves the body down or up (up to a stud), so a landing ends with the legs in the ground (about
+	-- three quarters of a stud from an ordinary jump, a whole stud from higher up) and the body comes back up out of it
+	-- within about half a second. Not while sitting, climbing or swimming. R6: through the hip height. R15: the body is moved
+	-- on its root joint (LowerTorso.Root) instead, as the 2006 physics does it (a lower hip height makes Roblox's R15
+	-- animations run faster). The Old physics (2010-2013) also has Rowind's stance under it: a tenth of a stud into the
+	-- ground, a little higher for a moment after each landing (see the render step below), the same ways.
 	local sinkOffset = 0
+	local dragOffset = 0 -- (the FloorDrag part of it)
 	local sinkRay = RaycastParams.new()
 	sinkRay.FilterType = Enum.RaycastFilterType.Exclude
 	sinkRay.FilterDescendantsInstances = { char }
@@ -438,55 +447,49 @@ local function setupCharacter(char)
 	local hipRenderName = "RetroHipHeight_" .. tostring(math.random(10000, 99999))
 	table.insert(RenderNames, hipRenderName)
 
-	local lastLevel = ERA_2007 and getFloorLevel() or 0
+	local lastLevel = getFloorLevel()
 	RunService:BindToRenderStep(hipRenderName, 390, function(dt)
 		if destroyed or not char.Parent or humanoid.Health <= 0 then
 			pcall(function() RunService:UnbindFromRenderStep(hipRenderName) end)
 			return
 		end
-		if not ERA_2007 then
-			-- Old: Rowind's stance (the 2011-2012 clients): a tenth of a stud into the ground, a little higher for
-			-- 1.5 s after a landing, then easing back down
-			local offset = ROWIND_SINK
-			if landedAt then
-				local t = os.clock() - landedAt
-				if t < ROWIND_LANDED_TIME then
-					offset = ROWIND_LANDED
-				elseif t < ROWIND_LANDED_TIME + ROWIND_SETTLE_TIME then
-					local a = (t - ROWIND_LANDED_TIME) / ROWIND_SETTLE_TIME
-					a = 1 - (1 - a) * (1 - a) -- (eased out, as Rowind's tween)
-					offset = ROWIND_LANDED + (ROWIND_SINK - ROWIND_LANDED) * a
-				end
-			end
-			sinkOffset = offset
-			if isR15 then
-				hipOffset = 0
-				applyR15Sink()
-			else
-				hipOffset = sinkOffset
-			end
-			applyHip()
-			return
-		end
 		dt = math.min(0.1, dt or 1 / 60)
+		-- the sink (SNZ's FloorDrag)
 		if humanoid.SeatPart or humanoid.Sit or climbActive
 			or humanoid:GetState() == Enum.HumanoidStateType.Swimming then
-			sinkOffset = 0
+			dragOffset = 0
 			lastLevel = getFloorLevel()
 		else
 			local level, dist = getFloorLevel()
 			local yVelocity = rootPart.AssemblyLinearVelocity.Y
 			if math.abs(yVelocity) > 8 then
-				sinkOffset = moveTowards(sinkOffset, math.sign(yVelocity), SINK_RATE * dt)
+				dragOffset = moveTowards(dragOffset, math.sign(yVelocity), SINK_RATE * dt)
 			elseif lastLevel ~= level then
 				-- walked onto a higher or lower floor (SNZ's step change; it always comes to 0)
-				sinkOffset = math.sign(lastLevel - level) * math.clamp(dist - 3, 0, 1)
+				dragOffset = math.sign(lastLevel - level) * math.clamp(dist - 3, 0, 1)
 				lastLevel = level
 			else
-				sinkOffset = sinkOffset * (SINK_DECAY ^ (dt * 60))
-				if math.abs(sinkOffset) < 0.001 then sinkOffset = 0 end
+				dragOffset = dragOffset * (SINK_DECAY ^ (dt * 60))
+				if math.abs(dragOffset) < 0.001 then dragOffset = 0 end
 			end
 		end
+		local stance = 0
+		if not ERA_2007 then
+			-- Old: Rowind's stance (the 2011-2012 clients): a tenth of a stud into the ground, a little higher for
+			-- 1.5 s after a landing, then easing back down
+			stance = ROWIND_SINK
+			if landedAt then
+				local t = os.clock() - landedAt
+				if t < ROWIND_LANDED_TIME then
+					stance = ROWIND_LANDED
+				elseif t < ROWIND_LANDED_TIME + ROWIND_SETTLE_TIME then
+					local a = (t - ROWIND_LANDED_TIME) / ROWIND_SETTLE_TIME
+					a = 1 - (1 - a) * (1 - a) -- (eased out, as Rowind's tween)
+					stance = ROWIND_LANDED + (ROWIND_SINK - ROWIND_LANDED) * a
+				end
+			end
+		end
+		sinkOffset = stance + dragOffset
 		if isR15 then
 			hipOffset = 0
 			applyR15Sink()
@@ -1028,6 +1031,25 @@ print("[Retro Master] Full script loaded successfully.")
 		return nil
 	end
 
+	local PHYSICS_2007_SRC = nil
+
+	local function fetchPhysics2007Script()
+		if PHYSICS_2007_SRC then return PHYSICS_2007_SRC end
+		print("[Physics/Camera] Fetching the 2007 physics script...")
+		for _ = 1, 2 do
+			local ok, src = pcall(function()
+				return game:HttpGet(PHYSICS_2007_URL, true)
+			end)
+			if ok and type(src) == "string" and #src > 100 and not src:find("^%s*<") and not src:find("^404") then
+				PHYSICS_2007_SRC = src
+				print("[Physics/Camera] 2007 physics script fetched (" .. #src .. " bytes).")
+				return src
+			end
+		end
+		warn("[Physics/Camera] Failed to fetch the 2007 physics script.")
+		return nil
+	end
+
 	local function runScript(src, label)
 		if not src or #src < 100 then
 			warn("[Physics/Camera] " .. (label or "") .. " script is empty.")
@@ -1042,8 +1064,8 @@ print("[Retro Master] Full script loaded successfully.")
 		if not ok then warn("[Physics/Camera] Runtime " .. (label or "") .. ": " .. tostring(e)) end
 	end
 
-	-- One physics for each era: Old (2010-2013, as Retro Studio and Rowind have it), 2007 (the Old physics as it was
-	-- first made: sinking into the ground and bouncing on landings) and 2006 (FWM's).
+	-- One physics for each era: Old (2010-2013, as Retro Studio and Rowind have it, with the first 2007 physics' sink),
+	-- 2007 (the CharacterPhysics script the user gave, 2007 Physics.lua) and 2006 (FWM's, 2006 Physics.lua).
 	local PHYSICS_VARIANTS = {
 		{id = "old",  label = "Old"},
 		{id = "2007", label = "2007"},
@@ -1063,7 +1085,14 @@ print("[Retro Master] Full script loaded successfully.")
 			local src = fetchPhysics2006Script()
 			if src then runScript(src, "2006 physics") end
 		elseif variant == "2007" then
-			runScript("local PHYSICS_ERA = \"2007\"\n" .. PHYSICS_SRC, "2007 physics")
+			local src = fetchPhysics2007Script()
+			if src then
+				runScript(src, "2007 physics")
+			else
+				-- (only if 2007 Physics.lua can't be fetched: the first 2007 physics, built in)
+				warn("[Physics/Camera] Using the built-in 2007 physics instead.")
+				runScript("local PHYSICS_ERA = \"2007\"\n" .. PHYSICS_SRC, "2007 physics")
+			end
 		else
 			runScript("local PHYSICS_ERA = \"old\"\n" .. PHYSICS_SRC, "physics")
 		end
