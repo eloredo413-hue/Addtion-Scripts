@@ -6,7 +6,7 @@
 -- Invisicam). An executor has no such modules, so they are written out here, as the 2016-era camera modules they
 -- were, and the CameraScript below finds them where it looks for them. The CameraScript itself is unchanged except
 -- for one line: ReplicatedStorage.TimePeriod (Retro Studio's own value) is read if the game has it, instead of being
--- waited for forever.
+-- waited for forever. (The newer copy of it, decompiled more cleanly.)
 -- What it does, like the original: Roblox's own camera is replaced by these modules, and the camera is set to Follow
 -- and kept there: it swings round behind you as you walk, waits 2 s after you look around, the old zoom (each wheel
 -- click / pinch, no gliding), PopperCam (the camera pops in front of walls and eases back out).
@@ -1006,400 +1006,316 @@ do
 end
 
 ----------------------------------------------------------------------------------------------------
--- THE CAMERASCRIPT, as given (Retro Studio, PlayerScripts.CameraScript; decompiled with ByteFall)
+-- THE CAMERASCRIPT, as given (Retro Studio, StarterPlayerScripts.CameraScript; the other CameraScript there only
+-- destroys itself)
 ----------------------------------------------------------------------------------------------------
 local function CameraScript(script, require)
-	local runService = game:GetService("RunService")
-	local replicatedStorage = game:GetService("ReplicatedStorage")
-	local userInputService = game:GetService("UserInputService")
-	local players = game:GetService("Players")
-	local vrService = game:GetService("VRService")
-
+	local v_u_1 = game:GetService("RunService")
+	local v2 = game:GetService("ReplicatedStorage")
+	local v_u_3 = game:GetService("UserInputService")
+	local v_u_4 = game:GetService("Players")
+	local v_u_5 = game:GetService("VRService")
 	game:GetService("StarterPlayer")
-
-	local rootCamera = script:WaitForChild("RootCamera")
-	local v7 = require(rootCamera:WaitForChild("AttachCamera"))()
-	local v8 = require(rootCamera:WaitForChild("FixedCamera"))()
-	local v9 = require(rootCamera:WaitForChild("ScriptableCamera"))()
-	local v10 = require(rootCamera:WaitForChild("TrackCamera"))()
-	local v11 = require(rootCamera:WaitForChild("WatchCamera"))()
-	local v12 = require(rootCamera:WaitForChild("OrbitalCamera"))()
-	local v13 = require(rootCamera:WaitForChild("ClassicCamera"))()
-	local v14 = require(rootCamera:WaitForChild("FollowCamera"))()
-	local popperCam = require(script:WaitForChild("PopperCam"))
-	local invisicam = require(script:WaitForChild("Invisicam"))
-	-- (Addtion-Scripts: the one changed line. It was replicatedStorage:WaitForChild("TimePeriod").Value, Retro Studio's
-	-- own value, which other games don't have: it waited forever.)
-	local timePeriod = replicatedStorage:FindFirstChild("TimePeriod")
-	local v17 = timePeriod and timePeriod.Value
-	local gameSettings = UserSettings().GameSettings
-	local u19 = false
-
-	local ok, result = pcall(function()
-		u19 = true
-	end)
-
-	if not ok then
-		print("Couldn't get feature UserAllCamerasInLua because:", result)
+	local v6 = script:WaitForChild("RootCamera")
+	local v7 = require(v6:WaitForChild("AttachCamera"))()
+	local v8 = require(v6:WaitForChild("FixedCamera"))()
+	local v9 = require(v6:WaitForChild("ScriptableCamera"))()
+	local v10 = require(v6:WaitForChild("TrackCamera"))()
+	local v11 = require(v6:WaitForChild("WatchCamera"))()
+	local v_u_12 = require(v6:WaitForChild("OrbitalCamera"))()
+	local v_u_13 = require(v6:WaitForChild("ClassicCamera"))()
+	local v_u_14 = require(v6:WaitForChild("FollowCamera"))()
+	local v_u_15 = require(script:WaitForChild("PopperCam"))
+	local v_u_16 = require(script:WaitForChild("Invisicam"))
+	-- (Addtion-Scripts: the one changed line. It was "local _ = v2:WaitForChild("TimePeriod").Value": Retro Studio's own
+	-- value, which other games don't have, so it waited forever.)
+	local _ = v2:FindFirstChild("TimePeriod") and v2.TimePeriod.Value
+	local v_u_17 = UserSettings().GameSettings
+	local v_u_18 = false
+	local function v19()
+	    -- upvalues: (ref) v_u_18
+	    v_u_18 = true
 	end
-
-	local ok2, result2 = pcall(function()
-		return UserSettings():IsUserFeatureEnabled("UserNoCameraClickToMove")
+	local v20, v21 = pcall(v19)
+	if not v20 then
+	    print("Couldn\'t get feature UserAllCamerasInLua because:", v21)
+	end
+	local v22, v23 = pcall(function()
+	    return UserSettings():IsUserFeatureEnabled("UserNoCameraClickToMove")
 	end)
-
-	local v24 = ok2 and result2
-
-	local ok3 = pcall(function()
+	local v_u_24 = v22 and v23
+	local v_u_25 = pcall(function()
+	    local _ = Enum.CameraType.Orbital
 	end)
-
-	local playerScripts = players.LocalPlayer:WaitForChild("PlayerScripts")
-
+	local v_u_26 = v_u_4.LocalPlayer:WaitForChild("PlayerScripts")
 	if pcall(function()
-		playerScripts:RegisterTouchCameraMovementMode(Enum.TouchCameraMovementMode.Default)
+	    -- upvalues: (copy) v_u_26
+	    v_u_26:RegisterTouchCameraMovementMode(Enum.TouchCameraMovementMode.Default)
 	end) then
-		playerScripts:RegisterTouchCameraMovementMode(Enum.TouchCameraMovementMode.Follow)
-		playerScripts:RegisterTouchCameraMovementMode(Enum.TouchCameraMovementMode.Classic)
-		playerScripts:RegisterComputerCameraMovementMode(Enum.ComputerCameraMovementMode.Default)
-		playerScripts:RegisterComputerCameraMovementMode(Enum.ComputerCameraMovementMode.Follow)
-		playerScripts:RegisterComputerCameraMovementMode(Enum.ComputerCameraMovementMode.Classic)
+	    v_u_26:RegisterTouchCameraMovementMode(Enum.TouchCameraMovementMode.Follow)
+	    v_u_26:RegisterTouchCameraMovementMode(Enum.TouchCameraMovementMode.Classic)
+	    v_u_26:RegisterComputerCameraMovementMode(Enum.ComputerCameraMovementMode.Default)
+	    v_u_26:RegisterComputerCameraMovementMode(Enum.ComputerCameraMovementMode.Follow)
+	    v_u_26:RegisterComputerCameraMovementMode(Enum.ComputerCameraMovementMode.Classic)
 	end
-
-	local t1 = { [Enum.CameraType.Attach] = v7 }
-	t1[Enum.CameraType.Fixed] = v8
-	t1[Enum.CameraType.Scriptable] = v9
-	t1[Enum.CameraType.Track] = v10
-	t1[Enum.CameraType.Watch] = v11
-	t1[Enum.CameraType.Follow] = v14
-
-	if ok3 then
-		t1[Enum.CameraType.Orbital] = v12
+	local v_u_27 = {
+	    [Enum.CameraType.Attach] = v7,
+	    [Enum.CameraType.Fixed] = v8,
+	    [Enum.CameraType.Scriptable] = v9,
+	    [Enum.CameraType.Track] = v10,
+	    [Enum.CameraType.Watch] = v11,
+	    [Enum.CameraType.Follow] = v_u_14
+	}
+	if v_u_25 then
+	    v_u_27[Enum.CameraType.Orbital] = v_u_12
 	end
-
-	local u28 = nil
-	local u29 = nil
-	local u30 = nil
-	local u31 = nil
-	local u32 = nil
-	local u33 = false
-
-	local function IsTouch()
-		return userInputService.TouchEnabled
+	local v_u_28 = nil
+	local v_u_29 = nil
+	local v_u_30 = nil
+	local v_u_31 = nil
+	local v_u_32 = nil
+	local v_u_33 = false
+	local function v_u_38() -- name: isClickToMoveOn
+	    -- upvalues: (copy) v_u_4, (ref) v_u_18, (copy) v_u_25, (ref) v_u_33, (ref) v_u_32, (copy) v_u_3, (copy) v_u_17
+	    local v34 = v_u_4.LocalPlayer
+	    local v35 = workspace.CurrentCamera
+	    local v36 = v_u_18 and true or (v34 and (v35 == nil or (v35.CameraType == Enum.CameraType.Custom or v_u_25 and v35.CameraType == Enum.CameraType.Orbital)) and true or false)
+	    local v37 = v_u_4.LocalPlayer
+	    if v36 and v37 then
+	        if v_u_33 and v_u_32 == Enum.UserInputType.Touch or v_u_3.TouchEnabled then
+	            if v37.DevTouchMovementMode == Enum.DevTouchMovementMode.ClickToMove or v37.DevTouchMovementMode == Enum.DevTouchMovementMode.UserChoice and v_u_17.TouchMovementMode == Enum.TouchMovementMode.ClickToMove then
+	                return true
+	            end
+	        elseif v37.DevComputerMovementMode == Enum.DevComputerMovementMode.ClickToMove or v37.DevComputerMovementMode == Enum.DevComputerMovementMode.UserChoice and v_u_17.ComputerMovementMode == Enum.ComputerMovementMode.ClickToMove then
+	            return true
+	        end
+	    end
+	    return false
 	end
-
-	local function shouldUsePlayerScriptsCamera()
-		local LocalPlayer = players.LocalPlayer
-		local CurrentCamera = workspace.CurrentCamera
-
-		if u19 then
-			return true
-		end
-
-		if LocalPlayer and (CurrentCamera == nil or CurrentCamera.CameraType == Enum.CameraType.Custom or ok3 and CurrentCamera.CameraType == Enum.CameraType.Orbital) then
-			return true
-		end
-
-		return false
+	local function v_u_45() -- name: getCurrentCameraMode
+	    -- upvalues: (copy) v_u_4, (ref) v_u_18, (copy) v_u_25, (ref) v_u_33, (ref) v_u_32, (copy) v_u_3, (copy) v_u_24, (copy) v_u_38, (copy) v_u_17
+	    local v39 = v_u_4.LocalPlayer
+	    local v40 = workspace.CurrentCamera
+	    local v41 = v_u_18 and true or (v39 and (v40 == nil or (v40.CameraType == Enum.CameraType.Custom or v_u_25 and v40.CameraType == Enum.CameraType.Orbital)) and true or false)
+	    local v42 = v_u_4.LocalPlayer
+	    if v41 and v42 then
+	        if v_u_33 and v_u_32 == Enum.UserInputType.Touch or v_u_3.TouchEnabled then
+	            if v_u_24 or not v_u_38() then
+	                if v42.DevTouchCameraMode == Enum.DevTouchCameraMovementMode.UserChoice then
+	                    local v43 = v_u_17.TouchCameraMovementMode
+	                    if v43 == Enum.TouchCameraMovementMode.Default then
+	                        return Enum.TouchCameraMovementMode.Follow.Name
+	                    else
+	                        return v43.Name
+	                    end
+	                else
+	                    return v42.DevTouchCameraMode.Name
+	                end
+	            else
+	                return Enum.DevTouchMovementMode.ClickToMove.Name
+	            end
+	        elseif v_u_24 or not v_u_38() then
+	            if v42.DevComputerCameraMode == Enum.DevComputerCameraMovementMode.UserChoice then
+	                local v44 = v_u_17.ComputerCameraMovementMode
+	                if v44 == Enum.ComputerCameraMovementMode.Default then
+	                    return Enum.ComputerCameraMovementMode.Classic.Name
+	                else
+	                    return v44.Name
+	                end
+	            else
+	                return v42.DevComputerCameraMode.Name
+	            end
+	        else
+	            return Enum.DevComputerMovementMode.ClickToMove.Name
+	        end
+	    else
+	        return
+	    end
 	end
-
-	local function isClickToMoveOn()
-		local LocalPlayer = players.LocalPlayer
-		local CurrentCamera = workspace.CurrentCamera
-		local v3 = u19
-		local u4 = v3 and true or LocalPlayer and (CurrentCamera == nil or CurrentCamera.CameraType == Enum.CameraType.Custom or ok3 and CurrentCamera.CameraType == Enum.CameraType.Orbital) and true or false
-		local LocalPlayer2 = players.LocalPlayer
-
-		if u4 and LocalPlayer2 then
-			if (not u33 or u32 ~= Enum.UserInputType.Touch) and not userInputService.TouchEnabled then
-				if LocalPlayer2.DevComputerMovementMode == Enum.DevComputerMovementMode.ClickToMove or LocalPlayer2.DevComputerMovementMode == Enum.DevComputerMovementMode.UserChoice and gameSettings.ComputerMovementMode == Enum.ComputerMovementMode.ClickToMove then
-					return true
-				end
-			elseif LocalPlayer2.DevTouchMovementMode == Enum.DevTouchMovementMode.ClickToMove or LocalPlayer2.DevTouchMovementMode == Enum.DevTouchMovementMode.UserChoice and gameSettings.TouchMovementMode == Enum.TouchMovementMode.ClickToMove then
-				return true
-			end
-		end
-
-		return false
+	local function v_u_48() -- name: Update
+	    -- upvalues: (ref) v_u_28, (ref) v_u_29, (copy) v_u_5, (copy) v_u_4, (ref) v_u_18, (copy) v_u_25
+	    if v_u_28 then
+	        v_u_28:Update()
+	    end
+	    if v_u_29 and not v_u_5.VREnabled then
+	        v_u_29:Update(v_u_28)
+	    end
+	    local v46 = v_u_4.LocalPlayer
+	    local v47 = workspace.CurrentCamera
+	    local _ = v_u_18 and true or (v46 and (v47 == nil or (v47.CameraType == Enum.CameraType.Custom or v_u_25 and v47.CameraType == Enum.CameraType.Orbital)) and true or false)
 	end
-
-	local function getCurrentCameraMode()
-		local LocalPlayer = players.LocalPlayer
-		local CurrentCamera = workspace.CurrentCamera
-		local v3 = u19
-		local u4 = v3 and true or LocalPlayer and (CurrentCamera == nil or CurrentCamera.CameraType == Enum.CameraType.Custom or ok3 and CurrentCamera.CameraType == Enum.CameraType.Orbital) and true or false
-		local LocalPlayer3 = players.LocalPlayer
-
-		if u4 and LocalPlayer3 then
-			if u33 and u32 == Enum.UserInputType.Touch or userInputService.TouchEnabled then
-				if not v24 and isClickToMoveOn() then
-					return Enum.DevTouchMovementMode.ClickToMove.Name
-				end
-
-				if LocalPlayer3.DevTouchCameraMode == Enum.DevTouchCameraMovementMode.UserChoice then
-					local gameSettingsTouchCameraMovementMode = gameSettings.TouchCameraMovementMode
-
-					if gameSettingsTouchCameraMovementMode == Enum.TouchCameraMovementMode.Default then
-						return Enum.TouchCameraMovementMode.Follow.Name
-					end
-
-					return gameSettingsTouchCameraMovementMode.Name
-				end
-
-				return LocalPlayer3.DevTouchCameraMode.Name
-			end
-
-			if not v24 and isClickToMoveOn() then
-				return Enum.DevComputerMovementMode.ClickToMove.Name
-			end
-
-			if LocalPlayer3.DevComputerCameraMode == Enum.DevComputerCameraMovementMode.UserChoice then
-				local gameSettingsComputerCameraMovementMode = gameSettings.ComputerCameraMovementMode
-
-				if gameSettingsComputerCameraMovementMode == Enum.ComputerCameraMovementMode.Default then
-					return Enum.ComputerCameraMovementMode.Classic.Name
-				end
-
-				return gameSettingsComputerCameraMovementMode.Name
-			end
-
-			return LocalPlayer3.DevComputerCameraMode.Name
-		end
+	local function v_u_61(p49) -- name: OnCameraMovementModeChange
+	    -- upvalues: (copy) v_u_24, (ref) v_u_28, (copy) v_u_5, (ref) v_u_18, (copy) v_u_13, (copy) v_u_14, (copy) v_u_25, (copy) v_u_12, (copy) v_u_27, (copy) v_u_4, (ref) v_u_29, (copy) v_u_16, (copy) v_u_15
+	    if p49 == Enum.DevComputerMovementMode.ClickToMove.Name then
+	        if v_u_24 then
+	            return
+	        end
+	        if v_u_28 ~= nil then
+	            if v_u_28 then
+	                v_u_28:SetEnabled(false)
+	            end
+	            v_u_28 = nil
+	            if v_u_28 then
+	                v_u_28:SetEnabled(true)
+	            end
+	        end
+	    else
+	        local v50 = workspace.CurrentCamera
+	        if v50 then
+	            v50 = workspace.CurrentCamera.CameraType
+	        end
+	        if not v_u_5.VREnabled or v50 == Enum.CameraType.Scriptable then
+	            if (v50 == Enum.CameraType.Custom or not v_u_18) and p49 == Enum.ComputerCameraMovementMode.Classic.Name then
+	                local v51 = v_u_13
+	                if v_u_28 ~= v51 then
+	                    if v_u_28 then
+	                        v_u_28:SetEnabled(false)
+	                    end
+	                    v_u_28 = v51
+	                    if v_u_28 then
+	                        v_u_28:SetEnabled(true)
+	                    end
+	                end
+	            elseif (v50 == Enum.CameraType.Custom or not v_u_18) and p49 == Enum.ComputerCameraMovementMode.Follow.Name then
+	                local v52 = v_u_14
+	                if v_u_28 ~= v52 then
+	                    if v_u_28 then
+	                        v_u_28:SetEnabled(false)
+	                    end
+	                    v_u_28 = v52
+	                    if v_u_28 then
+	                        v_u_28:SetEnabled(true)
+	                    end
+	                end
+	            elseif (v50 == Enum.CameraType.Custom or not v_u_18) and (v_u_25 and p49 == Enum.ComputerCameraMovementMode.Orbital.Name) then
+	                local v53 = v_u_12
+	                if v_u_28 ~= v53 then
+	                    if v_u_28 then
+	                        v_u_28:SetEnabled(false)
+	                    end
+	                    v_u_28 = v53
+	                    if v_u_28 then
+	                        v_u_28:SetEnabled(true)
+	                    end
+	                end
+	            elseif v_u_18 and v_u_27[v50] then
+	                local v54 = v_u_27[v50]
+	                if v_u_28 ~= v54 then
+	                    if v_u_28 then
+	                        v_u_28:SetEnabled(false)
+	                    end
+	                    v_u_28 = v54
+	                    if v_u_28 then
+	                        v_u_28:SetEnabled(true)
+	                    end
+	                end
+	            elseif v_u_28 ~= nil then
+	                if v_u_28 then
+	                    v_u_28:SetEnabled(false)
+	                end
+	                v_u_28 = nil
+	                if v_u_28 then
+	                    v_u_28:SetEnabled(true)
+	                end
+	            end
+	        end
+	    end
+	    local v55 = v_u_4.LocalPlayer and (workspace.CurrentCamera and workspace.CurrentCamera.CameraType == Enum.CameraType.Custom) and true or false
+	    local v56 = v_u_4.LocalPlayer
+	    local v57 = workspace.CurrentCamera
+	    local v58 = v_u_18 and true or (v56 and (v57 == nil or (v57.CameraType == Enum.CameraType.Custom or v_u_25 and v57.CameraType == Enum.CameraType.Orbital)) and true or false)
+	    local v59 = v_u_4.LocalPlayer
+	    local v60
+	    if v58 and v59 then
+	        v60 = v59.DevCameraOcclusionMode
+	    else
+	        v60 = nil
+	    end
+	    if v_u_29 == v_u_16 and (v60 ~= Enum.DevCameraOcclusionMode.Invisicam or not v55) then
+	        v_u_16:Cleanup()
+	    end
+	    if v55 then
+	        if v60 == Enum.DevCameraOcclusionMode.Zoom and (v_u_25 and p49 ~= Enum.ComputerCameraMovementMode.Orbital.Name) then
+	            v_u_29 = v_u_15
+	            return
+	        elseif v60 == Enum.DevCameraOcclusionMode.Invisicam then
+	            v_u_29 = v_u_16
+	        else
+	            v_u_29 = v_u_15
+	        end
+	    else
+	        v_u_29 = v_u_15
+	        return
+	    end
 	end
-
-	local function getCameraOcclusionMode()
-		local LocalPlayer = players.LocalPlayer
-		local CurrentCamera = workspace.CurrentCamera
-		local v3 = u19
-		local u4 = v3 and true or LocalPlayer and (CurrentCamera == nil or CurrentCamera.CameraType == Enum.CameraType.Custom or ok3 and CurrentCamera.CameraType == Enum.CameraType.Orbital) and true or false
-		local LocalPlayer4 = players.LocalPlayer
-
-		if u4 and LocalPlayer4 then
-			return LocalPlayer4.DevCameraOcclusionMode
-		end
+	local function v_u_63() -- name: OnNewCamera
+	    -- upvalues: (copy) v_u_61, (copy) v_u_45, (ref) v_u_30, (ref) v_u_31, (copy) v_u_3
+	    v_u_61(v_u_45())
+	    local v_u_62 = workspace.CurrentCamera
+	    if v_u_62 then
+	        if v_u_30 then
+	            v_u_30:disconnect()
+	        end
+	        if v_u_31 then
+	            v_u_31:disconnect()
+	        end
+	        v_u_30 = v_u_62:GetPropertyChangedSignal("CameraSubject"):connect(function()
+	            -- upvalues: (copy) v_u_62
+	            local _ = v_u_62.CameraSubject
+	        end)
+	        v_u_31 = v_u_62:GetPropertyChangedSignal("CameraType"):connect(function()
+	            -- upvalues: (ref) v_u_61, (ref) v_u_45, (copy) v_u_62, (ref) v_u_3
+	            v_u_61(v_u_45())
+	            if v_u_62.CameraType == Enum.CameraType.Scriptable then
+	                v_u_3.MouseBehavior = Enum.MouseBehavior.Default
+	            end
+	        end)
+	        local _ = v_u_62.CameraSubject
+	        if v_u_62.CameraType == Enum.CameraType.Scriptable then
+	            v_u_3.MouseBehavior = Enum.MouseBehavior.Default
+	        end
+	    end
 	end
-
-	local function shouldUseOcclusionModule()
-		if players.LocalPlayer and workspace.CurrentCamera and workspace.CurrentCamera.CameraType == Enum.CameraType.Custom then
-			return true
-		end
-
-		return false
+	local v_u_64 = v_u_32
+	local function v67(p65) -- name: OnPlayerAdded
+	    -- upvalues: (copy) v_u_63, (copy) v_u_61, (copy) v_u_45, (copy) v_u_17, (copy) v_u_1, (copy) v_u_48
+	    workspace.Changed:connect(function(p66)
+	        -- upvalues: (ref) v_u_63
+	        if p66 == "CurrentCamera" then
+	            v_u_63()
+	        end
+	    end)
+	    p65.Changed:connect(function(_)
+	        -- upvalues: (ref) v_u_61, (ref) v_u_45
+	        v_u_61(v_u_45())
+	    end)
+	    v_u_17.Changed:connect(function(_)
+	        -- upvalues: (ref) v_u_61, (ref) v_u_45
+	        v_u_61(v_u_45())
+	    end)
+	    v_u_1:BindToRenderStep("cameraRenderUpdate", Enum.RenderPriority.Camera.Value, v_u_48)
+	    v_u_63()
+	    v_u_61(v_u_45())
 	end
-
-	local function Update()
-		if u28 then
-			u28:Update()
-		end
-
-		if u29 and not vrService.VREnabled then
-			u29:Update(u28)
-		end
-
-		local LocalPlayer = players.LocalPlayer
-		local CurrentCamera = workspace.CurrentCamera
-		local u3 = u19 and true or LocalPlayer and (CurrentCamera == nil or CurrentCamera.CameraType == Enum.CameraType.Custom or ok3 and CurrentCamera.CameraType == Enum.CameraType.Orbital) and true or false
+	while v_u_4.LocalPlayer == nil do
+	    v_u_4.PlayerAdded:wait()
 	end
-
-	local function SetEnabledCamera(p1)
-		if u28 ~= p1 then
-			if u28 then
-				u28:SetEnabled(false)
-			end
-
-			u28 = p1
-
-			if u28 then
-				u28:SetEnabled(true)
-			end
-		end
-	end
-
-	local function OnCameraMovementModeChange(p1)
-		if p1 == Enum.DevComputerMovementMode.ClickToMove.Name then
-			if v24 then
-				return
-			end
-
-			if u28 ~= nil then
-				if u28 then
-					u28:SetEnabled(false)
-				end
-
-				u28 = nil
-
-				if u28 then
-					u28:SetEnabled(true)
-				end
-			end
-		else
-			local v2 = workspace.CurrentCamera and workspace.CurrentCamera.CameraType
-
-			if not vrService.VREnabled or v2 == Enum.CameraType.Scriptable then
-				if (v2 == Enum.CameraType.Custom or not u19) and p1 == Enum.ComputerCameraMovementMode.Classic.Name then
-					local v3 = v13
-
-					if u28 ~= v3 then
-						if u28 then
-							u28:SetEnabled(false)
-						end
-
-						u28 = v3
-
-						if u28 then
-							u28:SetEnabled(true)
-						end
-					end
-				elseif (v2 == Enum.CameraType.Custom or not u19) and p1 == Enum.ComputerCameraMovementMode.Follow.Name then
-					local v4 = v14
-
-					if u28 ~= v4 then
-						if u28 then
-							u28:SetEnabled(false)
-						end
-
-						u28 = v4
-
-						if u28 then
-							u28:SetEnabled(true)
-						end
-					end
-				elseif (v2 == Enum.CameraType.Custom or not u19) and ok3 and p1 == Enum.ComputerCameraMovementMode.Orbital.Name then
-					local v5 = v12
-
-					if u28 ~= v5 then
-						if u28 then
-							u28:SetEnabled(false)
-						end
-
-						u28 = v5
-
-						if u28 then
-							u28:SetEnabled(true)
-						end
-					end
-				elseif u19 and t1[v2] then
-					local v6 = t1[v2]
-
-					if u28 ~= v6 then
-						if u28 then
-							u28:SetEnabled(false)
-						end
-
-						u28 = v6
-
-						if u28 then
-							u28:SetEnabled(true)
-						end
-					end
-				elseif u28 ~= nil then
-					if u28 then
-						u28:SetEnabled(false)
-					end
-
-					u28 = nil
-
-					if u28 then
-						u28:SetEnabled(true)
-					end
-				end
-			end
-		end
-
-		local u7 = players.LocalPlayer and workspace.CurrentCamera and workspace.CurrentCamera.CameraType == Enum.CameraType.Custom and true or false
-		local LocalPlayer = players.LocalPlayer
-		local CurrentCamera = workspace.CurrentCamera
-		local v10 = u19
-		local u11 = v10 and true or LocalPlayer and (CurrentCamera == nil or CurrentCamera.CameraType == Enum.CameraType.Custom or ok3 and CurrentCamera.CameraType == Enum.CameraType.Orbital) and true or false
-		local LocalPlayer5 = players.LocalPlayer
-		local v15 = if u11 and LocalPlayer5 then LocalPlayer5.DevCameraOcclusionMode else nil
-
-		if u29 == invisicam and (v15 ~= Enum.DevCameraOcclusionMode.Invisicam or not u7) then
-			invisicam:Cleanup()
-		end
-
-		u29 = if u7 then if v15 == Enum.DevCameraOcclusionMode.Zoom and ok3 and p1 ~= Enum.ComputerCameraMovementMode.Orbital.Name then popperCam
-			elseif v15 == Enum.DevCameraOcclusionMode.Invisicam then invisicam
-			else popperCam else popperCam
-	end
-
-	local function OnCameraTypeChanged(p1)
-		if p1 == Enum.CameraType.Scriptable then
-			userInputService.MouseBehavior = Enum.MouseBehavior.Default
-		end
-	end
-
-	local function OnCameraSubjectChanged(_)
-	end
-
-	local function OnNewCamera()
-		OnCameraMovementModeChange(getCurrentCameraMode())
-
-		local CurrentCamera = workspace.CurrentCamera
-
-		if CurrentCamera then
-			if u30 then
-				u30:disconnect()
-			end
-
-			if u31 then
-				u31:disconnect()
-			end
-
-			u30 = CurrentCamera:GetPropertyChangedSignal("CameraSubject"):connect(function()
-				local currentCameraCameraSubject = CurrentCamera.CameraSubject
-			end)
-			u31 = CurrentCamera:GetPropertyChangedSignal("CameraType"):connect(function()
-				OnCameraMovementModeChange(getCurrentCameraMode())
-
-				if CurrentCamera.CameraType == Enum.CameraType.Scriptable then
-					userInputService.MouseBehavior = Enum.MouseBehavior.Default
-				end
-			end)
-
-			local currentCameraCameraSubject = CurrentCamera.CameraSubject
-
-			if CurrentCamera.CameraType == Enum.CameraType.Scriptable then
-				userInputService.MouseBehavior = Enum.MouseBehavior.Default
-			end
-		end
-	end
-
-	local function OnPlayerAdded(p1)
-		workspace.Changed:connect(function(p1)
-			if p1 == "CurrentCamera" then
-				OnNewCamera()
-			end
-		end)
-		p1.Changed:connect(function(_)
-			OnCameraMovementModeChange(getCurrentCameraMode())
-		end)
-		gameSettings.Changed:connect(function(_)
-			OnCameraMovementModeChange(getCurrentCameraMode())
-		end)
-		runService:BindToRenderStep("cameraRenderUpdate", Enum.RenderPriority.Camera.Value, Update)
-		OnNewCamera()
-		OnCameraMovementModeChange(getCurrentCameraMode())
-	end
-
-	while players.LocalPlayer == nil do
-		players.PlayerAdded:wait()
-	end
-
-	u33 = pcall(function()
-		u32 = userInputService:GetLastInputType()
-		userInputService.LastInputTypeChanged:connect(function(p1)
-			u32 = p1
-		end)
+	v_u_33 = pcall(function()
+	    -- upvalues: (ref) v_u_64, (copy) v_u_3
+	    v_u_64 = v_u_3:GetLastInputType()
+	    v_u_3.LastInputTypeChanged:connect(function(p68)
+	        -- upvalues: (ref) v_u_64
+	        v_u_64 = p68
+	    end)
 	end)
-	OnPlayerAdded(players.LocalPlayer)
-
-	local function OnVREnabled()
-		OnCameraMovementModeChange(getCurrentCameraMode())
-	end
-
-	vrService:GetPropertyChangedSignal("VREnabled"):connect(OnVREnabled)
+	v67(v_u_4.LocalPlayer)
+	v_u_5:GetPropertyChangedSignal("VREnabled"):connect(function() -- name: OnVREnabled
+	    -- upvalues: (copy) v_u_61, (copy) v_u_45
+	    v_u_61(v_u_45())
+	end)
 	workspace.Camera.CameraType = Enum.CameraType.Follow
 	workspace.Camera:GetPropertyChangedSignal("CameraType"):Connect(function()
-		workspace.Camera.CameraType = Enum.CameraType.Follow
+	    workspace.Camera.CameraType = Enum.CameraType.Follow
 	end)
 end
 

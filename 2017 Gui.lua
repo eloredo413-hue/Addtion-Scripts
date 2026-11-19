@@ -41,6 +41,21 @@ local Settings = Environment().LegacySettings or ({
 	OldBubbleChat = true,
 })
 
+-- (Addtion-Scripts) a GUI picked earlier (Bloxy's 2013 - 2016) leaves its year here: this GUI's model only has 2017,
+-- so another year would start nothing. Its own settings then.
+if Settings.Year ~= 2017 then
+	print("[Legacy] LegacySettings had the year " .. tostring(Settings.Year) .. " (another GUI's): using 2017")
+	Settings = {
+		Year = 2017,
+		OldGraphics = false,
+		HideDisplayName = true,
+		SafeChat = true,
+		OldConsole = true,
+		OldBubbleChat = true,
+	}
+end
+
+
 -- Services
 
 local Players = game:GetService("Players")
@@ -159,6 +174,18 @@ end
 local Suite = Environment().Suite or loadstring(game:HttpGet(
 	"https://raw.githubusercontent.com/yeku/forks/refs/heads/main/Scripts/RBXMSuite.luau"
 ))()
+
+-- (Addtion-Scripts) a model from a GitHub release, never a broken download (the loader's getgenv().BP_Legacy.Release
+-- deletes a broken saved download and asks the release again, and keeps a spare copy); without the loader, as before
+local function DownloadModel(Repository, Asset)
+	local Helpers = Environment().BP_Legacy
+
+	if (type(Helpers) == "table" and Helpers.Release) then
+		return Helpers.Release(Repository, Asset)
+	end
+
+	return Suite.download(Repository, Asset)
+end
 
 --============================================================*
 -- CLASSIC ROBLOX LOADING GUI
@@ -712,10 +739,14 @@ local Legacy = (function()
 
 		else
 
-			local RBXM = Suite.download(
+			local RBXM = DownloadModel(
 				"letsafe/something@v1.0.0",
 				"Legacy2017.rbxm"
 			)
+
+			if (not RBXM) then
+				error("[Legacy] the 2017 model couldn't be downloaded (see the lines above)", 0)
+			end
 
 			Path = RBXM
 

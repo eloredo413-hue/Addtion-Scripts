@@ -9,7 +9,8 @@
 --     below keeps it
 -- Everything else (third person, turning, the zoom steps further out) is the Retro camera as it was.
 -- Run with CAMERA_ERA = "2007" put in front, it also follows behind you as you walk (the 2016 FollowCamera) and ticks
--- when zooming. (The "2007 Camera" of the setup step is its own file now: Retro Studio's CameraScript, 2007 Camera.lua.)
+-- when zooming. At the end: Retro Studio's 2013 RootCameraAndControls (the other camera types, when a game switches to
+-- them) and HumanoidRotate (an R6 character turned by a gyro towards where you walk). (The "2007 Camera" of the setup step is its own file now: Retro Studio's CameraScript, 2007 Camera.lua.)
 local FOLLOW_2007 = (CAMERA_ERA == "2007")
 -- [[ EXECUTOR CLEANUP & SAFETY ]]
 local RunService = game:GetService("RunService")
@@ -892,7 +893,7 @@ do
 			local zoom = self:GetCameraZoom()
 			if zoom < 0.25 then zoom = 0.25 end
 
-			if FOLLOW_2007 then
+			if FOLLOW_2007 or self.ForceFollow then
 				-- (2007 Camera) the old FollowCamera: turns towards where you walk, unless you have just looked around
 				local recentlyPanned = now - (self.LastUserPanCamera or 0) < 2
 				if self.LastCameraTransform and not userPanningTheCamera and not recentlyPanned and not self:IsInFirstPerson() then
@@ -1194,9 +1195,14 @@ Main:SetEnabled(true)
 Opacity:SetEnabled(true)
 
 -- Overload the camera update function.
+-- (Addtion-Scripts) only the normal camera (Custom) is this one's: when a game switches to another camera type (a
+-- cutscene's Scriptable, Attach, Watch...), RootCameraAndControls below drives it, as in Retro Studio
 local function update()
-	Main:Update()
-	if not Main:IsInFirstPerson() then PopperCam:Update() end -- (Addtion-Scripts) the camera stays in the head
+	local cam = workspace.CurrentCamera
+	if not cam or cam.CameraType == Enum.CameraType.Custom then
+		Main:Update()
+		if not Main:IsInFirstPerson() then PopperCam:Update() end -- (Addtion-Scripts) the camera stays in the head
+	end
 	Opacity:Update()
 
 	-- Remove the default Roblox camera handler so our retro logic takes full priority
@@ -1206,3 +1212,381 @@ end
 -- Bind our update cycle right before rendering
 RunService:BindToRenderStep("RetroCamera", 250, update)
 
+
+--========================================================
+-- RETRO STUDIO'S RootCameraAndControls AND HumanoidRotate (Addtion-Scripts)
+-- Retro Studio's 2013 StarterPlayerScripts.RootCameraAndControls and StarterCharacterScripts.HumanoidRotate, as they
+-- were given, made to run from an executor. Changed only where they used things that are Retro Studio's own:
+--   * shared.UserSettings (Retro Studio's stand-in for the old client's features): here, the old client (no Lua
+--     vehicle controller, not every camera in Lua), so the camera types are handled as Retro Studio's 2013 does
+--   * ReplicatedStorage's "RobloxVersion" attribute: the game's, else 109 (a 2013 client)
+--   * the modules they find next to them (CameraScript.RootCamera, ControlScript.MasterControl, script.Cameras,
+--     script.VehicleController): written here, on top of this camera
+-- HumanoidRotate turns an R6 character (Retro Studio leaves R15 to Roblox): towards where you walk with a gyro, and
+-- at once to where you look in first person. It steps aside while the Old physics runs (that has Rowind's own).
+--========================================================
+do
+	local ReplicatedStorageService = game:GetService("ReplicatedStorage")
+	local RealRunService = game:GetService("RunService")
+	local VERSION_2013 = 109
+
+	local function robloxVersion()
+		local value = nil
+		pcall(function() value = ReplicatedStorageService:GetAttribute("RobloxVersion") end)
+		return type(value) == "number" and value or VERSION_2013
+	end
+
+	-- what these scripts see as game:GetService: the real services, with RobloxVersion always there
+	local function makeGame(onRenderStepped)
+		local fakeStorage = setmetatable({}, { __index = function(_, key)
+			if key == "GetAttribute" then
+				return function(_, name)
+					if name == "RobloxVersion" then return robloxVersion() end
+					return ReplicatedStorageService:GetAttribute(name)
+				end
+			end
+			local value = ReplicatedStorageService[key]
+			if type(value) == "function" then return function(_, ...) return value(ReplicatedStorageService, ...) end end
+			return value
+		end })
+		local fakeRunService = setmetatable({}, { __index = function(_, key)
+			if key == "RenderStepped" and onRenderStepped then
+				return { Connect = function(_, fn) return onRenderStepped(fn) end }
+			end
+			local value = RealRunService[key]
+			if type(value) == "function" then return function(_, ...) return value(RealRunService, ...) end end
+			return value
+		end })
+		return {
+			GetService = function(_, name)
+				if name == "ReplicatedStorage" then return fakeStorage end
+				if name == "RunService" then return fakeRunService end
+				return game:GetService(name)
+			end,
+		}
+	end
+
+	-- the old client: neither feature on
+	local OldClientSettings = function()
+		return { IsUserFeatureEnabled = function() return false end }
+	end
+
+	-- RootCamera for the other camera types, on top of this camera (Main)
+	local function RootCamera()
+		local this = { Enabled = false }
+		function this:GetSubjectPosition() return Main:GetSubjectPosition() end
+		function this:GetCameraLook() return Main:GetCameraLook() end
+		function this:GetCameraZoom() return Main:GetCameraZoom() end
+		function this:SetEnabled(on) self.Enabled = on end
+		function this:Update() end
+		return this
+	end
+
+	local CAMERA_MODULES = {
+		FixedCamera = function(Root) return function() return Root() end end,
+		ScriptableCamera = function(Root) return function() return Root() end end,
+		TrackCamera = function(Root)
+			return function()
+				local cam = Root()
+				function cam:Update() Main:Update() PopperCam:Update() end
+				return cam
+			end
+		end,
+		FollowCamera = function(Root)
+			return function()
+				local cam = Root()
+				function cam:Update()
+					Main.ForceFollow = true
+					Main:Update()
+					Main.ForceFollow = false
+					PopperCam:Update()
+				end
+				return cam
+			end
+		end,
+		WatchCamera = function(Root)
+			return function()
+				local cam = Root()
+				function cam:Update()
+					local camera = workspace.CurrentCamera
+					local subjectPosition = self:GetSubjectPosition()
+					if camera and subjectPosition then
+						camera.Focus = CFrame.new(subjectPosition)
+						camera.CFrame = CFrame.new(camera.CFrame.Position, subjectPosition)
+					end
+				end
+				return cam
+			end
+		end,
+		AttachCamera = function(Root)
+			return function()
+				local cam = Root()
+				function cam:Update()
+					local camera = workspace.CurrentCamera
+					local subject = camera and camera.CameraSubject
+					local part = subject and ((subject:IsA("Humanoid") and subject.RootPart) or (subject:IsA("BasePart") and subject))
+					local subjectPosition = self:GetSubjectPosition()
+					if camera and part and subjectPosition then
+						camera.Focus = CFrame.new(subjectPosition)
+						camera.CFrame = CFrame.new(subjectPosition - part.CFrame.LookVector * self:GetCameraZoom(), subjectPosition)
+					end
+				end
+				return cam
+			end
+		end,
+	}
+
+	local function moduleNode(name, value)
+		return { Name = name, __value = value }
+	end
+	local function folderNode(children)
+		local node = { __children = children }
+		function node:WaitForChild(name) return self.__children[name] end
+		function node:FindFirstChild(name) return self.__children[name] end
+		return node
+	end
+	local cameraNodes = {}
+	for name, builder in pairs(CAMERA_MODULES) do cameraNodes[name] = moduleNode(name, builder) end
+	local function fakeRequire(node)
+		if type(node) == "table" and node.__value ~= nil then return node.__value end
+		return require(node)
+	end
+
+	------------------------------------------------------------------------------------------------
+	-- RootCameraAndControls, as given (StarterPlayerScripts.RootCameraAndControls)
+	------------------------------------------------------------------------------------------------
+	local function RootCameraAndControls(script, require, game, shared)
+		local v1 = game:GetService("RunService")
+		local v2 = game:GetService("UserInputService")
+		local v3 = game:GetService("ReplicatedStorage")
+		local v4 = shared.UserSettings
+		local v5 = v3:GetAttribute("RobloxVersion")
+		if v4():IsUserFeatureEnabled("UserUseLuaVehicleController") and v4():IsUserFeatureEnabled("UserAllCameraInLua") then
+			task.defer(script.Destroy, script)
+		else
+			local v6 = script.Parent
+			local v7 = v6:WaitForChild("CameraScript")
+			local v8 = v6:WaitForChild("ControlScript")
+			local v_u_9 = require(v7:WaitForChild("RootCamera"))
+			local v10 = require(v8:WaitForChild("MasterControl"))
+			local v_u_11 = nil
+			local v_u_12 = nil
+			local v_u_13 = {
+				[Enum.CameraType.Attach] = "AttachCamera",
+				[Enum.CameraType.Fixed] = "FixedCamera",
+				[Enum.CameraType.Follow] = "FollowCamera",
+				[Enum.CameraType.Scriptable] = "ScriptableCamera",
+				[Enum.CameraType.Track] = "TrackCamera",
+				[Enum.CameraType.Watch] = "WatchCamera"
+			}
+			local function v14() -- name: Update
+				-- upvalues: (ref) v_u_12
+				if v_u_12 then
+					v_u_12:Update()
+				end
+			end
+			local function v_u_17() -- name: OnCameraTypeChanged
+				-- upvalues: (copy) v_u_13, (ref) v_u_12, (copy) v_u_9
+				local v15 = v_u_13[workspace.CurrentCamera.CameraType]
+				if v_u_12 then
+					v_u_12:SetEnabled(false)
+					v_u_12 = nil
+				end
+				if v15 then
+					local v16 = script.Cameras:FindFirstChild(v15)
+					if v16 then
+						v16 = require(v16)(v_u_9)
+					end
+					if v16 then
+						v_u_12 = v16()
+						v_u_12:SetEnabled(true)
+					end
+				end
+			end
+			local function v19() -- name: CurrentCameraChanged
+				-- upvalues: (ref) v_u_11, (copy) v_u_17
+				local v18 = workspace.CurrentCamera
+				if v_u_11 then
+					v_u_11:Disconnect()
+					v_u_11 = nil
+				end
+				if v18 then
+					v_u_11 = v18:GetPropertyChangedSignal("CameraType"):Connect(v_u_17)
+				end
+			end
+			if not v4():IsUserFeatureEnabled("UserUseLuaVehicleController") and (v5 >= 206 or not v2.TouchEnabled) then
+				require(script.VehicleController)(v10)
+			end
+			if not v4():IsUserFeatureEnabled("UserAllCameraInLua") then
+				local v20 = workspace.CurrentCamera
+				if v_u_11 then
+					v_u_11:Disconnect()
+					v_u_11 = nil
+				end
+				if v20 then
+					v_u_11 = v20:GetPropertyChangedSignal("CameraType"):Connect(v_u_17)
+				end
+				workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(v19)
+				v1:BindToRenderStep("RootCameraTypeSignal", Enum.RenderPriority.Camera.Value + 1, v14)
+			end
+		end
+	end
+
+	local rootScript = {
+		Parent = folderNode({
+			CameraScript = folderNode({ RootCamera = moduleNode("RootCamera", RootCamera) }),
+			-- (vehicles are Roblox's own PlayerModule's here)
+			ControlScript = folderNode({ MasterControl = moduleNode("MasterControl", {}) }),
+		}),
+		Cameras = folderNode(cameraNodes),
+		VehicleController = moduleNode("VehicleController", function() end),
+		Destroy = function() end,
+	}
+	local okRoot, rootErr = pcall(RootCameraAndControls, rootScript, fakeRequire, makeGame(nil), { UserSettings = OldClientSettings })
+	if not okRoot then warn("[2013 Camera] RootCameraAndControls: " .. tostring(rootErr)) end
+
+	------------------------------------------------------------------------------------------------
+	-- HumanoidRotate, as given (StarterCharacterScripts.HumanoidRotate), on each of your characters
+	------------------------------------------------------------------------------------------------
+	local function HumanoidRotate(script, game)
+		local v1 = game:GetService("RunService")
+		local v_u_2 = game:GetService("UserInputService")
+		local v_u_3 = game:GetService("ReplicatedStorage"):GetAttribute("RobloxVersion")
+		local v_u_4 = script.Parent:WaitForChild("Humanoid")
+		if v_u_4.RigType == Enum.HumanoidRigType.R15 then
+			task.defer(script.Destroy, script)
+		else
+			local v_u_5 = Instance.new("BodyGyro")
+			v_u_5.D = 0
+			v_u_5.P = 3800
+			v_u_5.Name = "HumanoidRotate"
+			v_u_5.Parent = script
+			local v_u_6 = {
+				[Enum.HumanoidStateType.Dead] = true,
+				[Enum.HumanoidStateType.Ragdoll] = true,
+				[Enum.HumanoidStateType.Seated] = true,
+				[Enum.HumanoidStateType.PlatformStanding] = true,
+				[Enum.HumanoidStateType.FallingDown] = true,
+				[Enum.HumanoidStateType.Flying] = true,
+				[Enum.HumanoidStateType.Climbing] = v_u_3 >= 98
+			}
+			v_u_4.Seated:Connect(function()
+				-- upvalues: (copy) v_u_5
+				v_u_5.Parent = script
+			end)
+			v_u_4.PlatformStanding:Connect(function()
+				-- upvalues: (copy) v_u_5
+				v_u_5.Parent = script
+			end)
+			v_u_4:GetPropertyChangedSignal("WalkToPoint"):Connect(function()
+				-- upvalues: (copy) v_u_4
+				v_u_4:SetAttribute("IsMoveTo", true)
+			end)
+			v_u_4:GetPropertyChangedSignal("WalkToPart"):Connect(function()
+				-- upvalues: (copy) v_u_4
+				v_u_4:SetAttribute("IsMoveTo", true)
+			end)
+			v_u_4:GetPropertyChangedSignal("MoveDirection"):Connect(function()
+				-- upvalues: (copy) v_u_4
+				if v_u_4:GetAttribute("IsMoveTo") then
+					v_u_4:SetAttribute("IsMoveTo", nil)
+				end
+			end)
+			v_u_4.MoveToFinished:Connect(function()
+				-- upvalues: (copy) v_u_4
+				v_u_4:SetAttribute("IsMoveTo", nil)
+			end)
+			local v_u_7 = 0
+			v1.RenderStepped:Connect(function(p8)
+				-- upvalues: (ref) v_u_7, (copy) v_u_4, (copy) v_u_2, (copy) v_u_6, (copy) v_u_3, (copy) v_u_5
+				v_u_7 = v_u_7 + p8
+				local v9 = v_u_7
+				if v_u_7 >= 0.016666666666666666 then
+					v_u_7 = v_u_7 % 0.016666666666666666
+					local v10 = v_u_4:GetState()
+					local v11 = v_u_4.RootPart
+					local v12 = v_u_4:GetAttribute("IsMoveTo")
+					local v13 = v_u_2.MouseBehavior == Enum.MouseBehavior.LockCenter
+					v_u_4.AutoRotate = v12 or v10 == Enum.HumanoidStateType.Climbing
+					if v11 and (v_u_4.MoveDirection.Magnitude > 0 or v13) and not (v_u_4.PlatformStand or (v_u_6[v10] or v12)) then
+						local v14 = workspace.CurrentCamera.CFrame.LookVector
+						local v15 = v14.X
+						local v16 = v14.Z
+						local v17 = Vector3.new(v15, 0, v16)
+						if v13 then
+							if v_u_3 >= 206 then
+								v_u_5.Parent = script
+								v_u_4.AutoRotate = true
+								return
+							elseif v_u_3 >= 109 then
+								v_u_5.Parent = script
+								v11.CFrame = CFrame.lookAt(v11.Position, v11.Position + v17)
+							else
+								v_u_5.MaxTorque = Vector3.new(0, 2000, 0)
+								local v18 = v17.Magnitude > 0.1 and CFrame.lookAt(v11.Position, v11.Position + v17) or v_u_5.CFrame
+								local v19 = v9 * 60
+								local v20 = 1 - math.pow(0.8, v19)
+								v_u_5.CFrame = v_u_5.CFrame:Lerp(v18, (math.clamp(v20, 0, 1)))
+								v_u_5.Parent = v11
+							end
+						end
+						if not v13 or v13 and v_u_3 > 109 then
+							if not v13 then
+								v_u_5.MaxTorque = Vector3.new(0, 2000, 0)
+								v_u_5.Parent = v11
+								v_u_4.AutoRotate = false
+							end
+							v_u_5.P = (v10 == Enum.HumanoidStateType.Jumping or v10 == Enum.HumanoidStateType.Freefall) and 1000 or 4000
+							local v21 = CFrame.lookAt(v11.Position, v11.Position + v_u_4.MoveDirection)
+							local v22 = v9 * 60
+							local v23 = 1 - math.pow(0.8, v22)
+							v_u_5.CFrame = v_u_5.CFrame:Lerp(v21, (math.clamp(v23, 0, 1)))
+							return
+						end
+					else
+						v_u_5.Parent = script
+					end
+				end
+			end)
+		end
+	end
+
+	local Players = game:GetService("Players")
+	local LocalPlayer = Players.LocalPlayer
+
+	local function onCharacter(character)
+		task.wait(1) -- (the physics picked with this camera has started by then)
+		if not character.Parent or character ~= LocalPlayer.Character then return end
+		if _G.__RetroMasterCleanup then return end -- (the Old physics turns you with Rowind's own HumanoidRotate)
+		local holder = Instance.new("Folder")
+		holder.Name = "HumanoidRotate"
+		holder.Parent = character
+		local conns = {}
+		local function stop()
+			for _, c in ipairs(conns) do c:Disconnect() end
+			conns = {}
+			local humanoid = character:FindFirstChildOfClass("Humanoid")
+			if humanoid then pcall(function() humanoid.AutoRotate = true end) end
+			pcall(function() holder:Destroy() end)
+		end
+		local fakeGame = makeGame(function(fn)
+			local c = RealRunService.RenderStepped:Connect(function(dt)
+				-- (this character is gone, or the Old physics has started: stepped aside)
+				if not holder.Parent or not character.Parent or _G.__RetroMasterCleanup then
+					stop()
+					return
+				end
+				fn(dt)
+			end)
+			table.insert(conns, c)
+			return c
+		end)
+		local ok, err = pcall(HumanoidRotate, holder, fakeGame)
+		if not ok then warn("[2013 Camera] HumanoidRotate: " .. tostring(err)) stop() end
+	end
+
+	if LocalPlayer then
+		if LocalPlayer.Character then task.spawn(onCharacter, LocalPlayer.Character) end
+		LocalPlayer.CharacterAdded:Connect(onCharacter)
+	end
+end

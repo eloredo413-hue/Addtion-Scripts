@@ -191,26 +191,53 @@ do
     function helpers.Suite()
         return env.Suite or helpers.LoadSuite()
     end
-    function helpers.Model(suite)
-        local ok, path = pcall(function() return suite.download("yeku/legacy@latest", "Legacy.rbxm") end)
-        if ok and type(path) == "string" and (has(path) or not isfile) then
-            -- (a spare copy for a day the download fails)
-            if not has(MODEL_BACKUP) then
-                task.defer(function() pcall(function() writefile(MODEL_BACKUP, readfile(path)) end) end)
+    -- a model file is a real one only if it starts like one (a failed download leaves "Not Found" or a web page)
+    local function isModelData(data)
+        return type(data) == "string" and #data > 20000 and string.sub(data, 1, 7) == "<roblox"
+    end
+    local function isModelFile(path)
+        local ok, data = pcall(function() return readfile(path) end)
+        return ok and isModelData(data)
+    end
+    -- A model from a GitHub release ("user/repo@tag", asset), never a broken one: RBXM Suite keeps whatever it
+    -- downloaded, a failed download too, and then uses that broken file every time. A broken file is deleted and the
+    -- release is asked again; a good copy is kept as BP_<asset> for a day the download fails. Returns nil when there is
+    -- no good copy anywhere.
+    function helpers.Release(repository, asset)
+        local user, repo, tag = string.match(repository, "([^/]+)/([^@]+)@?(.*)")
+        local backup = "BP_" .. asset
+        local suite = helpers.Suite()
+        local ok, path = pcall(function() return suite.download(repository, asset) end)
+        if ok and type(path) == "string" and isModelFile(path) then
+            if not has(backup) then
+                task.defer(function() pcall(function() writefile(backup, readfile(path)) end) end)
             end
             return path
         end
-        warn("[Loader] Legacy: the usual model download failed (" .. tostring(path) .. "), taking it from the release")
-        local okRelease, data = pcall(function() return game:HttpGet(MODEL_RELEASE) end)
-        if okRelease and type(data) == "string" and #data > 10000 and pcall(writefile, MODEL_BACKUP, data) and has(MODEL_BACKUP) then
-            return MODEL_BACKUP
+        if ok and type(path) == "string" and has(path) then
+            warn("[Loader] " .. asset .. ": the saved download is broken, it is deleted and downloaded again")
+            pcall(function() delfile(path) end)
+        else
+            warn("[Loader] " .. asset .. ": the usual download failed (" .. tostring(path) .. "), taking it from the release")
         end
-        for _, earlier in ipairs({ MODEL_BACKUP, SUITE_CACHE }) do
-            if has(earlier) then
-                warn("[Loader] Legacy: using the model downloaded earlier (" .. earlier .. ")")
-                return earlier
-            end
+        local url = (tag == "" or tag == "latest")
+            and ("https://github.com/" .. user .. "/" .. repo .. "/releases/latest/download/" .. asset)
+            or ("https://github.com/" .. user .. "/" .. repo .. "/releases/download/" .. tag .. "/" .. asset)
+        local okGet, data = pcall(function() return game:HttpGet(url) end)
+        if okGet and isModelData(data) and pcall(writefile, backup, data) and isModelFile(backup) then
+            return backup
         end
+        if isModelFile(backup) then
+            warn("[Loader] " .. asset .. ": using the copy downloaded earlier (" .. backup .. ")")
+            return backup
+        end
+        warn("[Loader] " .. asset .. ": not available (the release answered: " .. (okGet and string.sub(tostring(data), 1, 30) or tostring(data)) .. ")")
+        return nil
+    end
+    function helpers.Model(suite)
+        local path = helpers.Release("yeku/legacy@latest", "Legacy.rbxm")
+        if path then return path end
+        if isModelFile(SUITE_CACHE) then return SUITE_CACHE end
         error("the Legacy model couldn't be downloaded", 0)
     end
     -- Bloxy's 2014 GUI (also the early 2015 GUI's base) is on pastebin, which often blocks executors: this repo's copy
@@ -283,7 +310,9 @@ do
         -- the 2017 model, launched without running anything (its modules load only when asked for)
         local function prepare2017()
             local suite = base()
-            local model2017 = suite.launch(suite.download("letsafe/something@v1.0.0", "Legacy2017.rbxm"), {
+            local path2017 = env.BP_Legacy.Release("letsafe/something@v1.0.0", "Legacy2017.rbxm")
+            if not path2017 then error("the 2017 model couldn't be downloaded", 0) end
+            local model2017 = suite.launch(path2017, {
                 runscripts = false, deferred = true, nocache = false, nocirculardeps = true, debug = true, verbose = false,
             })
             local modules2017 = find(model2017, "Core", "2017", "NewRobloxGui", "Modules")
