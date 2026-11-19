@@ -8,10 +8,8 @@
 --   * zooming makes no sound (the switch3.wav tick left the default camera on January 30, 2012); the 2007 Camera
 --     below keeps it
 -- Everything else (third person, turning, the zoom steps further out) is the Retro camera as it was.
--- The "2007 Camera" is this file too, run with CAMERA_ERA = "2007" (2007 Camera.lua): the 2016 FollowCamera that
--- Retro Studio's 2007 CameraScript switches on. As you walk, the camera swings round behind you; dragging to look
--- around stops that for 2 seconds; small sideways steps are let through (it doesn't twitch on every one); never in
--- first person.
+-- Run with CAMERA_ERA = "2007" put in front, it also follows behind you as you walk (the 2016 FollowCamera) and ticks
+-- when zooming. (The "2007 Camera" of the setup step is its own file now: Retro Studio's CameraScript, 2007 Camera.lua.)
 local FOLLOW_2007 = (CAMERA_ERA == "2007")
 -- [[ EXECUTOR CLEANUP & SAFETY ]]
 local RunService = game:GetService("RunService")
@@ -930,6 +928,19 @@ do
 			if self:IsInFirstPerson() and camera.CameraSubject and camera.CameraSubject:IsA("Humanoid") then
 				-- (Addtion-Scripts) first person like the 2012 camera: right in the head, no smoothing
 				camera.CFrame = CFrame_new(subjectPosition, subjectPosition + newLookVector)
+				-- (Addtion-Scripts) and you face where you look at once, so the tool in your hand turns with you
+				-- instead of being left behind while the body catches up (not while sitting, climbing or ragdolled)
+				local hum = camera.CameraSubject
+				local root = hum.RootPart
+				local me = Players.LocalPlayer
+				if root and me and hum.Parent == me.Character and not hum.Sit and not hum.PlatformStand
+					and hum:GetState() ~= Enum.HumanoidStateType.Climbing then
+					local flat = newLookVector * XZ_VECTOR
+					if flat.Magnitude > 0.01 then
+						local pos = root.Position
+						root.CFrame = CFrame_new(pos, pos + flat.Unit)
+					end
+				end
 			else
 				local newCF = CFrame_new(subjectPosition - (zoom * newLookVector), subjectPosition)
 				camera.CFrame = camera.CFrame:Lerp(newCF,.8)

@@ -70,10 +70,57 @@ do
 		return fn
 	end
 
+	-- (Addtion-Scripts) THE 2012-2016 GUIS ON OUR OWN COPY OF LEGACY: Bloxy's 2013 / 2015 / 2016 load yeku's
+	-- Source.luau; that link goes to this repo's copy (Legacy Gui.lua: the original, made safe where it could stop).
+	-- Code that has Legacy built in (the 2014 pastebin, also the early 2015 GUI's base) gets the same fixes here, with
+	-- the loader's getgenv().BP_Legacy: another copy of RBXM Suite, the model from the release or an earlier download,
+	-- no endless wait for the chat's bubbleChat, and no error on a phone without RobloxGui.NotificationFrame.
+	local OWN_LEGACY_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Legacy%20Gui.lua"
+	local LEGACY_FIXES = {
+		{ 'loadstring(game:HttpGet("https://raw.githubusercontent.com/yeku/forks/refs/heads/main/Scripts/RBXMSuite.luau"))()',
+		  'getgenv().BP_Legacy.LoadSuite()' },
+		{ 'Suite.download("yeku/legacy@latest", "Legacy.rbxm")', 'getgenv().BP_Legacy.Model(Suite)' },
+		{ 'CoreGui:WaitForChild("ExperienceChat"):WaitForChild("bubbleChat")', 'getgenv().BP_Legacy.Bubbles()' },
+		{ 'RobloxGui.NotificationFrame.Parent = LegacyGui',
+		  'if RobloxGui:FindFirstChild("NotificationFrame") then RobloxGui.NotificationFrame.Parent = LegacyGui end' },
+	}
+	local function replacePlain(text, old, new)
+		local out, from, count = {}, 1, 0
+		while true do
+			local a, b = string.find(text, old, from, true)
+			if not a then break end
+			table.insert(out, string.sub(text, from, a - 1))
+			table.insert(out, new)
+			from = b + 1
+			count = count + 1
+		end
+		if count == 0 then return text, 0 end
+		table.insert(out, string.sub(text, from))
+		return table.concat(out), count
+	end
+	local function ownLegacy(code)
+		local redirected
+		code, redirected = string.gsub(code, 'https://raw%.githubusercontent%.com/yeku/legacy/[^"\'%s]-/Source%.luau',
+			function() return OWN_LEGACY_URL end) -- (a function: "%20" in the link is not a capture)
+		if redirected > 0 then print("[Hooks] Legacy: loading this repo's copy (Legacy Gui.lua)") end
+		if type(getgenv().BP_Legacy) == "table" and string.find(code, "Suite.require(Legacy):Start(", 1, true)
+			and not string.find(code, "ADDTION_LEGACY", 1, true) then
+			local fixed = 0
+			for _, fix in ipairs(LEGACY_FIXES) do
+				local n
+				code, n = replacePlain(code, fix[1], fix[2])
+				fixed = fixed + n
+			end
+			if fixed > 0 then print("[Hooks] Legacy: " .. fixed .. " fixes in a built-in copy") end
+		end
+		return code
+	end
+
 	local function patched(code, name)
 		if type(code) ~= "string" then
 			return _ORIG_LS(code, name)
 		end
+		code = ownLegacy(code)
 
 		local pending = getgenv().BP_PendingTopbar
 		local variant = getgenv().BP_2023Variant
