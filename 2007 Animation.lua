@@ -185,6 +185,7 @@ do
 			local toolAnim = "None"
 			local toolAnimTime = 0
 			local jumpMaxLimbVelocity = 0.75
+			local ARMS_SWING_TOP = 1.05 -- (the walking swing goes to 1; above this the arms are still coming down)
 
 			local function moveJump()
 				RightShoulder.MaxVelocity = jumpMaxLimbVelocity
@@ -260,12 +261,15 @@ do
 				local climbFudge = 0
 
 				if (pose == "Running") then
-					if (RightShoulder.CurrentAngle > 1.5 or RightShoulder.CurrentAngle < -1.5) then
+					-- (Addtion-Scripts) after a jump or a fall the arms come down at the jump's speed all the way to the
+					-- walking swing. The 2007 script only kept that speed until the arms were level (1.5), so walking
+					-- on after a landing they hung out in front for a moment before swinging (the user's recording).
+					if (RightShoulder.CurrentAngle > ARMS_SWING_TOP or RightShoulder.CurrentAngle < -ARMS_SWING_TOP) then
 						RightShoulder.MaxVelocity = jumpMaxLimbVelocity
 					else
 						RightShoulder.MaxVelocity = 0.15
 					end
-					if (LeftShoulder.CurrentAngle > 1.5 or LeftShoulder.CurrentAngle < -1.5) then
+					if (LeftShoulder.CurrentAngle > ARMS_SWING_TOP or LeftShoulder.CurrentAngle < -ARMS_SWING_TOP) then
 						LeftShoulder.MaxVelocity = jumpMaxLimbVelocity
 					else
 						LeftShoulder.MaxVelocity = 0.15
@@ -392,7 +396,10 @@ do
 					else
 						local amp, freq, climb = 0.1, 1, 0
 						if pose == "Running" then
-							rS.MaxVelocity = 0.15; lS.MaxVelocity = 0.15; amp = 1; freq = 9
+							-- (coming down from a jump at the jump's speed, all the way to the swing, as yours)
+							rS.MaxVelocity = (math.abs(rS.CurrentAngle) > 1.05) and 0.75 or 0.15
+							lS.MaxVelocity = (math.abs(lS.CurrentAngle) > 1.05) and 0.75 or 0.15
+							amp = 1; freq = 9
 						elseif pose == "Climbing" then
 							rS.MaxVelocity = 0.5; lS.MaxVelocity = 0.5; amp = 1; freq = 9; climb = 3.14
 						end
