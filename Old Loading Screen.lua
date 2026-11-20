@@ -11,22 +11,27 @@
 --     (loadingvignette.png), as the 2015 client had it.
 --   * "2016": the dark one of Roblox's 2016 LoadingScript: the dark triangle texture, the turning loading circle with
 --     "Loading...", the place and "By <creator>" in the bottom left.
---   * "2013" (the 2013 GUIs with the old health bar off): the "Powered By ROBLOX" screen from the user's recording: the
---     light texture with the vignette, a dark slanted band in the top left with "Powered By" and the ROBLOX logo, the
---     place's picture in the middle in a dark frame, a dark band along the bottom with "You're on your way to", the place
---     and "By <creator>" on its right, and a grey circle with an X in the top right.
---   * "2008" (the 2006 GUI, in place of its own "Loading Character..."): the 2008 GUI's one (2008 Gui.lua): the world
---     hidden and the camera looking at it from afar, a see-through grey box in the middle with "Connecting to Server",
---     then "Bricks: N   Connectors: N" counting up while the world comes back.
+--   * "2013" (the 2013 GUIs with the old health bar off): the "Powered By ROBLOX" screen from the user's recording, over
+--     the whole screen: the light texture with the vignette, a dark slanted band in the top left with "Powered By" and
+--     the ROBLOX logo, the place's picture in the middle in a dark frame, the square loading thing under it (little
+--     squares flying into a square that grows, then out of it as it shrinks), a dark band along the bottom with
+--     "You're on your way to", the place and "By <creator>" on its right, and a grey circle with an X in the top right.
+--     It shows for about 7 seconds, as on the recording.
+--   * "2008": the 2008 GUI's one (2008 Gui.lua): the world hidden and the camera looking at it from afar, a see-through
+--     grey box in the middle with "Connecting to Server", then "Bricks: N   Connectors: N" counting up while the world
+--     comes back.
+--   * "2006" (the 2006 GUI, in place of its own "Loading Character..."): the same in the 2006 GUI's font.
 --   * "2011" (the 2011 and 2012 GUIs, and the 2013 GUIs with the old health bar on): the same as 2008 in a black box
 --     with white Arial letters and no edge, as the 2011 client had it (the user's video: youtu.be/7oRq9hvQQF0).
+-- The GUI under it (the one picked, its health bar, backpack...) is hidden while it shows and comes back as it goes, as
+-- the old GUIs only showed once the game had loaded (and none of it is drawn over the loading screen).
 -- The pictures Roblox no longer ships (the 2014 logo and glow, the 2015 texture and vignette, the ROBLOX logo) come
 -- from this repo's assets folder (saved with writefile and shown with getcustomasset); without those, the client's own
 -- are tried.
 -- The loading screen the GUI brings itself (the 2014 GUI's dark one) is taken away while this one shows (only its
 -- ErrorFrame stays, for a disconnect message, and goes on top too); the loader also keeps it from ever showing.
 -- The executor runs after the game has loaded, so each one shows for a few seconds and then goes.
--- Run: getgenv().OldLoadingScreen.Show("2008" / "2011" / "2013" / "2014" / "2015" / "2016"), or set
+-- Run: getgenv().OldLoadingScreen.Show("2006" / "2008" / "2011" / "2013" / "2014" / "2015" / "2016"), or set
 -- getgenv().BPLoadingScreenYear and run this file. Stop(): taken away at once. Style(): the one showing (or nil).
 --========================================================
 
@@ -66,7 +71,7 @@ local COLORS = {
 	BOX_2008 = Color3.fromRGB(220, 220, 220),
 }
 
-local STYLES = { ["2008"] = "2008", ["2006"] = "2008", ["2011"] = "2011", ["2012"] = "2011", ["2013"] = "2013",
+local STYLES = { ["2008"] = "2008", ["2006"] = "2006", ["2011"] = "2011", ["2012"] = "2011", ["2013"] = "2013",
 	["2014"] = "2014", ["2015"] = "2015", ["2016"] = "2016" }
 
 -- the pictures, and what is tried when this repo's copy can't be had
@@ -229,6 +234,70 @@ local function removeOthers(conns)
 			table.insert(conns, holder.ChildAdded:Connect(check))
 		end)
 	end
+end
+
+-- THE GUI UNDER IT: hidden while the loading screen shows and back when it goes (the old GUIs only showed once the game
+-- had loaded, and some draw at the very top). That is the GUIs made since the loader started (it notes them in
+-- getgenv().BPNewGuis: the GUI you picked, its health bar, backpack, the setup...) and any made while this shows.
+-- Roblox's own and the executor's are left alone. A GUI that turns itself on meanwhile is kept off, and comes on after.
+local KEEP_GUIS = {
+	[GUI_NAME] = true, Custom2016LoadingGui = true,
+	TopBarApp = true, RobloxGui = true, ExperienceChat = true, DevConsoleMaster = true, RobloxPromptGui = true,
+	PurchasePromptApp = true, RobloxNetworkPauseNotification = true, RobloxLoadingGUI = true, RobloxLoadingGui = true,
+	TeleportGui = true,
+}
+local function guiHolders()
+	local holders = { CoreGui }
+	pcall(function()
+		local h = gethui and gethui()
+		if h and h ~= CoreGui then table.insert(holders, h) end
+	end)
+	pcall(function()
+		local pg = Players.LocalPlayer and Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
+		if pg then table.insert(holders, pg) end
+	end)
+	return holders
+end
+local function hideGuis(conns, hidden)
+	local function hide(gui)
+		if hidden[gui] ~= nil or not gui:IsA("ScreenGui") or KEEP_GUIS[gui.Name] then return end
+		hidden[gui] = gui.Enabled == true
+		pcall(function() gui.Enabled = false end)
+		table.insert(conns, gui:GetPropertyChangedSignal("Enabled"):Connect(function()
+			if hidden[gui] ~= nil and gui.Enabled then
+				hidden[gui] = true
+				pcall(function() gui.Enabled = false end)
+			end
+		end))
+	end
+	local made = genv.BPNewGuis
+	if type(made) == "table" then
+		for gui in pairs(made) do
+			pcall(function()
+				if gui.Parent then hide(gui) end
+			end)
+		end
+	end
+	for _, holder in ipairs(guiHolders()) do
+		pcall(function()
+			table.insert(conns, holder.ChildAdded:Connect(function(child)
+				-- (looked at a moment later: the script making it may still be setting it up)
+				task.defer(function()
+					if child.Parent == holder then pcall(hide, child) end
+				end)
+			end))
+		end)
+	end
+end
+local function showGuis(hidden)
+	for gui, wasOn in pairs(hidden) do
+		if wasOn then
+			pcall(function()
+				if gui.Parent then gui.Enabled = true end
+			end)
+		end
+	end
+	table.clear(hidden)
 end
 
 -- a texture tiled over a frame (512 x 512 tiles, as the scripts did); tiled again when the frame's size changes
@@ -661,12 +730,66 @@ local function build2016(screenGui)
 end
 
 ----------------------------------------------------------------------------------------------------
--- 2013 (the 2013 GUIs with the old health bar off): the "Powered By ROBLOX" screen of the user's recording
--- Everything is placed as measured on that recording (a 646 pixel tall screen), scaled to this screen's height, inside
--- the phone's safe area as it was there; its background covers the whole screen.
+-- 2013 (the 2013 GUIs with the old health bar off): the "Powered By ROBLOX" screen of the user's recording, over the
+-- whole screen (as the 2014 one). Everything is placed as measured on that recording (a 1400 x 646 screen), scaled to
+-- this screen's height; what was on the right is kept as far from the right edge. It shows for about 7 seconds, as on
+-- the recording, with its square loading thing going round meanwhile.
 ----------------------------------------------------------------------------------------------------
 local REF_HEIGHT = 646
-local BAND_ANGLE = math.atan(-123 / 688) -- the top band's lower edge: from (0, 123) to (688, 0)
+local BAND_ANGLE = math.atan(-123 / 688) -- the top band's lower edge: through (60, 123) and (748, 0)
+local HOLD_2013 = 6.5
+local TEXT_SCALE = 1.42 -- (Roblox draws a TextSize this much smaller than the recording's letters measured)
+
+-- the square loading thing (measured on the recording, frame by frame): little squares fly in from the left and slow
+-- down into a square in the middle, which grows as they come; it holds a moment, then little squares fly out of it to
+-- the right while it shrinks, and last it goes after them. Then again (every 2.25 s).
+local SQUARES = {
+	period = 2.25,
+	inTimes = { 0, 0.13, 0.26, 0.39, 0.52, 0.65, 0.78 }, -- (when each one sets off from the left)
+	travelIn = 0.25,
+	grownAt = 1.05,
+	releaseAt = 1.4,
+	outTimes = { 1.4, 1.52, 1.64, 1.76, 1.88 },
+	travelOut = 0.2,
+	shrunkAt = 1.95,
+	leave = 0.17,
+	small = 18, big = 72, last = 30, -- (sizes on the 646 tall recording)
+	y = 514,
+	color = Color3.fromRGB(33, 33, 36),
+}
+
+-- where the squares are t seconds into the loop: { x (0 - 1 across the screen), size (recording pixels) }, ...
+local function squaresAt(t)
+	local q = SQUARES
+	t = t % q.period
+	local left, middle, right = 0.045, 0.5, 0.89
+	local list = {}
+	for _, start in ipairs(q.inTimes) do
+		if t >= start and t < start + q.travelIn then
+			local p = (t - start) / q.travelIn
+			local e = 1 - (1 - p) * (1 - p)
+			table.insert(list, { left + (middle - left) * e, q.small })
+		end
+	end
+	if t >= q.travelIn and t < q.grownAt then
+		table.insert(list, { middle, q.small + (q.big - q.small) * (t - q.travelIn) / (q.grownAt - q.travelIn) })
+	elseif t >= q.grownAt and t < q.releaseAt then
+		table.insert(list, { middle, q.big })
+	elseif t >= q.releaseAt and t < q.shrunkAt then
+		table.insert(list, { middle, q.big + (q.last - q.big) * (t - q.releaseAt) / (q.shrunkAt - q.releaseAt) })
+	elseif t >= q.shrunkAt and t < q.shrunkAt + q.leave then
+		local p = (t - q.shrunkAt) / q.leave
+		table.insert(list, { middle + (right - middle) * p * p, q.last - 7 * p })
+	end
+	for _, start in ipairs(q.outTimes) do
+		if t >= start and t < start + q.travelOut then
+			local p = (t - start) / q.travelOut
+			local e = 1 - (1 - p) * (1 - p)
+			table.insert(list, { middle + (right - middle) * e, q.small })
+		end
+	end
+	return list
+end
 
 local function escapeRich(text)
 	return (string.gsub(text, "[&<>\"']", {
@@ -675,7 +798,6 @@ local function escapeRich(text)
 end
 
 local function build2013(screenGui)
-	pcall(function() screenGui.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets end)
 	local root = create "Frame" {
 		Name = "BlackFrame",
 		BackgroundTransparency = 1,
@@ -712,12 +834,12 @@ local function build2013(screenGui)
 		Parent = background,
 	}
 
-	-- the dark slanted band in the top left, with its lighter edge (two turned frames, cut off at the safe area)
+	-- the dark slanted band in the top left, with its lighter edge (two turned frames)
 	local topClip = create "Frame" {
 		Name = "TopBand",
 		BackgroundTransparency = 1,
 		ClipsDescendants = true,
-		Size = UDim2.new(1, 0, 0, 140),
+		Size = UDim2.new(1, 0, 0, 145),
 		ZIndex = 2,
 		Parent = root,
 	}
@@ -732,11 +854,11 @@ local function build2013(screenGui)
 	local poweredBy = create "TextLabel" {
 		Name = "PoweredBy", BackgroundTransparency = 1, Text = "Powered By", Font = Enum.Font.SourceSans,
 		TextColor3 = COLORS.WHITE, TextTransparency = 0, TextXAlignment = Enum.TextXAlignment.Left,
-		AnchorPoint = Vector2.new(0.5, 0.5), Rotation = -5, ZIndex = 4, Parent = root,
+		AnchorPoint = Vector2.new(0.5, 0.5), Rotation = -6, ZIndex = 4, Parent = root,
 	}
 	local logo = create "ImageLabel" {
 		Name = "Logo", BackgroundTransparency = 1, ImageTransparency = 0, Image = picture("robloxLogo"),
-		ScaleType = Enum.ScaleType.Fit, AnchorPoint = Vector2.new(0.5, 0.5), Rotation = -5, ZIndex = 4, Parent = root,
+		ScaleType = Enum.ScaleType.Fit, AnchorPoint = Vector2.new(0.5, 0.5), Rotation = -7, ZIndex = 4, Parent = root,
 	}
 
 	-- the place's picture in the middle, in a dark frame
@@ -750,6 +872,20 @@ local function build2013(screenGui)
 		Position = UDim2.new(0.5, 0, 0.5, 0), ZIndex = 3, Parent = pictureFrame,
 	}
 
+	-- the square loading thing
+	local squareFrames = {}
+	local function squareFrame(i)
+		local f = squareFrames[i]
+		if not f then
+			f = create "Frame" {
+				Name = "LoadingSquare", BackgroundColor3 = SQUARES.color, BackgroundTransparency = 0, BorderSizePixel = 0,
+				AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 4, Parent = root,
+			}
+			squareFrames[i] = f
+		end
+		return f
+	end
+
 	-- the dark band along the bottom, with its lighter edge on top and on the right
 	local bottomEdge = create "Frame" {
 		Name = "BottomBandEdge", BackgroundColor3 = COLORS.BAND_EDGE, BackgroundTransparency = 0, BorderSizePixel = 0,
@@ -762,7 +898,7 @@ local function build2013(screenGui)
 	local function infoLine(name, font, color)
 		return create "TextLabel" {
 			Name = name, BackgroundTransparency = 1, Text = "", Font = font, TextColor3 = color, TextTransparency = 0,
-			TextXAlignment = Enum.TextXAlignment.Right, AnchorPoint = Vector2.new(1, 0), RichText = true,
+			TextXAlignment = Enum.TextXAlignment.Right, AnchorPoint = Vector2.new(1, 0.5), RichText = true,
 			ZIndex = 4, Parent = root,
 		}
 	end
@@ -771,40 +907,41 @@ local function build2013(screenGui)
 	local placeLabel = infoLine("PlaceLabel", Enum.Font.SourceSansBold, COLORS.PLACE)
 	local creatorLabel = infoLine("CreatorLabel", Enum.Font.SourceSans, COLORS.PLACE)
 
-	local view = {}
+	local view = { hold = HOLD_2013 }
 	-- the grey circle with an X in the top right
 	local closeButton = nil
 
-	local laidOut = nil
+	local laidOut, W, k = nil, 0, 1
+	local function textSize(size)
+		return math.max(8, math.floor(size * TEXT_SCALE * k + 0.5))
+	end
 	local function layout()
 		local size = root.AbsoluteSize
-		local W, H = size.X, size.Y
+		local H = size.Y
+		W = size.X
 		if W < 1 or H < 1 then return end
 		laidOut = size
-		local k = H / REF_HEIGHT
-		-- the background over the whole screen (the root is inside the safe area)
-		local viewport = size
-		pcall(function() viewport = workspace.CurrentCamera.ViewportSize end)
-		local pos = root.AbsolutePosition
-		background.Position = UDim2.new(0, -pos.X, 0, -pos.Y)
-		background.Size = UDim2.new(0, math.max(viewport.X, W + pos.X), 0, math.max(viewport.Y, H + pos.Y))
+		k = H / REF_HEIGHT
 
-		-- the top band: two big turned frames whose lower edges lie on the slanted line (and 5 under it)
-		topClip.Size = UDim2.new(1, 0, 0, math.ceil(140 * k))
+		-- the top band: two big turned frames whose lower edges lie on the slanted line (and 5 under it), from the
+		-- left edge of the screen
+		topClip.Size = UDim2.new(1, 0, 0, math.ceil(145 * k))
 		local cosA, sinA = math.cos(BAND_ANGLE), math.sin(BAND_ANGLE)
 		local bw, bh = (W + H) * 2, H
+		local midX = 374
+		local midY = 123 + (midX - 60) * math.tan(BAND_ANGLE) -- (on the line through (60, 123))
 		local function place(frame, drop)
 			-- the middle of its lower edge, then its centre half its height "up" (turned)
-			local mx, my = 344 * k - drop * sinA, 61.5 * k + drop * cosA
+			local mx, my = midX * k - drop * sinA, midY * k + drop * cosA
 			frame.Size = UDim2.new(0, bw, 0, bh)
 			frame.Position = UDim2.new(0, mx + bh / 2 * sinA, 0, my - bh / 2 * cosA)
 		end
 		place(band, 0)
 		place(bandEdge, 5 * k)
-		poweredBy.Position = UDim2.new(0, 100 * k, 0, 29 * k)
-		poweredBy.Size = UDim2.new(0, 140 * k, 0, 28 * k)
-		poweredBy.TextSize = math.max(8, math.floor(24 * k + 0.5))
-		logo.Position = UDim2.new(0, 140 * k, 0, 67 * k)
+		poweredBy.Position = UDim2.new(0, 160 * k, 0, 29 * k)
+		poweredBy.Size = UDim2.new(0, 150 * k, 0, 34 * k)
+		poweredBy.TextSize = textSize(24)
+		logo.Position = UDim2.new(0, 199 * k, 0, 67 * k)
 		logo.Size = UDim2.new(0, 226 * k, 0, 58 * k)
 
 		pictureFrame.Position = UDim2.new(0.5, 0, 0, 287.5 * k)
@@ -812,19 +949,18 @@ local function build2013(screenGui)
 		placeImage.Size = UDim2.new(1, -14 * k, 1, -14 * k)
 
 		bottomEdge.Position = UDim2.new(0, 0, 1, -83 * k)
-		bottomEdge.Size = UDim2.new(1, -63 * k, 0, 83 * k)
+		bottomEdge.Size = UDim2.new(1, -123 * k, 0, 83 * k)
 		bottomBand.Position = UDim2.new(0, 0, 1, -78 * k)
-		bottomBand.Size = UDim2.new(1, -68 * k, 0, 78 * k)
-		local right = W - 78 * k
-		for i, row in ipairs({ { onYourWay, 17 }, { placeLabel, 19 }, { creatorLabel, 19 } }) do
-			row[1].Position = UDim2.new(0, right, 0, (560 + 20 * i) * k)
-			row[1].Size = UDim2.new(0, W * 0.6, 0, 20 * k)
-			row[1].TextSize = math.max(8, math.floor(row[2] * k + 0.5))
+		bottomBand.Size = UDim2.new(1, -128 * k, 0, 78 * k)
+		for _, row in ipairs({ { onYourWay, 17, 590.5 }, { placeLabel, 19, 610.5 }, { creatorLabel, 19, 630 } }) do
+			row[1].Position = UDim2.new(1, -137 * k, 0, row[3] * k)
+			row[1].Size = UDim2.new(0, W * 0.6, 0, 22 * k)
+			row[1].TextSize = textSize(row[2])
 		end
 
 		if closeButton then closeButton:Destroy() end
 		closeButton = closeIcon {
-			Position = UDim2.new(1, -31 * k, 0, 29 * k), Size = math.floor(37 * k + 0.5), Color = COLORS.CLOSE_GREY,
+			Position = UDim2.new(1, -91 * k, 0, 29 * k), Size = math.floor(37 * k + 0.5), Color = COLORS.CLOSE_GREY,
 			Thickness = math.max(1, math.floor(3 * k + 0.5)), Bar = math.max(2, math.floor(4 * k + 0.5)), ZIndex = 5,
 			Parent = root,
 			OnPress = function()
@@ -835,6 +971,7 @@ local function build2013(screenGui)
 
 	local lastTexture = nil
 	local fading = false
+	local shownAt = os.clock()
 	function view.step()
 		if root.AbsoluteSize ~= laidOut then layout() end
 		if placeLabel.Text == "" and placeName ~= "" then placeLabel.Text = escapeRich(placeName) end
@@ -844,6 +981,18 @@ local function build2013(screenGui)
 		if not fading and textureFrame.AbsoluteSize ~= lastTexture then
 			lastTexture = textureFrame.AbsoluteSize
 			tileTexture(textureFrame, picture("texture"), 0)
+		end
+		-- the squares
+		local list = squaresAt(os.clock() - shownAt)
+		for i, sq in ipairs(list) do
+			local f = squareFrame(i)
+			local side = sq[2] * k
+			f.Position = UDim2.new(sq[1], 0, 0, SQUARES.y * k)
+			f.Size = UDim2.new(0, side, 0, side)
+			f.Visible = true
+		end
+		for i = #list + 1, #squareFrames do
+			squareFrames[i].Visible = false
 		end
 	end
 	function view.picture(key, id)
@@ -867,13 +1016,86 @@ local function build2013(screenGui)
 end
 
 ----------------------------------------------------------------------------------------------------
--- 2008 (the 2006 GUI) and 2011 (2011 - 2013 with the old health bar): the 2008 GUI's loading (2008 Gui.lua), the world
--- hidden and the camera looking at it from afar; the box says "Connecting to Server" for 2 s, then counts the bricks up
--- while the world comes back (30 steps, 0.05 s each), holds 1.5 s and goes. 2011: a black box, white Arial, no edge.
+-- the 2006 GUI's font: RetroStudio's 2006 bitmap font (the same sheet and letter widths as the 2006 GUI): each letter
+-- cut out of one picture (ASCII codes in a 16-wide grid of 32 x 32 cells), TextSize + 4 tall. If the picture can't be
+-- loaded, the 2006 GUI's own stand-in font (Nunito ExtraBold Italic).
+----------------------------------------------------------------------------------------------------
+local FONT_2006_SHEET = "rbxassetid://11363842965"
+local GLYPH_2006 = {}
+for code, hex in ipairs({
+	"1A", "1A", "1A", "1A", "1A", "1A", "1A", "1A", "1A", "60", "1A", "1A", "00", "1A", "1A", "1A", -- 1-16
+	"1A", "1A", "1A", "1A", "1A", "1A", "1A", "1A", "1A", "1A", "1A", "1A", "1A", "1A", "1A", "07", -- 17-32
+	"08", "09", "10", "10", "16", "13", "05", "09", "09", "0D", "10", "07", "07", "07", "0B", "10", -- 33-48
+	"10", "10", "10", "10", "10", "10", "10", "10", "10", "07", "07", "0D", "10", "0D", "0D", "16", -- 49-64
+	"14", "11", "11", "14", "10", "0F", "14", "14", "08", "0C", "11", "0E", "17", "14", "16", "0F", -- 65-80
+	"16", "10", "0D", "0F", "14", "12", "1B", "11", "0F", "10", "09", "0B", "09", "0D", "0D", "0D", -- 81-96
+	"0F", "10", "0D", "10", "0F", "09", "10", "11", "07", "07", "0E", "07", "17", "11", "10", "10", -- 97-112
+	"10", "0A", "0B", "0A", "10", "0E", "17", "0E", "0E", "0D", "0B", "0D", "0B", "11", "1A", -- 113-127
+}) do
+	GLYPH_2006[code] = tonumber(hex, 16)
+end
+local font2006Failed = false
+
+local function glyph2006(byte)
+	return GLYPH_2006[byte] and byte or 1 -- (a letter the font doesn't have: a box, as the 2006 GUI)
+end
+
+-- the label's text in the 2006 font, in the middle of the label (its own text hidden under it)
+local function draw2006(label, text)
+	label.Text = text
+	local old = label:FindFirstChild("TextContent")
+	if old then old:Destroy() end
+	if font2006Failed then
+		label.TextTransparency = 0
+		return
+	end
+	label.TextTransparency = 1
+	local size = label.TextSize + 4
+	local width = 0
+	for i = 1, #text do
+		width = width + GLYPH_2006[glyph2006(string.byte(text, i))] / 32 * size
+	end
+	local content = create "Frame" {
+		Name = "TextContent",
+		BackgroundTransparency = 1,
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0.5, 0, 0.5, 0),
+		Size = UDim2.new(0, width, 0, size),
+		Parent = label,
+	}
+	local x = 0
+	for i = 1, #text do
+		local code = glyph2006(string.byte(text, i))
+		local w = GLYPH_2006[code]
+		local pixels = w / 32 * size
+		if code ~= 32 then
+			create "ImageLabel" {
+				Name = "Glyph",
+				BackgroundTransparency = 1,
+				Image = FONT_2006_SHEET,
+				ImageColor3 = label.TextColor3,
+				ImageRectOffset = Vector2.new((code * 32) % 512 + (32 - w) / 2, math.floor(code / 16) * 32),
+				ImageRectSize = Vector2.new(w, 32),
+				Size = UDim2.new(0, pixels, 0, size),
+				Position = UDim2.new(0, x, 0, 0),
+				Parent = content,
+			}
+		end
+		x = x + pixels
+	end
+end
+
+----------------------------------------------------------------------------------------------------
+-- 2008 / 2006 (the 2006 GUI) and 2011 (2011 - 2013 with the old health bar): the 2008 GUI's loading (2008 Gui.lua), the
+-- world hidden and the camera looking at it from afar; the box says "Connecting to Server" for 2 s, then counts the
+-- bricks up while the world comes back (30 steps, 0.05 s each), holds 1.5 s and goes. 2006: the same in the 2006 GUI's
+-- font. 2011: a black box, white Arial, no edge.
 ----------------------------------------------------------------------------------------------------
 local function build2008(screenGui, style)
 	local black = style == "2011"
+	local bitmap = style == "2006"
 	local font = black and Enum.Font.ArialBold or Enum.Font.Cartoon
+	local labels = {}
 	local function box(name, border)
 		return create "Frame" {
 			Name = name,
@@ -889,7 +1111,7 @@ local function build2008(screenGui, style)
 		}
 	end
 	local function boxText(parent, name, size, text)
-		return create "TextLabel" {
+		local label = create "TextLabel" {
 			Name = name,
 			Size = UDim2.new(1, 0, 1, 0),
 			BackgroundTransparency = 1,
@@ -899,6 +1121,34 @@ local function build2008(screenGui, style)
 			Text = text,
 			Parent = parent,
 		}
+		if bitmap then
+			-- (the stand-in font, for when the 2006 letters can't be had)
+			pcall(function()
+				label.FontFace = Font.new("rbxasset://fonts/families/Nunito.json", Enum.FontWeight.ExtraBold,
+					Enum.FontStyle.Italic)
+			end)
+			draw2006(label, text)
+			table.insert(labels, label)
+		end
+		return label
+	end
+	local function setText(label, text)
+		if bitmap then draw2006(label, text) else label.Text = text end
+	end
+	if bitmap and not font2006Failed then
+		-- the 2006 letters' picture: if it can't be loaded, the stand-in font shows instead
+		task.spawn(function()
+			pcall(function()
+				game:GetService("ContentProvider"):PreloadAsync({ FONT_2006_SHEET }, function(_, status)
+					if status == Enum.AssetFetchStatus.Failure then
+						font2006Failed = true
+						for _, label in ipairs(labels) do
+							pcall(draw2006, label, label.Text)
+						end
+					end
+				end)
+			end)
+		end)
 	end
 	local function statsText(bricks, connectors)
 		if black then
@@ -990,11 +1240,11 @@ local function build2008(screenGui, style)
 					index = index + 1
 				end
 			end
-			statsLabel.Text = statsText(math.floor(totalBricks / steps * i), math.floor(targetConnectors / steps * i))
+			setText(statsLabel, statsText(math.floor(totalBricks / steps * i), math.floor(targetConnectors / steps * i)))
 			task.wait(0.05)
 		end
 		for _, entry in ipairs(parts) do showPart(entry) end
-		statsLabel.Text = statsText(totalBricks, targetConnectors)
+		setText(statsLabel, statsText(totalBricks, targetConnectors))
 		task.wait(1.5)
 		-- (then the camera comes back to you: view.cleanup, as the screen goes)
 	end
@@ -1030,7 +1280,7 @@ function api.Show(year)
 		view = build2016(screenGui)
 	elseif style == "2013" then
 		view = build2013(screenGui)
-	elseif style == "2008" or style == "2011" then
+	elseif style == "2008" or style == "2006" or style == "2011" then
 		view = build2008(screenGui, style)
 	else
 		view = build2014(screenGui, style)
@@ -1039,6 +1289,13 @@ function api.Show(year)
 
 	local entry = { style = style }
 	local stopped = false
+	local hidden = {} -- the GUIs under it that were turned off (each: whether it was on)
+	local hideConns = {}
+	local function revealGuis()
+		for _, c in ipairs(hideConns) do pcall(function() c:Disconnect() end) end
+		table.clear(hideConns)
+		showGuis(hidden)
+	end
 	function entry.stop()
 		if stopped then return end
 		stopped = true
@@ -1046,11 +1303,13 @@ function api.Show(year)
 		table.clear(conns)
 		if view.cleanup then pcall(view.cleanup) end
 		pcall(function() screenGui:Destroy() end)
+		revealGuis()
 		if running == entry then running = nil end
 	end
 	running = entry
 
 	removeOthers(conns)
+	pcall(hideGuis, hideConns, hidden)
 	askPlaceInfo()
 	table.insert(conns, RunService.RenderStepped:Connect(function(dt)
 		if not stopped then pcall(view.step, math.min(dt, 0.1)) end
@@ -1066,16 +1325,18 @@ function api.Show(year)
 			entry.stop()
 		end)
 	else
-		-- the others show for HOLD seconds (or until their close button is tapped), then fade
+		-- the others show for HOLD seconds (2013: about 7, as on the recording; or until their close button is tapped),
+		-- then fade, the GUI coming back under them as they go
 		local finishing = false
 		local function finish()
 			if stopped or finishing then return end
 			finishing = true
+			revealGuis()
 			pcall(view.fadeOut)
 			entry.stop()
 		end
 		view.onClose = function() task.spawn(finish) end
-		task.delay(HOLD, finish)
+		task.delay(view.hold or HOLD, finish)
 	end
 	print("[Old Loading Screen] the " .. style .. " loading screen")
 	return true
