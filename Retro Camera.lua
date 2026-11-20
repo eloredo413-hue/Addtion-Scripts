@@ -1228,7 +1228,9 @@ RunService:BindToRenderStep("RetroCamera", 250, update)
 --   * the modules they find next to them (CameraScript.RootCamera, ControlScript.MasterControl, script.Cameras,
 --     script.VehicleController): written here, on top of this camera
 -- HumanoidRotate turns an R6 character (Retro Studio leaves R15 to Roblox): towards where you walk with a gyro, and
--- at once to where you look in first person. It steps aside while the Old physics runs (that has Rowind's own).
+-- at once to where you look in first person. It steps aside while the Old physics runs (that has Rowind's own), and
+-- with the 2008 physics it doesn't turn you in the air after a jump (getgenv().BPAirTurnLock), as Roblox's own turning
+-- doesn't there.
 --========================================================
 do
 	local ReplicatedStorageService = game:GetService("ReplicatedStorage")
@@ -1458,6 +1460,7 @@ do
 		local v_u_2 = game:GetService("UserInputService")
 		local v_u_3 = game:GetService("ReplicatedStorage"):GetAttribute("RobloxVersion")
 		local v_u_4 = script.Parent:WaitForChild("Humanoid")
+		local v_bpEnv = (getgenv and getgenv()) or _G -- (Addtion-Scripts) see BPAirTurnLock below
 		if v_u_4.RigType == Enum.HumanoidRigType.R15 then
 			task.defer(script.Destroy, script)
 		else
@@ -1542,6 +1545,11 @@ do
 								v_u_4.AutoRotate = false
 							end
 							v_u_5.P = (v10 == Enum.HumanoidStateType.Jumping or v10 == Enum.HumanoidStateType.Freefall) and 1000 or 4000
+							-- (Addtion-Scripts) the 2008 physics' no turning in the air (from a jump until you land): the
+							-- gyro holds the way it was turning you
+							if not v13 and v_bpEnv.BPAirTurnLock then
+								return
+							end
 							local v21 = CFrame.lookAt(v11.Position, v11.Position + v_u_4.MoveDirection)
 							local v22 = v9 * 60
 							local v23 = 1 - math.pow(0.8, v22)
