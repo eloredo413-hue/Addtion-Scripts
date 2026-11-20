@@ -10,11 +10,11 @@
 --  along at the whole WalkSpeed; let go and you drop. And the sink of the first 2007 physics (Super Nostalgia Zone's
 --  FloorDrag): falling fast, the body goes a little way into the legs, so you land a bit in the ground and come back
 --  up out of it (see SINKING INTO THE GROUND below).
---  "2007": the CharacterPhysics script the user gave (FWM's 2008-2009 physics, at its 2009 time period), in its own
---  file (2007 Physics.lua). Only if that can't be fetched: the first 2007 physics, this script as it was first made from Super
+--  "2008" (called "2007" before; its saved id is still "2007"): the CharacterPhysics script the user gave, FWM's
+--  2008-2009 physics, in its own file (2008 Physics.lua). Only if that can't be fetched: the first 2007 physics, this script as it was first made from Super
 --  Nostalgia Zone's character scripts (the small bounce on every landing, SNZ Bounciness; the sink, SNZ FloorDrag;
 --  tripping when flung faster than 200 studs a second, SNZ GoofyMotion; Roblox's own turning).
---  Old climbs the 2013 way (Retro Studio's CustomClimbing); the 2006 and 2007 physics use FWM's own climbing,
+--  Old climbs the 2013 way (Retro Studio's CustomClimbing); the 2006 and 2008 physics use FWM's own climbing,
 --  improved (in their own files).
 --  "2006": this repo's copy of FWM's (2006 Physics.lua).
 --  R6 and R15 alike: the hip height moves around the avatar's own (an R15 body stands on it), the sink moves an
@@ -34,8 +34,9 @@ task.spawn(function()
 	-- the repo copy works with R15 avatars too; the gist (R6 only) is the fallback
 	local PHYSICS_2006_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2006%20Physics.lua"
 	local PHYSICS_2006_GIST = "https://gist.githubusercontent.com/eloredo413-hue/03ef8e46682bfb53e26e6847abfde344/raw/0fb71153c3b4a369a0390228a2bec3a4a5655c56/2006%2520Physics"
-	-- the 2007 physics: the CharacterPhysics script the user gave, made to run from an executor (R6 and R15)
-	local PHYSICS_2007_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2007%20Physics.lua"
+	-- the 2008 physics (its id is still "2007"): the CharacterPhysics script the user gave, made to run from an
+	-- executor (R6 and R15)
+	local PHYSICS_2007_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2008%20Physics.lua"
 
 	local player = Players.LocalPlayer
 	local pg = player:WaitForChild("PlayerGui", 15)
@@ -65,7 +66,7 @@ local ERA_2007 = (PHYSICS_ERA == "2007")
 local CLIMBING_2013 = true
 
 if _G.__RetroMasterCleanup then pcall(_G.__RetroMasterCleanup) end
--- the 2006 or 2007 physics, if it was picked before: stopped, so two physics never fight over the character
+-- the 2006 or 2008 physics, if it was picked before: stopped, so two physics never fight over the character
 if BPGenv.__Physics2006Cleanup then pcall(BPGenv.__Physics2006Cleanup) end
 if BPGenv.__Physics2007Cleanup then pcall(BPGenv.__Physics2007Cleanup) end
 
@@ -1039,18 +1040,18 @@ print("[Retro Master] Full script loaded successfully.")
 
 	local function fetchPhysics2007Script()
 		if PHYSICS_2007_SRC then return PHYSICS_2007_SRC end
-		print("[Physics/Camera] Fetching the 2007 physics script...")
+		print("[Physics/Camera] Fetching the 2008 physics script...")
 		for _ = 1, 2 do
 			local ok, src = pcall(function()
 				return game:HttpGet(PHYSICS_2007_URL, true)
 			end)
 			if ok and type(src) == "string" and #src > 100 and not src:find("^%s*<") and not src:find("^404") then
 				PHYSICS_2007_SRC = src
-				print("[Physics/Camera] 2007 physics script fetched (" .. #src .. " bytes).")
+				print("[Physics/Camera] 2008 physics script fetched (" .. #src .. " bytes).")
 				return src
 			end
 		end
-		warn("[Physics/Camera] Failed to fetch the 2007 physics script.")
+		warn("[Physics/Camera] Failed to fetch the 2008 physics script.")
 		return nil
 	end
 
@@ -1069,10 +1070,11 @@ print("[Retro Master] Full script loaded successfully.")
 	end
 
 	-- One physics for each era: Old (2010-2013, as Retro Studio and Rowind have it, with the first 2007 physics' sink),
-	-- 2007 (the CharacterPhysics script the user gave, 2007 Physics.lua) and 2006 (FWM's, 2006 Physics.lua).
+	-- 2008 (the CharacterPhysics script the user gave, FWM's 2008-2009, 2008 Physics.lua; its id is still "2007" so
+	-- saved choices keep working) and 2006 (FWM's, 2006 Physics.lua).
 	local PHYSICS_VARIANTS = {
 		{id = "old",  label = "Old"},
-		{id = "2007", label = "2007"},
+		{id = "2007", label = "2008"}, -- (was labelled 2007; the id stays for saved choices)
 		{id = "2006", label = "2006"},
 	}
 	local selectedVariant = "old"
@@ -1091,11 +1093,11 @@ print("[Retro Master] Full script loaded successfully.")
 		elseif variant == "2007" then
 			local src = fetchPhysics2007Script()
 			if src then
-				runScript(src, "2007 physics")
+				runScript(src, "2008 physics")
 			else
-				-- (only if 2007 Physics.lua can't be fetched: the first 2007 physics, built in)
-				warn("[Physics/Camera] Using the built-in 2007 physics instead.")
-				runScript("local PHYSICS_ERA = \"2007\"\n" .. PHYSICS_SRC, "2007 physics")
+				-- (only if 2008 Physics.lua can't be fetched: the first 2007 physics, built in)
+				warn("[Physics/Camera] Using the built-in first 2007 physics instead.")
+				runScript("local PHYSICS_ERA = \"2007\"\n" .. PHYSICS_SRC, "built-in 2007 physics")
 			end
 		else
 			runScript("local PHYSICS_ERA = \"old\"\n" .. PHYSICS_SRC, "physics")

@@ -1,8 +1,9 @@
--- [[ 2007 PHYSICS (Addtion-Scripts) ]]
+-- [[ 2008 PHYSICS (Addtion-Scripts) ]]
 -- The CharacterPhysics script as it was given (StarterPlayer.StarterCharacterScripts.CharacterPhysics, FWM's), made to
 -- run from a script executor, on R6 and R15: FWM's (Flex's Wayback Machine's) 2008-2009 physics. It is the same script
 -- the 2006 physics is made from; what makes it 2008-2009 is FWM's era number, TIME_PERIOD below. It runs as it came,
--- with nothing of ours added:
+-- with nothing of ours added. FWM's 2008-2009 physics, as the user knows it from the game: the dip into the ground
+-- when you land, and no landing bounce, no tilt on hard landings, no jumps that keep their speed:
 --   * no bounce when you land (the 2006 physics throws you back up): the body goes into the ground a bit instead (the
 --     script's landing squash: about a third of a stud down, back up within about half a second; on the first landing
 --     after a jump)
@@ -21,8 +22,8 @@
 --   * R15: the upper torso stands in for the Torso and the hands for the arms; the body keeps its own hip height (an
 --     R15 body stands on it; the script's 0 or 2 is for R6 legs), and the landing squash moves the body down on its
 --     root joint instead of through the hip height (a lower hip height makes Roblox's R15 animations run faster)
---   * the landing bounce (only below 15) tells the 2007 animation (getgenv().BPLandingBounce) so it doesn't put the
---     arms back up as if you were falling
+--   * the landing bounce (only below 15) holds off the falling state until you're back on the ground, and tells the
+--     2007 animation (getgenv().BPLandingBounce), so no animation puts the arms back up as if you were falling
 --   * a heavy tool's lean, the glide's wall bounce and the rest are as given; the glide (only below 15) ends instead of
 --     bouncing you off a part the climbing can take hold of
 --   * the character's TorsoAttach.AngularTilt (part of the game's own characters, which steadies you after a hard
@@ -30,7 +31,8 @@
 --   * math.huge where the decompile says "inf"
 --   * it runs on each new character, the game's own CharacterPhysics is switched off, and it stops (everything it
 --     made removed) when run again or when the Old or 2006 physics is picked
--- Run alone or from the physics / camera step ("2007" physics).
+-- Run alone or from the physics / camera step ("2008" physics; it was called "2007" before). Its stop hook keeps the
+-- old name, getgenv().__Physics2007Cleanup, which the other physics already call.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -463,9 +465,39 @@ local function CharacterPhysics(script, R15)
 			v_u_19 = false
 		end
 	end
+	-- (Addtion-Scripts) the landing bounce (only below era 15) holds off the falling state until you're back on the
+	-- ground (a second at most), so no animation, ours or the game's, R6 or R15, puts the arms back up for it
+	local v_fallHeld = false
+	local function v_holdOffFall()
+		if v_fallHeld then return end
+		v_fallHeld = true
+		pcall(function() v_u_10:SetStateEnabled(Enum.HumanoidStateType.Freefall, false) end)
+		task.spawn(function()
+			local v_t0, v_left = os.clock(), false
+			while v_fallHeld and v_u_10.Parent and os.clock() - v_t0 < 1 do
+				if v_u_10.FloorMaterial == Enum.Material.Air then
+					v_left = true
+				elseif v_left then
+					break
+				end
+				task.wait()
+			end
+			if v_fallHeld then
+				v_fallHeld = false
+				pcall(function() v_u_10:SetStateEnabled(Enum.HumanoidStateType.Freefall, true) end)
+			end
+		end)
+	end
+	table.insert(v_u_1, { Disconnect = function()
+		if v_fallHeld then
+			v_fallHeld = false
+			pcall(function() v_u_10:SetStateEnabled(Enum.HumanoidStateType.Freefall, true) end)
+		end
+	end })
 	local function v_u_44(p42) -- name: forceVelocity
 		-- upvalues: (copy) v_u_4, (copy) v_u_11
 		BPGenv.BPLandingBounce = os.clock() -- (Addtion-Scripts) for the 2007 animation: a bounce, not a fall
+		v_holdOffFall() -- (Addtion-Scripts) see above
 		local v43 = v_u_4.Create("BodyVelocity", {
 			["MaxForce"] = Vector3.new(0, 9000000000, 0),
 			["Parent"] = v_u_11,
@@ -835,7 +867,7 @@ local function onCharacter(character)
 	local ok, stop = pcall(CharacterPhysics, { Parent = character }, humanoid.RigType == Enum.HumanoidRigType.R15)
 	if not ok then
 		ownConn:Disconnect()
-		warn("[2007 Physics] could not start: " .. tostring(stop))
+		warn("[2008 Physics] could not start: " .. tostring(stop))
 		return
 	end
 	stopCurrent = function()
@@ -852,4 +884,4 @@ BPGenv.__Physics2007Cleanup = function()
 	if stopCurrent then pcall(stopCurrent) stopCurrent = nil end
 	BPGenv.__Physics2007Cleanup = nil
 end
-print("[2007 Physics] on: FWM's CharacterPhysics, its 2008-2009 physics (time period " .. tostring(TIME_PERIOD) .. ": no landing bounce, into the ground a bit instead).")
+print("[2008 Physics] on: FWM's CharacterPhysics, its 2008-2009 physics (time period " .. tostring(TIME_PERIOD) .. ": no landing bounce, into the ground a bit instead).")

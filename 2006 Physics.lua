@@ -12,7 +12,7 @@
 -- ground as you keep falling, the higher the fall the deeper (up to a stud), and once you are on the ground the body
 -- comes back up out of it, a bit at a time, within about half a second. An ordinary jump or a step down: no sink.
 -- FWM: FWM's own CharacterPhysics script is switched off, also when it comes into the character after this started,
--- and FWM's TimePeriod / ExtraUtil / Protocols are used when they are there. Run again (or the "Old" / "2007" physics
+-- and FWM's TimePeriod / ExtraUtil / Protocols are used when they are there. Run again (or the "Old" / "2008" physics
 -- picked): the earlier copy stops first.
 local Players = game:GetService("Players")
 local BPGenv = (getgenv and getgenv()) or _G
@@ -81,7 +81,7 @@ end
 
 local activeConnections = {}
 
--- (Addtion-Scripts) run again, or picked after the "Old" / "2007" physics: the earlier one stops first, so two
+-- (Addtion-Scripts) run again, or picked after the "Old" / "2008" physics: the earlier one stops first, so two
 -- physics never fight over the character
 if BPGenv.__Physics2006Cleanup then pcall(BPGenv.__Physics2006Cleanup) end
 if BPGenv.__Physics2007Cleanup then pcall(BPGenv.__Physics2007Cleanup) end
@@ -535,10 +535,46 @@ local function setupCharacterPhysics(character)
         end
     end
 
+    -- (Addtion-Scripts) FWM's landing bounce holds off the falling state until you're back on the ground (a second at
+    -- most): otherwise every animation (ours, Bloxy's R6 and R15 ones) takes the bounce for a fall and puts the arms
+    -- back up (the user's recording: down, up again, down)
+    local fallHeld = false
+    local function holdOffFall()
+        if fallHeld then return end
+        fallHeld = true
+        pcall(function() humanoid:SetStateEnabled(Enum.HumanoidStateType.Freefall, false) end)
+        task.spawn(function()
+            local t0, left = os.clock(), false
+            while fallHeld and humanoid.Parent and os.clock() - t0 < 1 do
+                if humanoid.FloorMaterial == Enum.Material.Air then
+                    left = true
+                elseif left then
+                    break
+                end
+                task.wait()
+            end
+            if fallHeld then
+                fallHeld = false
+                pcall(function() humanoid:SetStateEnabled(Enum.HumanoidStateType.Freefall, true) end)
+            end
+        end)
+    end
+    table.insert(activeConnections, {
+        Connected = true,
+        Disconnect = function(self)
+            self.Connected = false
+            if fallHeld then
+                fallHeld = false
+                pcall(function() humanoid:SetStateEnabled(Enum.HumanoidStateType.Freefall, true) end)
+            end
+        end,
+    })
+
     local function forceVelocity(upwardSpeed)
         -- (Addtion-Scripts) for the 2007 animation: this throws you up as a landing bounce, not a fall, so it keeps
         -- the arms coming down instead of putting them back up
         BPGenv.BPLandingBounce = os.clock()
+        holdOffFall() -- (and no falling state for it: see above)
         local bv = ExtraUtil.Create("BodyVelocity", {
             MaxForce = Vector3.new(0, 9000000000, 0),
             Parent = torso,
