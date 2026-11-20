@@ -380,6 +380,9 @@ local function setupCharacterPhysics(character)
     end
 
     local function forceVelocity(upwardSpeed)
+        -- (Addtion-Scripts) for the 2007 animation: this throws you up as a landing bounce, not a fall, so it keeps
+        -- the arms coming down instead of putting them back up
+        BPGenv.BPLandingBounce = os.clock()
         local bv = ExtraUtil.Create("BodyVelocity", {
             MaxForce = Vector3.new(0, 9000000000, 0),
             Parent = torso,

@@ -1,15 +1,15 @@
 -- [[ 2007 PHYSICS (Addtion-Scripts) ]]
 -- The CharacterPhysics script as it was given (StarterPlayer.StarterCharacterScripts.CharacterPhysics, FWM's), made to
 -- run from a script executor, on R6 and R15: FWM's (Flex's Wayback Machine's) 2008-2009 physics. It is the same script
--- the 2006 physics is made from; what makes it 2008-2009 is FWM's era number, TIME_PERIOD below (2009's). It runs as
--- it came, with nothing of ours added:
---   * jumping keeps the speed you had (the jump glide) and bounces you off walls you hit mid-jump; you can't turn in
---     the air
---   * the first landing after a jump or fall throws you back up (at three quarters of the speed you landed with, for
---     two frames), and after a landing you can't jump again for 0.65 s
---   * a hard landing (48 studs a second or faster) tilts you forward half the time (every time in 2006), more the
---     faster you were going
---   * the arms don't collide (they did in 2006), and a heavy tool makes you lean when you turn
+-- the 2006 physics is made from; what makes it 2008-2009 is FWM's era number, TIME_PERIOD below. It runs as it came,
+-- with nothing of ours added:
+--   * no bounce when you land (the 2006 physics throws you back up): the body goes into the ground a bit instead (the
+--     script's landing squash: about a third of a stud down, back up within about half a second; on the first landing
+--     after a jump)
+--   * after a landing you can't jump again for 0.65 s
+--   * you can't turn in the air, nor for a quarter of a second after landing
+--   * no jump glide, no forward tilt on hard landings, arms that don't collide (all three are 2006's); a heavy tool
+--     makes you lean when you turn
 -- Climbing is the 2013 climbing, the same as the Old physics' (Retro Studio's CustomClimbing; see CLIMBING below), in
 -- place of the script's own "fly bug" climbing (walking into any small part climbed it, so on a map made of small parts
 -- the climbing pose kept coming up): ladders, trusses and the like are climbed while the stick is held, up at 70% of
@@ -20,7 +20,10 @@
 --     has them and do nothing otherwise, and ExtraUtil is the game's own when it has it, else the same few helpers
 --     written out here
 --   * R15: the upper torso stands in for the Torso and the hands for the arms; the body keeps its own hip height (an
---     R15 body stands on it; the script's 0 or 2 is for R6 legs)
+--     R15 body stands on it; the script's 0 or 2 is for R6 legs), and the landing squash moves the body down on its
+--     root joint instead of through the hip height (a lower hip height makes Roblox's R15 animations run faster)
+--   * the landing bounce (only below 15) tells the 2007 animation (getgenv().BPLandingBounce) so it doesn't put the
+--     arms back up as if you were falling
 --   * the character's TorsoAttach.AngularTilt (part of the game's own characters, which steadies you after a hard
 --     landing) is used when it is there; an executor's character has none, so that step is skipped
 --   * math.huge where the decompile says "inf"
@@ -38,11 +41,11 @@ if not LocalPlayer then return end
 -- (Addtion-Scripts) FWM's era number. What each value turns on in this script: below 1 no jumping; below 11.5 the arms
 -- collide; up to 14 the jump glide, the landing bounce and tilt, and the old climbing (not used here: see CLIMBING);
 -- 12 to 14 the tilt only half the time; above 14 a turning delay after landing; 17 and up the landing squash.
--- FWM doesn't publish what number each year has. The 2006 physics this repo started from has 10 for 2006, which makes
--- 2009 13: FWM's 2008-2009 physics (12, 13 and 14 all do the same: no colliding arms, the tilt half the time). Set
--- getgenv().FWMTimePeriod to a number before running this to use another (the game's own TimePeriod in FWM reads it:
--- print(game.ReplicatedStorage.TimePeriod.Value)).
-local TIME_PERIOD = 13
+-- FWM doesn't publish what number each year has. 17 is FWM's 2008-2009 physics as the user knows it: no landing bounce,
+-- going into the ground a bit on landing instead (17 and up all do the same in this script). 1 to 11 is the 2006
+-- physics (the bounce, colliding arms, the tilt on every hard landing). Set getgenv().FWMTimePeriod to a number before
+-- running this to use another (inside FWM, print(game.ReplicatedStorage.TimePeriod.Value) shows the game's own).
+local TIME_PERIOD = 17
 do
 	local genv = (getgenv and getgenv()) or _G
 	if type(genv.FWMTimePeriod) == "number" then TIME_PERIOD = genv.FWMTimePeriod end
@@ -313,6 +316,7 @@ local function CharacterPhysics(script, R15)
 	end
 	local function v_u_44(p42) -- name: forceVelocity
 		-- upvalues: (copy) v_u_4, (copy) v_u_11
+		BPGenv.BPLandingBounce = os.clock() -- (Addtion-Scripts) for the 2007 animation: a bounce, not a fall
 		local v43 = v_u_4.Create("BodyVelocity", {
 			["MaxForce"] = Vector3.new(0, 9000000000, 0),
 			["Parent"] = v_u_11,
@@ -430,6 +434,22 @@ local function CharacterPhysics(script, R15)
 	local v_u_56 = 0
 	local v_u_57 = 0
 	local v_u_58 = 0
+	-- (Addtion-Scripts) R15: the landing squash on the root joint (LowerTorso.Root), from whatever anything else sets it
+	-- to, and put back when this stops
+	local v_rootJoint, v_rootBase, v_rootWritten = nil, nil, nil
+	local function v_squashR15(v_offset)
+		if not (v_rootJoint and v_rootJoint.Parent) then
+			local v_lower = v_u_9:FindFirstChild("LowerTorso")
+			v_rootJoint = v_lower and v_lower:FindFirstChild("Root")
+			v_rootBase, v_rootWritten = nil, nil
+			if not (v_rootJoint and v_rootJoint:IsA("Motor6D")) then v_rootJoint = nil return end
+		end
+		local v_current = v_rootJoint.C0
+		if v_rootWritten == nil or v_current ~= v_rootWritten then v_rootBase = v_current end
+		local v_want = v_rootBase + Vector3.new(0, v_offset, 0)
+		if v_current ~= v_want then v_rootJoint.C0 = v_want end
+		v_rootWritten = v_rootJoint.C0
+	end
 	local v_u_59 = 0
 	tick()
 	local v60 = game:GetService("RunService").RenderStepped
@@ -443,12 +463,16 @@ local function CharacterPhysics(script, R15)
 		-- (Addtion-Scripts) the script's fly-bug climbing was here (walking into any small part climbed it); the 2013
 		-- climbing climbs instead
 		-- (Addtion-Scripts) R15: its own hip height is the base, followed if something else (Roblox scaling the body)
-		-- changes it
-		if R15 and math.abs(v_u_10.HipHeight - (v_u_58 + v_u_15)) > 0.001 then
-			v_u_15 = v_u_10.HipHeight - v_u_58
+		-- changes it; the landing squash moves the body on its root joint instead (see v_squashR15)
+		if R15 and math.abs(v_u_10.HipHeight - v_u_15) > 0.001 then
+			v_u_15 = v_u_10.HipHeight
 		end
 		v_u_58 = v_u_4.Lerp(v_u_58, v_u_21, 0.5)
-		v_u_10.HipHeight = v_u_58 + v_u_15
+		if R15 then
+			v_squashR15(v_u_58)
+		else
+			v_u_10.HipHeight = v_u_58 + v_u_15
+		end
 		for _, v64 in pairs(v_u_9:GetChildren()) do
 			if not v64:GetAttribute("FWMClimb") then
 				continue
@@ -628,6 +652,9 @@ local function CharacterPhysics(script, R15)
 				if not R15 then v_u_10.HipHeight = 0 end
 			end)
 		end
+		if v_rootJoint and v_rootJoint.Parent and v_rootBase and v_rootJoint.C0 == v_rootWritten then
+			pcall(function() v_rootJoint.C0 = v_rootBase end)
+		end
 	end
 end
 
@@ -665,4 +692,4 @@ BPGenv.__Physics2007Cleanup = function()
 	if stopCurrent then pcall(stopCurrent) stopCurrent = nil end
 	BPGenv.__Physics2007Cleanup = nil
 end
-print("[2007 Physics] on: FWM's CharacterPhysics, its 2008-2009 physics (time period " .. tostring(TIME_PERIOD) .. ").")
+print("[2007 Physics] on: FWM's CharacterPhysics, its 2008-2009 physics (time period " .. tostring(TIME_PERIOD) .. ": no landing bounce, into the ground a bit instead).")
