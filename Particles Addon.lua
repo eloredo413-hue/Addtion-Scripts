@@ -2,7 +2,9 @@
 -- (Addtion-Scripts copy of the Particles addon gist. Added here:
 --   * "2008": fire and smoke are switched off (and kept off), and only sparkles are shown, as old sparkles: like
 --     Retro Studio's 2008 GraphicsPipeline (its OldifySparkle switches a Sparkles off and puts an old sparkle
---     emitter in its place, in the Sparkles' own colour). The old sparkle is the same one as the 2010 choice.
+--     emitter in its place, in the Sparkles' own colour). The 2008 sparkle is the old Roblox pixel star (the
+--     "Old Roblox Sparkle!" decal, 127459800207697) thrown out all round the part and drifting up, in mixed sizes,
+--     as in a 2008 recording of sparkles (ROBLOX - Sparkles, 04/02/2008).
 --   * the setup step is looked for a few times a second, not every frame, and no longer once it has been answered.)
 
 task.spawn(function()
@@ -29,6 +31,7 @@ task.spawn(function()
 local game = game
 
 local CLASSIC_SPARKLE_URL = "rbxthumb://type=Asset&id=74652191390576&w=420&h=420"
+local SPARKLE_2008_URL = "rbxthumb://type=Asset&id=127459800207697&w=420&h=420" -- the old Roblox pixel star
 local CLASSIC_SMOKE_URL = "rbxthumb://type=Asset&id=113441945769183&w=420&h=420"
 local FIRE_URL = "__FIRE_URL__"
 local MODE = "__MODE__" -- "2008": no fire or smoke, only (old) sparkles
@@ -95,6 +98,36 @@ local function setupSparkles(sparkles)
     sparkles.Enabled = false
 
     local function make()
+        if MODE == "2008" then
+            -- 2008: the old pixel star, all round the part (SpreadAngle 180) and drifting up into a plume, in mixed
+            -- sizes, glowing in the Sparkles' colour
+            local e = Instance.new("ParticleEmitter")
+            e.Name = "Legacy_2008_Sparkles"
+            e.Texture = SPARKLE_2008_URL
+            e.Rate = 25
+            e.Speed = NumberRange.new(2, 5)
+            e.Lifetime = NumberRange.new(0.8, 1.6)
+            e.Drag = 1
+            e.Acceleration = Vector3.new(0, 3, 0)
+            e.SpreadAngle = Vector2.new(180, 180)
+            e.RotSpeed = NumberRange.new(-60, 60)
+            e.Rotation = NumberRange.new(-180, 180)
+            e.Color = ColorSequence.new(sparkles.SparkleColor)
+            e.Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 0.1),
+                NumberSequenceKeypoint.new(0.6, 0.2),
+                NumberSequenceKeypoint.new(1, 1)
+            })
+            e.Size = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 0.4),
+                NumberSequenceKeypoint.new(0.25, 1.0, 0.5),
+                NumberSequenceKeypoint.new(1, 0.6)
+            })
+            e.LightEmission = 1
+            e.LightInfluence = 0
+            e.Orientation = Enum.ParticleOrientation.FacingCamera
+            return e
+        end
         local e = Instance.new("ParticleEmitter")
         e.Name = "Legacy_2010_Sparkles"
         e.Texture = CLASSIC_SPARKLE_URL
