@@ -186,6 +186,7 @@ do
 			local toolAnimTime = 0
 			local jumpMaxLimbVelocity = 0.75
 			local ARMS_SWING_TOP = 1.05 -- (the walking swing goes to 1; above this the arms are still coming down)
+			local BOUNCE_WINDOW = 0.35 -- seconds after a physics landing bounce in which a fall is the bounce's
 
 			local function moveJump()
 				RightShoulder.MaxVelocity = jumpMaxLimbVelocity
@@ -313,7 +314,13 @@ do
 			table.insert(conns, humanoid.Jumping:Connect(function() pose = "Jumping" end))
 			table.insert(conns, humanoid.Climbing:Connect(function() pose = "Climbing" end))
 			table.insert(conns, humanoid.GettingUp:Connect(function() pose = "GettingUp" end))
-			table.insert(conns, humanoid.FreeFalling:Connect(function() pose = "FreeFall" end))
+			table.insert(conns, humanoid.FreeFalling:Connect(function()
+				-- (Addtion-Scripts) thrown up by the physics' landing bounce (the 2006 physics): not a fall, so the arms
+				-- go on coming down instead of going back up (the bounce comes within BOUNCE_WINDOW of the landing)
+				local bounce = Env.BPLandingBounce
+				if type(bounce) == "number" and os.clock() - bounce < BOUNCE_WINDOW and pose ~= "Jumping" then return end
+				pose = "FreeFall"
+			end))
 			table.insert(conns, humanoid.FallingDown:Connect(function() pose = "FallingDown" end))
 			table.insert(conns, humanoid.Seated:Connect(function() pose = "Seated" end))
 			table.insert(conns, humanoid.PlatformStanding:Connect(function() pose = "PlatformStanding" end))
