@@ -359,10 +359,12 @@ local function playVictory()
 	end)
 end
 
+local badgeShownRecently -- (below)
 local function onBadge(message, userId, badgeId)
 	if not running or userId ~= LocalPlayer.UserId then return end
-	if recentBadges[tostring(message)] then return end -- (the modern notice was just shown here)
-	recentBadges[tostring(message)] = os.clock()
+	-- (the modern notice may have just shown it; only for a few seconds: before, a message once shown was never shown
+	-- again, so the same badge message stopped showing)
+	if badgeShownRecently(tostring(message)) then return end
 	if mode == "sound" then playVictory() return end
 	notify("Badge Awarded", tostring(message or "You earned a badge!"),
 		badgeId and ("rbxthumb://type=BadgeIcon&id=" .. tostring(badgeId) .. "&w=150&h=150") or nil)
@@ -374,7 +376,7 @@ end
 local nativeSeen = setmetatable({}, {__mode = "k"})
 local nativeHeld = {}
 
-local function badgeShownRecently(message)
+function badgeShownRecently(message)
 	local now = os.clock()
 	for key, at in pairs(recentBadges) do
 		if now - at > 6 then recentBadges[key] = nil end
@@ -427,12 +429,17 @@ local function noticeOf(title)
 	return item
 end
 
-local function holdHidden(inst)
+local function holdHidden(inst, onShown)
 	if nativeHeld[inst] then return end
 	nativeHeld[inst] = true
 	pcall(function() inst.Visible = false end)
 	track(inst:GetPropertyChangedSignal("Visible"):Connect(function()
-		if running and inst.Visible then pcall(function() inst.Visible = false end) end
+		if running and inst.Visible then
+			pcall(function() inst.Visible = false end)
+			-- (Roblox shows the same notice again for the next badge: that badge is shown here too. Before, it was only
+			-- hidden again, and from then on badges stopped showing)
+			if onShown then task.delay(0.1, function() pcall(onShown) end) end
+		end
 	end))
 end
 
@@ -453,19 +460,23 @@ local function inspectNative(label)
 	local item = noticeOf(label)
 	if not item then return end
 	-- the message is the longest other text in the notice ("award!" under the medal is not it); the picture its first image
-	local body, bodyLength, image = nil, 0, nil
-	for _, d in ipairs(item:GetDescendants()) do
-		if d:IsA("TextLabel") and d ~= label then
-			local t = tostring(d.Text)
-			if string.lower(t) ~= "award!" and #t > bodyLength then body, bodyLength = t, #t end
-		elseif d:IsA("ImageLabel") and not image and tostring(d.Image) ~= "" then
-			image = d.Image
+	local function showIt()
+		if not running or not item.Parent or not isBadgeTitle(label) then return end
+		local body, bodyLength, image = nil, 0, nil
+		for _, d in ipairs(item:GetDescendants()) do
+			if d:IsA("TextLabel") and d ~= label then
+				local t = tostring(d.Text)
+				if string.lower(t) ~= "award!" and #t > bodyLength then body, bodyLength = t, #t end
+			elseif d:IsA("ImageLabel") and not image and tostring(d.Image) ~= "" then
+				image = d.Image
+			end
 		end
+		if badgeShownRecently(body or "badge") then return end
+		if mode == "sound" then playVictory() return end
+		notify("Badge Awarded", body or "You earned a badge!", image)
 	end
-	if Settings.HideNativeBadges or mode ~= "classic" then holdHidden(item) end
-	if badgeShownRecently(body or "badge") then return end
-	if mode == "sound" then playVictory() return end
-	notify("Badge Awarded", body or "You earned a badge!", image)
+	if Settings.HideNativeBadges or mode ~= "classic" then holdHidden(item, showIt) end
+	showIt()
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -546,7 +557,10 @@ function api.Start(newMode)
 	local okModern = pcall(function()
 		track(CoreGui.DescendantAdded:Connect(function(obj)
 			if obj:IsA("TextLabel") then
-				task.delay(0.15, function() pcall(inspectNative, obj) end) -- (its text is set just after it is made)
+				-- (its text is set just after it is made, sometimes a while after: looked at a few times)
+				for _, wait in ipairs({ 0.15, 0.6, 1.5 }) do
+					task.delay(wait, function() pcall(inspectNative, obj) end)
+				end
 			end
 		end))
 	end)
