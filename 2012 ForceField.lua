@@ -1,19 +1,21 @@
 --========================================================
--- 2014 FORCEFIELD (Addtion-Scripts) — adds "2014" to Bloxy's "choose your forcefield" step
--- The 2014 client's forcefield, from its two particle systems (content/particles, the files the user gave):
+-- 2012 FORCEFIELD (Addtion-Scripts) — what Bloxy's "2012" forcefield choice shows
+-- The old client's particle forcefield (the 2012 and 2014 clients had the same two particle systems,
+-- content/particles, the files the user gave):
 --   * forceFieldBeam: light beams rising from a ring around your feet. A ring 2 to 2.5 studs out, 2 studs under the
 --     middle of the body; 20 a second going straight up at 2 to 5 studs a second, each one half a stud wide and 2
 --     tall, standing upright; it fades in over its first second and out over its second (2 s each).
 --   * forceFieldRadial: big soft flares at the middle of the body. 2 a second, 5 studs and growing 6 a second, turned
 --     any way and spinning (4 to 100 degrees a second), fading out over their 2 seconds.
--- Both glow (added light, "PE/lensflare"). The glow picture is this repo's assets/Roblox-loading-glow.png (a soft
--- white glow like the client's own glow.png, which no archive has); Roblox's sparkle texture if it can't be had.
--- Roblox's own forcefield is hidden while it shows. On every character with a forcefield (on your screen).
+-- Both glow (added light). The particle is the sparkle the user gave (this repo's assets/sparkle_1.png); Roblox's
+-- sparkle texture if it can't be had. Roblox's own forcefield is hidden while it shows.
 --
--- "2014" is a fourth button next to 2008 / 2012 / normal: picking it moves the setup on exactly as "normal" does (so no
--- Bloxy forcefield script runs) while this one starts. Picking one of Bloxy's own turns it off. The pick is saved
--- (BloxyForcefield2014Choice.json), so with Bloxy's "skip setup" box ticked it starts by itself.
--- By hand: getgenv().Forcefield2014.Start() / .Stop() / .IsRunning()
+-- Picking "2012" on Bloxy's forcefield step (or having it saved) starts it: the FF Fix Hook hands Bloxy's 2012
+-- forcefield code over to this (getgenv().Forcefield2012.Start), and if Bloxy's own blue bubble shows anyway
+-- (workspace.FFCloneHolder) it is taken away and this starts in its place. Picking 2008 or normal stops it.
+-- Your character only; everyone's with Hammer stuff 2's "all players" (All Players.lua calls SetEveryone).
+-- (There is no "2014" choice any more.)
+-- By hand: getgenv().Forcefield2012.Start() / .Stop() / .IsRunning() / .SetEveryone(true or false)
 --========================================================
 
 do
@@ -23,18 +25,19 @@ do
 	local CoreGui = game:GetService("CoreGui")
 
 	local Env = (getgenv and getgenv()) or _G
+	if Env.Forcefield2012Cleanup then pcall(Env.Forcefield2012Cleanup) end
+	-- (the 2014 one this used to be: off, if a session still has it)
 	if Env.Forcefield2014Cleanup then pcall(Env.Forcefield2014Cleanup) end
 
-	local SAVE_FILE = "BloxyForcefield2014Choice.json"
 	local BLOXY_CONFIG = "BloxyParadoxConfig.json"
 	local BLOXY_GUI = "BloxyParadoxProject"
 	local STEP_TEXT = "choose your forcefield"
-	local BUTTON_NAME = "Forcefield2014Button"
-	local EFFECT_NAME = "Forcefield2014"
-	local GLOW_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/assets/Roblox-loading-glow.png"
-	local GLOW_FILE = "AddtionAssets/Roblox-loading-glow.png"
+	local EFFECT_NAME = "Forcefield2012Particles"
+	local BLOXY_HOLDER = "FFCloneHolder" -- (Bloxy's 2012 forcefield, the blue bubble, puts its model in this)
+	local GLOW_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/assets/sparkle_1.png"
+	local GLOW_FILE = "AddtionAssets/sparkle_1.png"
 	local GLOW_FALLBACK = "rbxasset://textures/particles/sparkles_main.dds"
-	local COLOR = Color3.fromRGB(200, 225, 255) -- (a slight blue: the glow picture itself is white)
+	local COLOR = Color3.fromRGB(200, 225, 255) -- (a slight blue: the sparkle itself is white)
 
 	-- the particle files' numbers
 	local BEAM = {
@@ -44,7 +47,7 @@ do
 	}
 	local RADIAL = { rate = 2, lifetime = 2, size = 5, grow = 6, spinMin = 4, spinMax = 100 }
 
-	local alive, running = true, false
+	local alive, running, everyone = true, false, false
 	local connections = {}
 	local engineConns = {}
 	local effects = {} -- character -> { parts = {...}, ff = ForceField, conns = {...} }
@@ -64,7 +67,7 @@ do
 	end
 
 	------------------------------------------------------------
-	-- the glow picture (this repo's, cached on the executor's disk)
+	-- the sparkle picture (this repo's, cached on the executor's disk)
 	------------------------------------------------------------
 	task.spawn(function()
 		local getAsset = (type(getcustomasset) == "function" and getcustomasset)
@@ -189,7 +192,7 @@ do
 		table.insert(entry.emitters, radial)
 
 		connect(entry.conns, RunService.Heartbeat, function()
-			-- (the forcefield gone, however it went: the 2014 one goes too)
+			-- (the forcefield gone, however it went: this one goes too)
 			if ff.Parent ~= character then removeEffect(character) return end
 			if not ring.Parent then return end
 			local angle = math.random() * math.pi * 2
@@ -199,6 +202,10 @@ do
 		connect(entry.conns, ff.AncestryChanged, function(_, parent)
 			if parent ~= character then removeEffect(character) end
 		end)
+	end
+
+	local function wanted(player)
+		return player == Players.LocalPlayer or everyone
 	end
 
 	local function watchCharacter(character, conns)
@@ -216,7 +223,10 @@ do
 		end)
 	end
 
+	local watchedPlayers = {}
 	local function watchPlayer(player)
+		if watchedPlayers[player] or not wanted(player) then return end
+		watchedPlayers[player] = true
 		if player.Character then watchCharacter(player.Character, engineConns) end
 		connect(engineConns, player.CharacterAdded, function(character)
 			watchCharacter(character, engineConns)
@@ -230,77 +240,71 @@ do
 		running = true
 		for _, player in ipairs(Players:GetPlayers()) do pcall(watchPlayer, player) end
 		connect(engineConns, Players.PlayerAdded, function(player) pcall(watchPlayer, player) end)
-		print("[2014 ForceField] On: the 2014 forcefield (beams and flares) on every character with a forcefield.")
+		print("[2012 ForceField] On: the particle forcefield (beams and sparkles) on "
+			.. (everyone and "every character" or "your character") .. " with a forcefield.")
 	end
 	function engine.Stop()
 		if not running then return end
 		running = false
 		disconnectAll(engineConns)
+		table.clear(watchedPlayers)
 		local list = {}
 		for character in pairs(effects) do table.insert(list, character) end
 		for _, character in ipairs(list) do removeEffect(character) end
-		print("[2014 ForceField] Off.")
+		print("[2012 ForceField] Off.")
+	end
+	-- everyone's forcefield too (Hammer stuff 2's "all players"), or only yours
+	function engine.SetEveryone(on)
+		on = on == true
+		if on == everyone then return end
+		everyone = on
+		if running then
+			-- (started again, so the characters it draws on are picked afresh)
+			running = false
+			disconnectAll(engineConns)
+			table.clear(watchedPlayers)
+			local list = {}
+			for character in pairs(effects) do table.insert(list, character) end
+			for _, character in ipairs(list) do removeEffect(character) end
+			engine.Start()
+		end
 	end
 
-	Env.Forcefield2014 = { Start = engine.Start, Stop = engine.Stop, IsRunning = engine.IsRunning }
-	Env.Forcefield2014Cleanup = function()
+	Env.Forcefield2012 = {
+		Start = engine.Start, Stop = engine.Stop, IsRunning = engine.IsRunning, SetEveryone = engine.SetEveryone,
+	}
+	Env.Forcefield2012Cleanup = function()
 		alive = false
 		disconnectAll(connections)
 		table.clear(watched)
 		engine.Stop()
-		Env.Forcefield2014 = nil
+		Env.Forcefield2012 = nil
 	end
 
 	------------------------------------------------------------
-	-- SAVE / LOAD
+	-- BLOXY'S OWN 2012 FORCEFIELD (the blue bubble): taken away, this one in its place
+	-- (when the FF Fix Hook couldn't hand its code over: its model is put in workspace.FFCloneHolder)
 	------------------------------------------------------------
-	local function readJson(file)
-		if not (readfile and isfile) then return nil end
-		local ok, data = pcall(function()
-			if isfile(file) then return HttpService:JSONDecode(readfile(file)) end
+	local function takeAway(model)
+		if not (alive and model:IsA("Model")) then return end
+		task.defer(function()
+			if model.Parent then pcall(function() model:Destroy() end) end
 		end)
-		return ok and type(data) == "table" and data or nil
+		engine.Start()
 	end
-	local function loadChoice()
-		local data = readJson(SAVE_FILE)
-		return data ~= nil and data.Forcefield2014 == true
+	local function watchHolder(folder)
+		if not (alive and folder:IsA("Folder") and folder.Name == BLOXY_HOLDER) then return end
+		for _, model in ipairs(folder:GetChildren()) do takeAway(model) end
+		connect(connections, folder.ChildAdded, takeAway)
+		-- (Bloxy's 2012 forcefield was picked: this one shows when you get a forcefield)
+		engine.Start()
 	end
-	local function saveChoice(on)
-		if not writefile then return end
-		pcall(function() writefile(SAVE_FILE, HttpService:JSONEncode({ Forcefield2014 = on })) end)
-	end
-	local function bloxySkipOn()
-		local data = readJson(BLOXY_CONFIG)
-		return data ~= nil and data.isSkipped == true
-	end
+	for _, child in ipairs(workspace:GetChildren()) do watchHolder(child) end
+	connect(connections, workspace.ChildAdded, watchHolder)
 
 	------------------------------------------------------------
-	-- THE "2014" BUTTON ON BLOXY'S FORCEFIELD STEP
+	-- BLOXY'S FORCEFIELD STEP: 2008 or normal picked, this one stops ("2012" starts it through the hook)
 	------------------------------------------------------------
-	local function press(btn)
-		if not btn or not btn.Parent then return false end
-		if firesignal and pcall(firesignal, btn.MouseButton1Click) then return true end
-		if getconnections then
-			local ok, conns = pcall(getconnections, btn.MouseButton1Click)
-			if ok and type(conns) == "table" and #conns > 0 then
-				local fired = false
-				for _, conn in ipairs(conns) do
-					local fn = conn.Function
-					if fn then
-						task.spawn(pcall, fn)
-						fired = true
-					elseif conn.Fire then
-						if pcall(function() conn:Fire() end) then fired = true end
-					end
-				end
-				if fired then return true end
-			end
-		end
-		return false
-	end
-
-	local pressing = false
-
 	local function findStepLabel(frame)
 		for _, d in ipairs(frame:GetChildren()) do
 			if d:IsA("TextLabel") and string.find(string.lower(d.Text or ""), STEP_TEXT, 1, true) then return d end
@@ -309,84 +313,21 @@ do
 	end
 	local function buttonWithText(frame, text)
 		for _, d in ipairs(frame:GetChildren()) do
-			if d:IsA("TextButton") and d.Text == text and d.Name ~= BUTTON_NAME then return d end
+			if d:IsA("TextButton") and d.Text == text then return d end
 		end
 		return nil
 	end
 
-	local function makeButton(frame, reference)
-		local btn = Instance.new("TextButton")
-		btn.Name = BUTTON_NAME
-		btn.Size = reference.Size
-		btn.Position = reference.Position
-		btn.Text = "2014"
-		btn.Font = Enum.Font.Legacy
-		btn.TextScaled = true
-		btn.AutoButtonColor = false
-		btn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-		btn.BorderColor3 = Color3.fromRGB(0, 0, 0)
-		btn.TextColor3 = Color3.fromRGB(0, 0, 0)
-		btn.ZIndex = reference.ZIndex
-		btn.Parent = frame
-		local constraint = Instance.new("UITextSizeConstraint")
-		constraint.MaxTextSize = 16
-		constraint.MinTextSize = 8
-		constraint.Parent = btn
-		btn.MouseEnter:Connect(function()
-			btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-			btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-			btn.BorderColor3 = Color3.fromRGB(255, 0, 0)
-		end)
-		btn.MouseLeave:Connect(function()
-			btn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-			btn.TextColor3 = Color3.fromRGB(0, 0, 0)
-			btn.BorderColor3 = Color3.fromRGB(0, 0, 0)
-		end)
-		return btn
-	end
-
-	local function addButton(frame)
-		if frame:FindFirstChild(BUTTON_NAME) then return true end
+	local function watchStep(frame)
 		if not findStepLabel(frame) then return false end
 		local b2008 = buttonWithText(frame, "2008(r6 only)")
-		local b2012 = buttonWithText(frame, "2012")
 		local bNormal = buttonWithText(frame, "normal")
-		if not (b2008 and b2012 and bNormal) then return false end
-
-		local btn = makeButton(frame, b2012)
-		-- four buttons in the box that held three: 2008, 2012, 2014, normal
-		local order = { b2008, b2012, btn, bNormal }
-		local margin, gap = 10, 10
-		local width = math.floor((frame.Size.X.Offset - margin * 2 - gap * (#order - 1)) / #order)
-		local y = b2012.Position.Y.Offset
-		for i, b in ipairs(order) do
-			b.Size = UDim2.new(0, width, 0, b.Size.Y.Offset)
-			b.Position = UDim2.new(0, margin + (i - 1) * (width + gap), 0, y)
-		end
-
-		-- one of Bloxy's own: the 2014 forcefield goes off
-		for _, other in ipairs({ b2008, b2012, bNormal }) do
-			other.MouseButton1Click:Connect(function()
-				if pressing or not alive then return end
-				saveChoice(false)
-				engine.Stop()
+		if not (b2008 and bNormal) then return false end
+		for _, other in ipairs({ b2008, bNormal }) do
+			connect(connections, other.MouseButton1Click, function()
+				if alive then engine.Stop() end
 			end)
 		end
-
-		local picked = false
-		btn.MouseButton1Click:Connect(function()
-			if picked or not alive then return end
-			picked = true
-			saveChoice(true)
-			if not bloxySkipOn() then engine.Start() end
-			pressing = true
-			local pressed = press(bNormal) -- (moves the setup on as "normal": no Bloxy forcefield)
-			task.delay(0.25, function() pressing = false end)
-			if not pressed then
-				warn("[2014 ForceField] Couldn't move the setup on: press normal to continue (2014 is picked).")
-				picked = false
-			end
-		end)
 		return true
 	end
 
@@ -396,7 +337,7 @@ do
 		task.spawn(function()
 			for _ = 1, 30 do
 				if not alive or not frame.Parent then return end
-				if addButton(frame) then return end
+				if watchStep(frame) then return end
 				task.wait()
 			end
 		end)
@@ -410,8 +351,6 @@ do
 		end)
 		for _, frame in ipairs(sg:GetChildren()) do checkFrame(frame) end
 		connect(connections, sg.ChildAdded, checkFrame)
-		-- "skip setup" ticked: Bloxy applies its saved choices, this the saved 2014 forcefield
-		if bloxySkipOn() and loadChoice() then engine.Start() end
 	end
 
 	task.spawn(function()
@@ -439,5 +378,12 @@ do
 		end
 	end)
 
-	print("[2014 ForceField] Installed. Saved choice: " .. (loadChoice() and "2014" or "not 2014"))
+	local saved = nil
+	pcall(function()
+		if readfile and isfile and isfile(BLOXY_CONFIG) then
+			local data = HttpService:JSONDecode(readfile(BLOXY_CONFIG))
+			saved = type(data) == "table" and type(data.Choices) == "table" and data.Choices.Forcefield or nil
+		end
+	end)
+	print("[2012 ForceField] Installed. Bloxy's saved forcefield: " .. tostring(saved or "none"))
 end

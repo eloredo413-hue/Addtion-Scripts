@@ -157,6 +157,9 @@ task.spawn(function()
 	local isLegacyMaterialsEnabled =
 		config.isLegacyMaterialsEnabled == true
 
+	local is2016MaterialsEnabled =
+		config.is2016MaterialsEnabled == true
+
 	local isNoShadowsEnabled =
 		config.isNoShadowsEnabled == true
 
@@ -1750,6 +1753,223 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
+	-- 2016 MATERIALS
+	-- The material pictures Roblox used before its 2022 materials (its "pre-2022" texture packs, as
+	-- github.com/MaximumADHD/Roblox-Materials keeps them: PartsPre2022 and TerrainPre2022), put over each material
+	-- with MaterialVariants: colour, bumps (normal), roughness and metalness. They are Roblox's own pictures
+	-- (rbxassetid), so nothing is downloaded. Terrain gets its own top / side / bottom pictures (TerrainDetail).
+	-- A part's texture repeats every 4 studs (every 8 for the packs made to tile twice as big: brick, cobblestone,
+	-- grass, marble and wood planks, whose planks come out a stud wide); terrain's every 8.
+	-- One at a time with 2009 materials (both put pictures over the same materials).
+	------------------------------------------------------------
+	-- [material] = { part = { color, normal, roughness, metalness }, studs, terrain = { All / Top / Side / Bottom } }
+	local PACK_2016 = {
+		Asphalt = { terrain = { Top = { 7547349715, 7547350415, 7551984908, nil }, Side = { 7551989667, 7547322693, 7547350597, nil } } },
+		Basalt = { terrain = { All = { 7551975939, 7547348152, 7551977581, nil } } },
+		Brick = { part = { 7546648254, 7546649654, 7546650017, nil }, studs = 8, terrain = { All = { 7547631333, 7547633037, 7546657679, nil } } },
+		Cobblestone = { part = { 7546651802, 7546652689, 7546652892, nil }, studs = 8, terrain = { Top = { 7551992689, 7547351364, 7547351553, nil }, Side = { 7547648825, 7547352096, 7547649793, nil } } },
+		Concrete = { part = { 7546653328, 7546653707, 7546653868, nil }, studs = 4, terrain = { Top = { 7547196561, 7547337919, 7547197958, nil }, Side = { 7547628584, 7547199386, 7547310473, nil } } },
+		CorrodedMetal = { part = { 7547183598, 7547181182, 7547184588, 7547184321 }, studs = 4 },
+		CrackedLava = { terrain = { All = { 7551980711, 7547320674, 7551982079, nil } } },
+		DiamondPlate = { part = { 7546654401, 7546654536, 7547162137, 7547162002 }, studs = 4 },
+		Fabric = { part = { 7547100606, 7547100915, 7547101072, nil }, studs = 4 },
+		Foil = { part = { 7546644642, 7546644903, 7546644963, 7546644642 }, studs = 4 },
+		Glacier = { terrain = { Top = { 7547646888, 7551930815, 7551932698, nil }, Side = { 7551937696, 7551940030, 7551941712, nil }, Bottom = { 7551946144, 7551948150, 7551932698, nil } } },
+		Glass = { part = { 7547304577, 7547304785, 7547304892, nil }, studs = 4 },
+		Granite = { part = { 7547164400, 7546654648, 7547164660, nil }, studs = 4 },
+		Grass = { part = { 7547167347, 7547168653, 7547169207, nil }, studs = 8, terrain = { Top = { 7547307376, 7547336606, 7547308019, nil }, Side = { 7547621556, 7547191705, 7547622691, nil }, Bottom = { 7551927733, 7547193357, 7547625590, nil } } },
+		Ground = { terrain = { All = { 7547348623, 7547348887, 7547349016, nil } } },
+		Ice = { part = { 7546644642, 7547171198, 7547171276, nil }, studs = 4, terrain = { Top = { 7547352634, 7547651999, 7547652934, nil }, Side = { 7547656350, 7547657495, 7546663210, nil } } },
+		LeafyGrass = { terrain = { Top = { 7546663659, 7546664288, 7546664614, nil }, Side = { 7546665232, 7546666003, 7546666120, nil } } },
+		Limestone = { terrain = { Top = { 7547206319, 7547670319, 7547671387, nil }, Side = { 7547206579, 7547674533, 7547206799, nil } } },
+		Marble = { part = { 7547174345, 7547176060, 7547177213, nil }, studs = 8 },
+		Metal = { part = { 7547178395, 7547287997, 7547179082, 7547288112 }, studs = 4 },
+		Mud = { terrain = { All = { 7551972606, 7552022188, 7552023936, nil } } },
+		Pavement = { terrain = { Top = { 7547678151, 7547207799, 7547207869, nil }, Side = { 7547680765, 7547208846, 7547682025, nil } } },
+		Pebble = { part = { 7547291174, 7546645052, 7547291306, nil }, studs = 4 },
+		Rock = { terrain = { All = { 7546659890, 7546660701, 7547643804, nil } } },
+		Salt = { terrain = { All = { 7546666647, 7547660879, 7547661939, nil } } },
+		Sand = { part = { 7547294684, 7547294810, 7547295087, nil }, studs = 4, terrain = { Top = { 7547635114, 7547311493, 7546658153, nil }, Side = { 7546658461, 7546659003, 7546659187, nil } } },
+		Sandstone = { terrain = { Top = { 7547202858, 7547204511, 7551954003, nil }, Side = { 7551958805, 7551960790, 7551962377, nil }, Bottom = { 7551967204, 7551968869, 7551970693, nil } } },
+		Slate = { part = { 7547297050, 7547297808, 7547298051, nil }, studs = 4, terrain = { All = { 7547309616, 7546656859, 7547626537, nil } } },
+		Snow = { terrain = { All = { 7547315875, 7547201338, 7547316776, nil } } },
+		Wood = { part = { 7547190453, 7547190548, 7547303147, 7547190619 }, studs = 4 },
+		WoodPlanks = { part = { 7547301709, 7547188159, 7547332869, 7547188891 }, studs = 8, terrain = { All = { 7547637836, 7547639230, 7547640511, nil } } },
+	}
+	local TERRAIN_STUDS_2016 = 8
+
+	local m16 = {
+		active = false,
+		variants = {},
+		overrides = {}
+	}
+
+	local function asset2016(id)
+		return id and ("rbxassetid://" .. tostring(id)) or ""
+	end
+
+	local function setMaps2016(target, maps)
+		target.ColorMap = asset2016(maps[1])
+		target.NormalMap = asset2016(maps[2])
+		target.RoughnessMap = asset2016(maps[3])
+		target.MetalnessMap = asset2016(maps[4])
+	end
+
+	local function apply2016()
+
+		if m16.active then
+			return
+		end
+
+		m16.active = true
+
+		local count = 0
+
+		for name, entry in pairs(PACK_2016) do
+
+			local material = nil
+
+			pcall(function()
+				material = Enum.Material[name]
+			end)
+
+			if material then
+
+				local variantName = "BP2016_" .. name
+
+				local variant =
+					MaterialService:FindFirstChild(variantName)
+
+				if variant then
+					pcall(function() variant:Destroy() end)
+				end
+
+				variant = Instance.new("MaterialVariant")
+				variant.Name = variantName
+
+				local made =
+					pcall(function()
+						variant.BaseMaterial = material
+
+						local own = entry.part
+							or entry.terrain.All
+							or entry.terrain.Top
+
+						setMaps2016(variant, own)
+
+						variant.StudsPerTile =
+							entry.part and entry.studs
+							or TERRAIN_STUDS_2016
+					end)
+
+				if made then
+
+					-- terrain: its own pictures for the top, the sides and the bottom
+					if entry.terrain then
+						for _, faceName in ipairs({ "Top", "Side", "Bottom" }) do
+							local maps = entry.terrain[faceName]
+								or entry.terrain.All
+								or (faceName == "Bottom" and entry.terrain.Side)
+								or nil
+
+							if maps then
+								pcall(function()
+									local detail = Instance.new("TerrainDetail")
+									detail.Name = "BP2016_" .. faceName
+									detail.Face = Enum.TerrainFace[faceName]
+									setMaps2016(detail, maps)
+									detail.StudsPerTile = TERRAIN_STUDS_2016
+									detail.Parent = variant
+								end)
+							end
+						end
+					end
+
+					variant.Parent = MaterialService
+
+					local previous = nil
+
+					pcall(function()
+						previous =
+							MaterialService:
+							GetBaseMaterialOverride(
+								material
+							)
+					end)
+
+					m16.overrides[name] = previous or false
+
+					local success =
+						pcall(function()
+							MaterialService:
+								SetBaseMaterialOverride(
+									material,
+									variant.Name
+								)
+						end)
+
+					table.insert(m16.variants, variant)
+
+					if success then
+						count = count + 1
+					end
+
+				else
+					pcall(function() variant:Destroy() end)
+				end
+			end
+		end
+
+		print(
+			"[Bloxy Paradox] 2016 Materials ON (" .. count .. " materials)."
+		)
+	end
+
+	local function restore2016()
+
+		if not m16.active then
+			return
+		end
+
+		m16.active = false
+
+		for name, previous in pairs(m16.overrides) do
+
+			local material = nil
+
+			pcall(function()
+				material = Enum.Material[name]
+			end)
+
+			if material then
+				pcall(function()
+					MaterialService:
+						SetBaseMaterialOverride(
+							material,
+							(previous and previous ~= "") and previous or ""
+						)
+				end)
+			end
+		end
+
+		m16.overrides = {}
+
+		for _, variant in ipairs(m16.variants) do
+			if variant and variant.Parent then
+				pcall(function()
+					variant:Destroy()
+				end)
+			end
+		end
+
+		m16.variants = {}
+
+		print(
+			"[Bloxy Paradox] 2016 Materials restored."
+		)
+	end
+
+	------------------------------------------------------------
 	-- NO SHADOWS
 	------------------------------------------------------------
 	local shState = {
@@ -2249,7 +2469,7 @@ task.spawn(function()
 			"MaterialsDropdown",
 			"materials",
 			240,
-			4
+			5
 		)
 
 	local spCB, spHelp =
@@ -2279,11 +2499,20 @@ task.spawn(function()
 			materialsOptions
 		)
 
+	local m16CB, m16Help =
+		makeToggle(
+			"Materials2016",
+			"2016 materials",
+			90,
+			is2016MaterialsEnabled,
+			materialsOptions
+		)
+
 	local lmCB, lmHelp =
 		makeToggle(
 			"LegacyMaterials",
 			"legacy materials",
-			90,
+			120,
 			isLegacyMaterialsEnabled,
 			materialsOptions
 		)
@@ -2762,7 +2991,18 @@ task.spawn(function()
 				is2009MaterialsEnabled = true
 				m09CB.Text = "✓"
 
+				local was2016 = is2016MaterialsEnabled
+
+				if was2016 then
+					is2016MaterialsEnabled = false
+					m16CB.Text = ""
+					config.is2016MaterialsEnabled = false
+				end
+
 				task.spawn(function()
+					if was2016 then
+						pcall(restore2016)
+					end
 					pcall(apply2009)
 				end)
 
@@ -2778,6 +3018,51 @@ task.spawn(function()
 
 			config.is2009MaterialsEnabled =
 				is2009MaterialsEnabled
+
+			saveConfig()
+		end
+	)
+
+	------------------------------------------------------------
+	-- 2016 MATERIAL BUTTON (turns 2009 materials off)
+	------------------------------------------------------------
+	m16CB.MouseButton1Click:Connect(
+		function()
+
+			playClick()
+
+			if not is2016MaterialsEnabled then
+
+				is2016MaterialsEnabled = true
+				m16CB.Text = "✓"
+
+				local was2009 = is2009MaterialsEnabled
+
+				if was2009 then
+					is2009MaterialsEnabled = false
+					m09CB.Text = ""
+					config.is2009MaterialsEnabled = false
+				end
+
+				task.spawn(function()
+					if was2009 then
+						pcall(restore2009)
+					end
+					pcall(apply2016)
+				end)
+
+			else
+
+				is2016MaterialsEnabled = false
+				m16CB.Text = ""
+
+				task.spawn(function()
+					pcall(restore2016)
+				end)
+			end
+
+			config.is2016MaterialsEnabled =
+				is2016MaterialsEnabled
 
 			saveConfig()
 		end
@@ -2959,6 +3244,13 @@ task.spawn(function()
 			table.insert(restores, restore2009)
 		end
 
+		if is2016MaterialsEnabled then
+			is2016MaterialsEnabled = false
+			m16CB.Text = ""
+			config.is2016MaterialsEnabled = false
+			table.insert(restores, restore2016)
+		end
+
 		if isLegacyMaterialsEnabled then
 			isLegacyMaterialsEnabled = false
 			lmCB.Text = ""
@@ -3085,7 +3377,7 @@ task.spawn(function()
 		function()
 			playClick()
 			showHelp(
-				"Press the arrow to open the material options: smooth plastic, plastic, 2009 materials and legacy materials."
+				"Press the arrow to open the material options: smooth plastic, plastic, 2009 materials, 2016 materials and legacy materials."
 			)
 		end
 	)
@@ -3113,6 +3405,15 @@ task.spawn(function()
 			playClick()
 			showHelp(
 				"Applies the available 2009-style material textures through MaterialService."
+			)
+		end
+	)
+
+	m16Help.MouseButton1Click:Connect(
+		function()
+			playClick()
+			showHelp(
+				"The material textures Roblox used before 2022 (bricks, wood, grass, metal...), on parts and terrain. Turns off 2009 materials."
 			)
 		end
 	)
@@ -3158,7 +3459,9 @@ task.spawn(function()
 			pcall(applyPlastic)
 		end
 
-		if is2009MaterialsEnabled then
+		if is2016MaterialsEnabled then
+			pcall(apply2016)
+		elseif is2009MaterialsEnabled then
 			pcall(apply2009)
 		end
 
@@ -3182,6 +3485,7 @@ task.spawn(function()
 	print("[Bloxy Paradox] Smooth Plastic:", isSmoothPlasticEnabled)
 	print("[Bloxy Paradox] Plastic:", isPlasticEnabled)
 	print("[Bloxy Paradox] 2009 Materials:", is2009MaterialsEnabled)
+	print("[Bloxy Paradox] 2016 Materials:", is2016MaterialsEnabled)
 	print("[Bloxy Paradox] Legacy Materials:", isLegacyMaterialsEnabled)
 	print("[Bloxy Paradox] No Shadows:", isNoShadowsEnabled)
 	print("==================================================")

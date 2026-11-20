@@ -840,6 +840,9 @@ end
 		else
 			base = game:HttpGet("https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2014%20Gui.lua")
 		end
+		-- (the base's dark 2016 loading screen never shows: the early 2015 GUI gets the 2014 one, Old Loading Screen.lua)
+		local _, e = string.find(base, "Name = 'BlackFrame',", 1, true)
+		if e then base = string.sub(base, 1, e) .. " Visible = false," .. string.sub(base, e + 1) end
 	end
 	local a = string.find(base, "local function createClassicBubble(head, messageText)", 1, true)
 	local b = string.find(base, "\nlocal function handleBubbleSpawn(player, text)", 1, true)

@@ -244,13 +244,22 @@ do
     -- (2014 Gui.lua) when pastebin doesn't answer
     local PASTEBIN_2014 = "https://pastebin.com/raw/h5AEhK7N"
     local REPO_2014 = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2014%20Gui.lua"
+    -- The 2014 GUI starts with Roblox's dark 2016 loading screen. Its BlackFrame (the whole screen) is never shown: the
+    -- 2014 GUI and the early 2015 GUI get the 2014 one instead (Old Loading Screen.lua). Its ErrorFrame (a disconnect
+    -- message) still works.
+    function helpers.Without2016Loading(src)
+        local _, b = string.find(src, "Name = 'BlackFrame',", 1, true)
+        if not b then return src end
+        return string.sub(src, 1, b) .. " Visible = false, -- (Addtion-Scripts: the 2014 loading screen shows instead)"
+            .. string.sub(src, b + 1)
+    end
     function helpers.Get2014()
         for _, url in ipairs({ PASTEBIN_2014, REPO_2014 }) do
             for _ = 1, 2 do
                 local ok, src = pcall(function() return game:HttpGet(url) end)
                 if ok and type(src) == "string" and #src > 5000 and string.find(src, "LegacySettings", 1, true) then
                     if url == REPO_2014 then print("[Loader] 2014 GUI: pastebin didn't answer, this repo's copy is used") end
-                    return src
+                    return helpers.Without2016Loading(src)
                 end
                 task.wait(0.5)
             end
@@ -506,10 +515,15 @@ local URL_EXPLOSION_GIST    = "https://gist.githubusercontent.com/eloredo413-hue
 local URL_PARTICLES         = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Particles%20Addon.lua"
 local URL_PARTICLES_GIST    = "https://gist.githubusercontent.com/eloredo413-hue/09b2609e8aff413a178a16ac8477b612/raw/20961a4f1364c9805b1e93ab34f14abc4cc3998f/Particles%2520addon"
 
+-- FF Fix Hook (FF Fix Hook.lua in this repo): Bloxy's 2012 forcefield code is handed to the particle forcefield
+-- (2012 ForceField.lua). The gist (it loads the fixed blue bubble) is the fallback.
+local URL_FF_HOOK           = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/FF%20Fix%20Hook.lua"
+local URL_FF_HOOK_GIST      = "https://gist.githubusercontent.com/eloredo413-hue/9e58eeb1d7f18ec52d456b9222281a79/raw/366f8a1443c39542db0e9e282333d45d97411cb8/FF%2520Fix%2520Hook"
+
 local mainAddons = {
     -- FF Fix Hook goes first: it hooks loadstring itself, so it has to see the real one
     -- before the other hooks below wrap it.
-    "https://gist.githubusercontent.com/eloredo413-hue/9e58eeb1d7f18ec52d456b9222281a79/raw/366f8a1443c39542db0e9e282333d45d97411cb8/FF%2520Fix%2520Hook",
+    URL_FF_HOOK,
     "https://gist.githubusercontent.com/eloredo413-hue/08f4496797d708f9174e4ed650107a30/raw/b03820737fac23bf593ce8187ab1a48be19a443b/Sounds%2520Additions%2520fixes",
     "https://gist.githubusercontent.com/eloredo413-hue/ab9f65a116c2d16f989ec72cf254a72f/raw/d6cc1e5239b675e639556af59509192bfdeca1f3/Quick%2520Texture%2520load%2520studs",
     URL_HAMMER_1,
@@ -529,8 +543,8 @@ local URL_SAFECHAT_HOOK     = "https://gist.githubusercontent.com/eloredo413-hue
 local URL_BACKPACK_2013     = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2013%20Backpack.lua"
 -- adds "2007" (the old avatar's animation) to Bloxy's "Choose your animations" step (2007 Animation.lua in this repo)
 local URL_ANIM_2007         = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2007%20Animation.lua"
--- the 2014 forcefield, a "2014" button on Bloxy's forcefield step (2014 ForceField.lua)
-local URL_FF_2014           = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2014%20ForceField.lua"
+-- Bloxy's "2012" forcefield is the old client's particle forcefield (2012 ForceField.lua; the FF Fix Hook starts it)
+local URL_FF_2012           = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2012%20ForceField.lua"
 -- adds "Modern R6" (the modern R6 animations on an R15 character) to the R15 animations step (Modern R6 Animation.lua)
 local URL_ANIM_MODERN_R6    = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Modern%20R6%20Animation.lua"
 -- "Do you want better emotes?" Yes loads the 7yd7 emote script from its gist (Emotes Hook.lua in this repo)
@@ -746,6 +760,9 @@ for i, url in ipairs(mainAddons) do
     if why == "download" and url == URL_WIZARD_SMOOTH then
         -- (not v9 any more: it hooks __namecall, which gets in the way of a lot of games)
         warn("[Loader] Wizard smooth couldn't be downloaded: the setup works as Bloxy's own, without it")
+    elseif why == "download" and url == URL_FF_HOOK then
+        warn("[Loader] FF Fix Hook (repo copy) couldn't be downloaded: using the gist (2012 is the blue bubble)")
+        loadUrl(URL_FF_HOOK_GIST, "FF Fix Hook (gist)")
     elseif why == "download" and url == URL_EXPLOSION then
         warn("[Loader] Explosion Replace Addon (repo copy) couldn't be downloaded: using the gist")
         loadUrl(URL_EXPLOSION_GIST, "Explosion Replace Addon (gist)")
@@ -782,7 +799,7 @@ end)
 loadUrl(URL_TERRAIN_HOOK, "Terrain Hook")
 loadUrl(URL_EMOTES_HOOK, "Emotes Hook")
 loadUrl(URL_ANIM_2007, "2007 Animation")
-loadUrl(URL_FF_2014, "2014 ForceField")
+loadUrl(URL_FF_2012, "2012 ForceField")
 loadUrl(URL_ANIM_MODERN_R6, "Modern R6 Animation")
 task.wait(1)
 do
@@ -3167,15 +3184,66 @@ end
             pcall(api.Stop)
         end
     end
+    --========================================================
+    -- OLD LOADING SCREENS (Old Loading Screen.lua): the loading screen each GUI starts with, drawn above the GUI
+    --   2006: the 2008 GUI's ("2008"), in place of its own "Loading Character..."
+    --   2011, 2012, and 2013 / 2013 mobile with the old health bar ON: the same in a black box ("2011")
+    --   2013 / 2013 mobile with the old health bar OFF: "Powered By ROBLOX" ("2013")
+    --   2014 and 2015 early: the 2014 one ("2014"; the 2014 GUI's own dark 2016 one never shows, see Get2014)
+    --   2015, 2016: their own ("2015", "2016")
+    -- (2008 has its own in 2008 Gui.lua; 2005, 2010 and 2017 on have none of ours)
+    --========================================================
+    local function loadingStyleFor(era, year)
+        if era == "early2015" then return "2014" end
+        if era == "y2006" then return "2008" end
+        if era == "y2010" or era == "y2005" or era == "none" then return nil end
+        if year == 2011 or year == 2012 then return "2011" end
+        if year == 2013 then
+            local env = getgenv()
+            local oldBar = env.BPOldHealthBar2013 == true or env.BPOldHealthBar2013Mobile == true
+            return oldBar and "2011" or "2013"
+        end
+        if year == 2014 or year == 2015 or year == 2016 then return tostring(year) end
+        return nil
+    end
+    local loadingScreenKey = nil
+    local function showLoadingScreen(style)
+        local env = getgenv()
+        env.BPLoadingScreenYear = style
+        if type(env.OldLoadingScreen) == "table" and type(env.OldLoadingScreen.Show) == "function" then
+            pcall(env.OldLoadingScreen.Show, style)
+        else
+            task.spawn(function()
+                local _, why = loadUrl(URL_OLD_LOADING, "Old Loading Screen")
+                if why == "download" then warn("[Loader] Old Loading Screen.lua couldn't be downloaded") end
+            end)
+        end
+    end
+
     -- (Hammer stuff 2 calls this when "old healthbar" is ticked or unticked)
     getgenv().BPRefreshHealthBar = function()
         pcall(updateOldHealthBar)
         pcall(updateNotifications)
+        -- a 2013 loading screen still showing (the saved "old healthbar" was put back just after it started): the
+        -- other 2013 one in its place
+        pcall(function()
+            local env = getgenv()
+            local api = env.OldLoadingScreen
+            if type(api) ~= "table" or type(api.Style) ~= "function" or not api.Running() then return end
+            local pick = tostring(env.BloxyTopbarPick or env.BloxyTopbarRaw or "")
+            local year = tonumber(string.match(pick, "(20%d%d)"))
+            local showing = api.Style()
+            if year ~= 2013 or (showing ~= "2013" and showing ~= "2011") then return end
+            local want = loadingStyleFor(env.BloxyEra, year)
+            if want and want ~= showing then
+                print("[Loader] loading screen: the old health bar changed, the " .. want .. " one instead")
+                showLoadingScreen(want)
+            end
+        end)
     end
 
     local legacyDisconnectOn = false
     local oldPurchaseLoading = false
-    local loadingScreenYear = nil
     local function evaluateAndLoad()
         local era, raw = getSelectedEra()
         if confirmedVariant then
@@ -3207,24 +3275,18 @@ end
                 local stop = getgenv().LegacyDisconnectStop
                 if type(stop) == "function" then pcall(stop) end
             end
-            -- OLD LOADING SCREENS: the 2014, 2015 and 2016 GUIs start with their own year's loading screen, drawn above
-            -- the GUI (Old Loading Screen.lua; it takes away the dark one the 2014 GUI brings). Once for each GUI picked.
-            if year == 2014 or year == 2015 or year == 2016 then
-                if loadingScreenYear ~= year then
-                    loadingScreenYear = year
-                    local env = getgenv()
-                    env.BPLoadingScreenYear = tostring(year)
-                    if type(env.OldLoadingScreen) == "table" and type(env.OldLoadingScreen.Show) == "function" then
-                        pcall(env.OldLoadingScreen.Show, tostring(year))
-                    else
-                        task.spawn(function()
-                            local _, why = loadUrl(URL_OLD_LOADING, "Old Loading Screen")
-                            if why == "download" then warn("[Loader] Old Loading Screen.lua couldn't be downloaded") end
-                        end)
-                    end
+            -- OLD LOADING SCREENS: each GUI starts with its own loading screen, drawn above it (see loadingStyleFor).
+            -- Once for each GUI picked.
+            local loadingStyle = loadingStyleFor(era, year)
+            if loadingStyle then
+                local key = pick .. "|" .. tostring(era)
+                if loadingScreenKey ~= key then
+                    loadingScreenKey = key
+                    print("[Loader] loading screen: " .. pick .. " GUI -> " .. loadingStyle)
+                    showLoadingScreen(loadingStyle)
                 end
             else
-                loadingScreenYear = nil
+                loadingScreenKey = nil
             end
             -- OLD PURCHASE PROMPT: the 2013 - 2019 GUIs (the 2013 / 2014 GUIs and 2015 - 2019) get the 2016 purchase
             -- prompt in place of Roblox's modern one (Roblox's own comes back if it cannot run, see Old Purchase Prompt.lua)

@@ -1,7 +1,8 @@
 -- [[ ALL PLAYERS (Addtion-Scripts) ]]
 -- Hammer stuff 2's "all players": your setup choices for how a character looks are shown on everyone
 -- else's character too, on your screen only (nobody else sees it, and nothing is sent to the game):
---   * the forcefield: 2008 (the flashing outline) or 2012 (the blue bubble, the fixed one), when they
+--   * the forcefield: 2008 (the flashing outline) or 2012 (the particle forcefield, 2012 ForceField.lua: it is
+--     told to draw everyone's too; the blue bubble, the fixed one, only if that file isn't running), when they
 --     have a forcefield
 --   * the animations (Bloxy's), each era on both kinds of body: R6 players get its R6 version and R15
 --     players its R15 version. 2008: the 2008 joint swing (R6) / Bloxy's 2008 R15 animations; 2014: the
@@ -47,6 +48,13 @@ end
 -- THE CHOICES
 --========================================================
 local choices = { forcefield = nil, anims = nil, body2006 = false }
+
+-- the 2012 forcefield is the particle one (2012 ForceField.lua) when that is running: it draws everyone's itself, so
+-- it is told to (and told to stop when 2012 isn't picked any more, or when this is turned off)
+local function particles2012()
+	local api = Env.Forcefield2012
+	return type(api) == "table" and type(api.SetEveryone) == "function" and api or nil
+end
 
 local function anim2007On()
 	local api = Env.Animation2007
@@ -195,6 +203,7 @@ end
 local function checkForcefield(char, data)
 	local field = char:FindFirstChildOfClass("ForceField")
 	local style = field and choices.forcefield or nil
+	if style == "2012" and particles2012() then style = nil end -- (drawn by 2012 ForceField.lua)
 	local st = data.ff
 	if st and (st.style ~= style or st.field ~= field) then
 		removeForcefield(data)
@@ -673,8 +682,19 @@ end)
 --========================================================
 -- THE LOOPS
 --========================================================
+local everyoneTold = false
+local function syncParticles2012(on)
+	local api = particles2012()
+	if not api then return end
+	if on ~= everyoneTold then
+		everyoneTold = on
+		pcall(api.SetEveryone, on)
+	end
+end
+
 local function refreshChoices()
 	choices = readChoices()
+	syncParticles2012(choices.forcefield == "2012")
 	local sets = decideAnimSets()
 	animSets = sets
 	animSetKeys = { [R6] = setKey(sets[R6]), [R15] = setKey(sets[R15]) }
@@ -741,6 +761,7 @@ local function cleanup()
 	for char in pairs(tracked) do table.insert(chars, char) end
 	for _, char in ipairs(chars) do forgetCharacter(char) end
 	pcall(function() ffFolder:Destroy() end)
+	syncParticles2012(false)
 	if Env.BPAllPlayersCleanup == cleanup then Env.BPAllPlayersCleanup = nil end
 	print("[All Players] Off: everyone else looks as they did.")
 end

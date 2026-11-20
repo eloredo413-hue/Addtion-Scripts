@@ -62,16 +62,14 @@ end
 local STORE_FILE = "BloxyParadoxSavedSettings.json"
 local CONFIG_FILE = "BloxyParadoxConfig.json"
 local ANIM_FILE = "BloxyAnimation2007Choice.json"
-local FF2014_FILE = "BloxyForcefield2014Choice.json"
 local MODERN_R6_FILE = "BloxyModernR6Choice.json"
 local TERRAIN_FILE = "BloxyTerrainChoice.json"
 local TOPBAR_PICK_FILE = "BloxyTopbarPick.json"
 local SETUP_FILE = "BloxySetupAnswers.json"
-local SETTINGS_FILES = { CONFIG_FILE, ANIM_FILE, MODERN_R6_FILE, TERRAIN_FILE, TOPBAR_PICK_FILE, SETUP_FILE, FF2014_FILE }
+local SETTINGS_FILES = { CONFIG_FILE, ANIM_FILE, MODERN_R6_FILE, TERRAIN_FILE, TOPBAR_PICK_FILE, SETUP_FILE }
 -- written when the saved settings had no such file (that step was never picked: the same as no file)
 local WHEN_MISSING = {
 	[ANIM_FILE] = '{"Animation2007":false}',
-	[FF2014_FILE] = '{"Forcefield2014":false}',
 	[MODERN_R6_FILE] = '{"ModernR6":false}',
 	[TERRAIN_FILE] = '{}',
 	[TOPBAR_PICK_FILE] = '{}',
@@ -114,6 +112,7 @@ local HAMMER_BOXES = {
 	SmoothPlasticCheckbox = "isSmoothPlasticEnabled",
 	PlasticCheckbox = "isPlasticEnabled",
 	Materials2009Checkbox = "is2009MaterialsEnabled",
+	Materials2016Checkbox = "is2016MaterialsEnabled",
 	LegacyMaterialsCheckbox = "isLegacyMaterialsEnabled",
 	NoShadowsCheckbox = "isNoShadowsEnabled",
 	-- Hammer stuff 2
@@ -738,12 +737,7 @@ local function fromSettings(title, files)
 	if has("mobile jump") then return yesNo(choices.MobileJump) end
 	if has("2006 body") then return yesNo(choices.Body2006) end
 	if has("old materials") then return yesNo(choices.Materials) end
-	if has("forcefield") then
-		-- (the 2014 forcefield is 2014 ForceField.lua's own button: Bloxy saves it as "normal")
-		local ff2014 = decode(files[FF2014_FILE])
-		if type(ff2014) == "table" and ff2014.Forcefield2014 == true then return { "2014" } end
-		return pick({ ["2008"] = "2008(r6 only)", ["2012"] = "2012", normal = "normal" }, choices.Forcefield)
-	end
+	if has("forcefield") then return pick({ ["2008"] = "2008(r6 only)", ["2012"] = "2012", normal = "normal" }, choices.Forcefield) end
 	if has("old particles") and not has("which") then return yesNo(choices.Particles) end
 	if has("emotes") then return yesNo(choices.Emotes) end
 	return nil
