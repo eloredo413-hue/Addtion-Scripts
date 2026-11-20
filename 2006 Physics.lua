@@ -131,7 +131,10 @@ local function startClimbingFWM(o)
     -- canStart() (FWM: not gliding, not tripped)
     local character, humanoid, rootPart, torso, isR15 = o.character, o.humanoid, o.rootPart, o.torso, o.isR15
     local damp = (o.timePeriod <= 14) and 0.8 or 0.4
-    local dropOnRelease = o.timePeriod <= 14
+    -- (Addtion-Scripts) let go of the stick and you drop: FWM's up to era 14, and asked for here too (o.dropOnRelease),
+    -- as ladders didn't hold you until June 2014
+    local dropOnRelease = o.dropOnRelease or o.timePeriod <= 14
+    local RELEASE_GRACE = 0.15 -- seconds the stick can be let go (between thumb moves) before you drop
     local XZ = Vector3.new(1, 0, 1)
     local BOX = Vector3.new(1, 1, 1)
     local overlap = OverlapParams.new()
@@ -148,6 +151,7 @@ local function startClimbingFWM(o)
     gyro.P = 4000
     gyro.D = 200
     local climbing, facing, lastGrab, blockedFor, dropping, alive = false, nil, 0, 0, false, true
+    local releasedAt = nil -- when the stick was let go on Roblox's own ladders and trusses
 
     local function flatLook()
         local l = rootPart.CFrame.LookVector * XZ
@@ -246,6 +250,18 @@ local function startClimbingFWM(o)
         local md = humanoid.MoveDirection
         local moving = md.Magnitude > 0.01
         local part = moving and smallIn(partsAt(0)) or nil
+        -- (Addtion-Scripts) Roblox's own ladder and truss climbing: before June 2014 it didn't hold you either, so
+        -- letting go of the stick drops you off (as FWM's own climbing does with dropOnRelease)
+        if not climbing and dropOnRelease and humanoid:GetState() == Enum.HumanoidStateType.Climbing then
+            if md.Magnitude < 0.1 then
+                releasedAt = releasedAt or now
+                if now - releasedAt >= RELEASE_GRACE then releasedAt = nil drop() return end
+            else
+                releasedAt = nil
+            end
+        else
+            releasedAt = nil
+        end
         if not climbing then
             -- (improved) only while you walk into it and it holds you back, and not trim on a wall
             local speed = (rootPart.AssemblyLinearVelocity * XZ).Magnitude

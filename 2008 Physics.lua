@@ -12,6 +12,8 @@
 --     you). This is the script's turning delay above era 14, held to the air only: the script also kept you from
 --     turning for a quarter of a second after landing, and when it missed a landing you couldn't turn at all while
 --     walking; here you turn again as soon as you land
+--   * ladders don't hold you (they didn't until June 2014): let go of the stick on a ladder or truss and you drop off,
+--     as with the 2006 physics, and can't grab on again until you're back on the ground
 --   * no jump glide, no forward tilt on hard landings, arms that don't collide (all three are 2006's); a heavy tool
 --     makes you lean when you turn
 -- Climbing is the script's own (FWM's "fly bug" climbing), improved so it doesn't throw you up and off walls all the
@@ -144,7 +146,10 @@ local function startClimbingFWM(o)
 	-- canStart() (FWM: not gliding, not tripped)
 	local character, humanoid, rootPart, torso, isR15 = o.character, o.humanoid, o.rootPart, o.torso, o.isR15
 	local damp = (o.timePeriod <= 14) and 0.8 or 0.4
-	local dropOnRelease = o.timePeriod <= 14
+	-- (Addtion-Scripts) let go of the stick and you drop: FWM's up to era 14, and asked for here too (o.dropOnRelease),
+	-- as ladders didn't hold you until June 2014
+	local dropOnRelease = o.dropOnRelease or o.timePeriod <= 14
+	local RELEASE_GRACE = 0.15 -- seconds the stick can be let go (between thumb moves) before you drop
 	local XZ = Vector3.new(1, 0, 1)
 	local BOX = Vector3.new(1, 1, 1)
 	local overlap = OverlapParams.new()
@@ -161,6 +166,7 @@ local function startClimbingFWM(o)
 	gyro.P = 4000
 	gyro.D = 200
 	local climbing, facing, lastGrab, blockedFor, dropping, alive = false, nil, 0, 0, false, true
+	local releasedAt = nil -- when the stick was let go on Roblox's own ladders and trusses
 
 	local function flatLook()
 		local l = rootPart.CFrame.LookVector * XZ
@@ -259,6 +265,18 @@ local function startClimbingFWM(o)
 		local md = humanoid.MoveDirection
 		local moving = md.Magnitude > 0.01
 		local part = moving and smallIn(partsAt(0)) or nil
+		-- (Addtion-Scripts) Roblox's own ladder and truss climbing: before June 2014 it didn't hold you either, so
+		-- letting go of the stick drops you off (as FWM's own climbing does with dropOnRelease)
+		if not climbing and dropOnRelease and humanoid:GetState() == Enum.HumanoidStateType.Climbing then
+			if md.Magnitude < 0.1 then
+				releasedAt = releasedAt or now
+				if now - releasedAt >= RELEASE_GRACE then releasedAt = nil drop() return end
+			else
+				releasedAt = nil
+			end
+		else
+			releasedAt = nil
+		end
 		if not climbing then
 			-- (improved) only while you walk into it and it holds you back, and not trim on a wall
 			local speed = (rootPart.AssemblyLinearVelocity * XZ).Magnitude
@@ -439,6 +457,7 @@ local function CharacterPhysics(script, R15)
 		character = v_u_9, humanoid = v_u_10, rootPart = v_root, torso = v_u_11, isR15 = R15, timePeriod = v_u_3,
 		hipBase = function() return v_u_15 end,
 		canStart = function() return v_u_17.Parent == nil and not v_u_38() end,
+		dropOnRelease = true, -- (ladders didn't hold you until June 2014: let go and you drop, as in 2006)
 	})
 	table.insert(v_u_1, { Disconnect = function() v_climb.stop() end })
 	local v_u_39 = v_u_4.Create("BodyVelocity", {
