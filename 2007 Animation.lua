@@ -187,6 +187,8 @@ do
 			local jumpMaxLimbVelocity = 0.75
 			local ARMS_SWING_TOP = 1.05 -- (the walking swing goes to 1; above this the arms are still coming down)
 			local BOUNCE_WINDOW = 0.35 -- seconds after a physics landing bounce in which a fall is the bounce's
+			local ARMS_DOWN_2006 = 0.09 -- with the 2006 physics: how fast the arms come down after a jump (about 0.4 s
+			                            -- from straight up to the swing, the time of its landing bounce)
 
 			local function moveJump()
 				RightShoulder.MaxVelocity = jumpMaxLimbVelocity
@@ -260,18 +262,23 @@ do
 				local amplitude = 0.1
 				local frequency = 1
 				local climbFudge = 0
+				-- (Addtion-Scripts) with the 2006 physics the arms come down slowly after a jump or a fall, over about
+				-- the time of its landing bounce (ARMS_DOWN_2006); otherwise at the jump's speed
+				local slow2006 = type(Env.__Physics2006Cleanup) == "function"
+				local downSpeed = slow2006 and ARMS_DOWN_2006 or jumpMaxLimbVelocity
 
 				if (pose == "Running") then
-					-- (Addtion-Scripts) after a jump or a fall the arms come down at the jump's speed all the way to the
-					-- walking swing. The 2007 script only kept that speed until the arms were level (1.5), so walking
-					-- on after a landing they hung out in front for a moment before swinging (the user's recording).
+					-- (Addtion-Scripts) after a jump or a fall the arms come down at downSpeed all the way to the
+					-- walking swing. The 2007 script only kept the jump's speed until the arms were level (1.5), so
+					-- walking on after a landing they hung out in front for a moment before swinging (the user's
+					-- recording).
 					if (RightShoulder.CurrentAngle > ARMS_SWING_TOP or RightShoulder.CurrentAngle < -ARMS_SWING_TOP) then
-						RightShoulder.MaxVelocity = jumpMaxLimbVelocity
+						RightShoulder.MaxVelocity = downSpeed
 					else
 						RightShoulder.MaxVelocity = 0.15
 					end
 					if (LeftShoulder.CurrentAngle > ARMS_SWING_TOP or LeftShoulder.CurrentAngle < -ARMS_SWING_TOP) then
-						LeftShoulder.MaxVelocity = jumpMaxLimbVelocity
+						LeftShoulder.MaxVelocity = downSpeed
 					else
 						LeftShoulder.MaxVelocity = 0.15
 					end
@@ -280,6 +287,10 @@ do
 				elseif (pose == "Climbing") then
 					RightShoulder.MaxVelocity = 0.5; LeftShoulder.MaxVelocity = 0.5
 					amplitude = 1; frequency = 9; climbFudge = 3.14
+				elseif slow2006 then
+					-- (Addtion-Scripts) standing still after a jump with the 2006 physics: slowly down too
+					if math.abs(RightShoulder.CurrentAngle) > ARMS_SWING_TOP then RightShoulder.MaxVelocity = downSpeed end
+					if math.abs(LeftShoulder.CurrentAngle) > ARMS_SWING_TOP then LeftShoulder.MaxVelocity = downSpeed end
 				end
 
 				local desiredAngle = amplitude * math.sin(time * frequency)

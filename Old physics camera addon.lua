@@ -14,7 +14,8 @@
 --  file (2007 Physics.lua). Only if that can't be fetched: the first 2007 physics, this script as it was first made from Super
 --  Nostalgia Zone's character scripts (the small bounce on every landing, SNZ Bounciness; the sink, SNZ FloorDrag;
 --  tripping when flung faster than 200 studs a second, SNZ GoofyMotion; Roblox's own turning).
---  All three climb the 2013 way: the Old physics' climbing (Retro Studio's CustomClimbing).
+--  Old climbs the 2013 way (Retro Studio's CustomClimbing); the 2006 and 2007 physics use FWM's own climbing,
+--  improved (in their own files).
 --  "2006": this repo's copy of FWM's (2006 Physics.lua).
 --  R6 and R15 alike: the hip height moves around the avatar's own (an R15 body stands on it), the sink moves an
 --  R15 body on its root joint, and the 2007 climbing check is measured from the feet.)
@@ -59,7 +60,7 @@ local BPGenv = (getgenv and getgenv()) or _G
 -- landing); "2007" = the Old physics as it was first made, with the bounce (only used when 2007 Physics.lua, the 2007
 -- physics now, can't be fetched). Both have the sink into the ground.
 local ERA_2007 = (PHYSICS_ERA == "2007")
--- every physics climbs the 2013 way (Retro Studio's CustomClimbing, OLD: CLIMBING below), the 2007 one too; the first
+-- this script climbs the 2013 way (Retro Studio's CustomClimbing, OLD: CLIMBING below), its 2007 fallback too; the first
 -- 2007 physics' own climbing ("2007: climbing" below) is kept but not used
 local CLIMBING_2013 = true
 

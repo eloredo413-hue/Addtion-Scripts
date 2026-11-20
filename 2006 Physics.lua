@@ -4,9 +4,9 @@
 --   * the hip height stays the avatar's own (an R15 body stands on it; 0 sank it into the floor), with
 --     no landing squash (Roblox's R15 Animate speeds the animations up when the hip height drops)
 -- R6 works exactly as before.
--- Climbing is the 2013 climbing, the same as the Old physics' (Retro Studio's CustomClimbing; see CLIMBING below), in
--- place of FWM's "fly bug" climbing: ladders, trusses and the like are climbed while the stick is held, up at 70% of
--- WalkSpeed; let go and you drop.
+-- Climbing is FWM's own ("fly bug" climbing), improved so it doesn't throw you up and off walls all the time, and the
+-- jump glide ends instead of bouncing you off a part you could climb: see CLIMBING below. Trampolines bounce you as on
+-- the Old physics: see TRAMPOLINES below.
 -- Sinking into the ground after a fall from a high place, the way the old 2007 physics did it (Super Nostalgia Zone's
 -- FloorDrag): once you have fallen further than HIGH_PLACE (more than an ordinary jump falls), the legs go into the
 -- ground as you keep falling, the higher the fall the deeper (up to a stud), and once you are on the ground the body
@@ -25,7 +25,7 @@ local LocalPlayer = Players.LocalPlayer
 -- Fallback configuration if executed outside the original game
 -- (Addtion-Scripts) FWM's era number, used outside FWM (inside FWM the game's own TimePeriod is used). What each value
 -- turns on, from FWM's CharacterPhysics: below 1 no jumping; below 11.5 the arms collide; up to 14 the jump glide,
--- the landing tilt and the old ladder climbing (not used here: see CLIMBING); 12 to 14 the tilt only half the
+-- the landing tilt and the old ladder climbing (let go of the stick and you drop); 12 to 14 the tilt only half the
 -- time; above 14 a turning delay after landing; 17 and up the landing squash. 10 is 2006: every one of the 2006 things
 -- is on (colliding arms, glide, the tilt on every hard landing, the old climbing) and none of the later ones. (Any
 -- value from 1 to 11 does exactly the same. FWM's script also has an arm fling for 6 and up, but never switches it
@@ -98,116 +98,257 @@ local function cleanupConnections()
     end
 end
 
--- (Addtion-Scripts) CLIMBING: the 2013 climbing, the same as the Old physics' (Retro Studio's CustomClimbing, its
--- clients before 0.123), in place of FWM's "fly bug" climbing (which climbed whatever small part you walked into, so
--- the climbing pose came up all the time on maps made of small parts). Roblox's own climbing is switched off. While
--- the stick is held (and you are not sitting), every frame 15 one-stud rays go straight out of the front of the body,
--- 0.225 studs apart, from 1.8 below its middle to 1.35 above (parts you can walk through are looked through). What is
--- in front is climbable when the rays find a TrussPart, or when what they hit starts and stops more than once going
--- up: ladder rungs, a step with nothing above it, a wall with a gap; not a plain wall. While it is, a lift is held on
--- the body: up at 70% of WalkSpeed, along with the stick at the whole WalkSpeed. Let go of the stick and the lift
--- goes: you drop. R15: the rays are as long as the body is deep (plus half a stud) and their heights go from the
--- feet, so a deeper or taller R15 body finds the same things. Roblox's Climbing state is put on only while this
--- climbs, so the animations show their climbing pose then, and only then.
-local CLIMB_RAYS_FROM, CLIMB_RAYS_TO, CLIMB_RAY_STEP = 2, 16, 0.225 -- ray i is i * 0.225 - 2.25 studs above the middle
-local CLIMB_LIFT_FORCE, CLIMB_LIFT_P = 25000, 100000
-local CLIMB_SPEED_SHARE = 0.7 -- climbing speed: 70% of WalkSpeed (11.2 at 16)
-local function startClimbing2013(character, humanoid, rootPart, isR15)
+-- (Addtion-Scripts) CLIMBING: FWM's own climbing (the "fly bug" ladders of old Roblox), improved.
+-- FWM's, kept: walking into a part that isn't big (on average 3.5 studs or less, and under 3.5 studs tall) 1 to 2
+-- studs above your feet, just in front, climbs it: each frame it is there while the stick is held you are put in the
+-- Climbing state and kicked up at 13 studs a second (your sideways speed kept 0.8 a frame, 0.4 after era 14). While
+-- climbing, a ClimbLift pushes you along the stick at 24 and a ClimbGyro turns you. Letting go of the stick (era 14
+-- and below) or jumping drops you, and you can't climb again until you are on the ground. Roblox's own climbing stays
+-- on, so trusses climb as they always did.
+-- Improved, so it doesn't throw you up and off walls all the time:
+--   * a climb only starts while you walk into the part and it holds you back (the stick pointing where you face,
+--     slower than CLIMB_START_SPEED of WalkSpeed for CLIMB_START_TIME), and not when the part is trim on a wall: a
+--     big part at chest height with nothing small there (no rungs) is a wall, not a ladder
+--   * parts turned round count by their real size (FWM read a turned part's size as negative, so a turned wall could
+--     count as small)
+--   * the push and the turning work every frame of a climb (FWM only hooked them up when the stick moved, so holding
+--     the stick still never pushed you into the ladder and you drifted off it); you keep facing the way you faced
+--     when you grabbed (FWM turned you to the stick, off the ladder), and the push never points away from the wall
+--   * across a gap between two rungs the climb holds on for CLIMB_GRACE (the kick still comes only when a rung is in
+--     front, as FWM)
+--   * back on the ground counts as landed (FWM waited for the Landed state itself, which can be missed, and then the
+--     climbing stayed off)
+local CLIMB_MAX_PART = 3.5      -- FWM: a part this big (on average) or this tall is not climbed
+local CLIMB_KICK = 13           -- FWM: the upward speed each frame a part is in front
+local CLIMB_PUSH = 24           -- FWM: the push along the stick while climbing
+local CLIMB_START_SPEED = 0.35  -- (improved) a climb starts only while you are held back: slower than this share of WalkSpeed
+local CLIMB_START_TIME = 0.15   -- ...for this long (seconds)
+local CLIMB_START_FACING = 0.6  -- ...with the stick pointing where you face (at the part)
+local CLIMB_CHEST = 2           -- (improved) studs above the climbing box: the chest box, where a wall shows up as big
+local CLIMB_GRACE = 0.25        -- (improved) seconds a climb holds on across a gap between two rungs
+local function startClimbingFWM(o)
+    -- o: character, humanoid, rootPart, torso, isR15, hipBase() (R15: the body's own hip height), timePeriod,
+    -- canStart() (FWM: not gliding, not tripped)
+    local character, humanoid, rootPart, torso, isR15 = o.character, o.humanoid, o.rootPart, o.torso, o.isR15
+    local damp = (o.timePeriod <= 14) and 0.8 or 0.4
+    local dropOnRelease = o.timePeriod <= 14
+    local XZ = Vector3.new(1, 0, 1)
+    local BOX = Vector3.new(1, 1, 1)
+    local overlap = OverlapParams.new()
+    overlap.FilterDescendantsInstances = { character, workspace.CurrentCamera }
+    overlap.RespectCanCollide = true
+    local lift = Instance.new("BodyVelocity") -- FWM's ClimbLift
+    lift.Name = "ClimbLift"
+    lift.Velocity = Vector3.new(0, 0, 0)
+    lift.MaxForce = Vector3.new(5000, 0, 5000)
+    lift.P = 1000
+    local gyro = Instance.new("BodyGyro") -- FWM's ClimbGyro
+    gyro.Name = "ClimbGyro"
+    gyro.MaxTorque = Vector3.new(0, math.huge, 0)
+    gyro.P = 4000
+    gyro.D = 200
+    local climbing, facing, lastGrab, blockedFor, dropping, alive = false, nil, 0, 0, false, true
+
+    local function flatLook()
+        local l = rootPart.CFrame.LookVector * XZ
+        if l.Magnitude < 0.01 then return Vector3.new(0, 0, -1) end
+        return l.Unit
+    end
+    -- FWM's box: 1 to 2 studs above the feet, just in front (R15: measured from the feet, as on R6)
+    local function boxCFrame(up)
+        local look = flatLook()
+        if isR15 then
+            local feet = rootPart.Position.Y - rootPart.Size.Y / 2 - o.hipBase()
+            local ahead = rootPart.Position + look / 2
+            return CFrame.new(ahead.X, feet + 1.5 + up, ahead.Z)
+        end
+        local p = torso.Position + look / 2
+        return CFrame.new(p.X, p.Y - 1.5 + up, p.Z)
+    end
+    -- FWM's test, by the part's real size
+    local function small(part)
+        local s = part.CFrame:VectorToWorldSpace(part.Size)
+        local x, y, z = math.abs(s.X), math.abs(s.Y), math.abs(s.Z)
+        return not ((x + y + z) / 3 > CLIMB_MAX_PART or y >= CLIMB_MAX_PART)
+    end
+    local function partsAt(up)
+        local ok, parts = pcall(function() return workspace:GetPartBoundsInBox(boxCFrame(up), BOX, overlap) end)
+        return ok and parts or {}
+    end
+    local function smallIn(parts)
+        for _, part in ipairs(parts) do
+            if small(part) then return part end
+        end
+        return nil
+    end
+    -- (improved) trim on a wall is not a ladder: at chest height only something big (and nothing small) = a wall
+    local function wallAbove()
+        local parts = partsAt(CLIMB_CHEST)
+        if #parts == 0 or smallIn(parts) then return false end
+        return true
+    end
+    local function stickToward()
+        local md = humanoid.MoveDirection * XZ
+        if md.Magnitude < 0.01 then return false end
+        return md.Unit:Dot(flatLook()) >= CLIMB_START_FACING
+    end
+    -- a part the climb could take hold of (the 2006 jump glide ends on one instead of bouncing you off it)
+    local function canGrab(part)
+        if dropping or not (part and part:IsA("BasePart") and part.CanCollide) then return false end
+        return small(part) and stickToward() and smallIn(partsAt(0)) ~= nil and not wallAbove()
+    end
+    local function endClimb()
+        climbing, facing = false, nil
+        lift.Parent = nil
+        gyro.Parent = nil
+        if BPGenv.BPClimbing then BPGenv.BPClimbing = nil end
+    end
+    local function onGround()
+        local st = humanoid:GetState()
+        return st == Enum.HumanoidStateType.Landed or st == Enum.HumanoidStateType.Running
+            or st == Enum.HumanoidStateType.RunningNoPhysics or humanoid.FloorMaterial ~= Enum.Material.Air
+    end
+    -- FWM's stopClimbing: off the ladder, and no climbing again until you are back on the ground
+    local function drop()
+        if dropping then return end
+        dropping = true
+        endClimb()
+        task.spawn(function()
+            local tries = 0
+            repeat
+                pcall(function()
+                    humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
+                    humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
+                end)
+                task.wait()
+                tries = tries + 1
+            until not alive or not humanoid.Parent or humanoid:GetState() ~= Enum.HumanoidStateType.Climbing or tries > 30
+            local waited = 0
+            while alive and humanoid.Parent and not onGround() and waited < 10 do
+                waited = waited + (task.wait() or 1 / 60)
+            end
+            if humanoid.Parent then
+                pcall(function() humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, true) end)
+            end
+            dropping = false
+        end)
+    end
+
+    local conn = RunService.RenderStepped:Connect(function(dt)
+        if not alive or not character.Parent or humanoid.Health <= 0 then return end
+        dt = math.min(dt or 1 / 60, 0.1)
+        if dropping or humanoid.Sit or humanoid.SeatPart then
+            if climbing then endClimb() end
+            blockedFor = 0
+            return
+        end
+        local now = os.clock()
+        local md = humanoid.MoveDirection
+        local moving = md.Magnitude > 0.01
+        local part = moving and smallIn(partsAt(0)) or nil
+        if not climbing then
+            -- (improved) only while you walk into it and it holds you back, and not trim on a wall
+            local speed = (rootPart.AssemblyLinearVelocity * XZ).Magnitude
+            if part and o.canStart() and stickToward() and speed < humanoid.WalkSpeed * CLIMB_START_SPEED then
+                blockedFor = blockedFor + dt
+            else
+                blockedFor = 0
+            end
+            if blockedFor >= CLIMB_START_TIME and not wallAbove() then
+                climbing, facing, lastGrab = true, flatLook(), now
+            end
+            if not climbing then return end
+            blockedFor = 0
+        elseif not o.canStart() then
+            -- (FWM: no climbing while jumping, tripped or gliding)
+            endClimb()
+            return
+        end
+        if part then
+            -- FWM: the Climbing state, and the kick up
+            lastGrab = now
+            pcall(function() humanoid:ChangeState(Enum.HumanoidStateType.Climbing) end)
+            local v = rootPart.AssemblyLinearVelocity
+            rootPart.AssemblyLinearVelocity = v * (XZ * damp) + Vector3.new(0, CLIMB_KICK, 0)
+        elseif now - lastGrab > CLIMB_GRACE then
+            endClimb()
+            return
+        end
+        -- FWM's handleClimbing, every frame of the climb
+        if md.Magnitude < 0.1 then
+            if dropOnRelease then drop() return end
+            lift.Parent = nil
+            gyro.Parent = nil
+        else
+            -- along the stick, never away from the wall; facing the way you grabbed
+            local push = md * XZ
+            local into = push:Dot(facing)
+            if into < 0 then push = push - facing * into end
+            lift.Velocity = push * CLIMB_PUSH
+            gyro.CFrame = CFrame.lookAt(rootPart.Position, rootPart.Position + facing)
+            if lift.Parent ~= torso then lift.Parent = torso end
+            if gyro.Parent ~= torso then gyro.Parent = torso end
+        end
+        BPGenv.BPClimbing = true -- (2007 Animation.lua reads this for its climbing pose)
+    end)
+
+    local function stop()
+        alive = false
+        conn:Disconnect()
+        endClimb()
+        pcall(function() lift:Destroy() end)
+        pcall(function() gyro:Destroy() end)
+        if dropping and humanoid.Parent then
+            pcall(function() humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, true) end)
+        end
+    end
+    return {
+        stop = stop,
+        drop = drop,
+        canGrab = canGrab,
+        isClimbing = function() return climbing end,
+    }
+end
+
+-- (Addtion-Scripts) TRAMPOLINES, as the Old physics has them: landing on a part whose name (or its parent's, or its
+-- model's) has "trampoline" or "bounce" in it launches you up at 2.4 times the speed you fell at (50 to 300 studs a
+-- second), instead of any landing of the physics' own.
+local function startTrampolines(character, humanoid, rootPart)
+    local lastFallSpeed = 0
+    local conn = RunService.Heartbeat:Connect(function()
+        if not character.Parent then return end
+        local v = rootPart.AssemblyLinearVelocity
+        if v.Y < -2 then lastFallSpeed = -v.Y end
+    end)
     local ray = RaycastParams.new()
     ray.FilterType = Enum.RaycastFilterType.Exclude
     ray.FilterDescendantsInstances = { character }
-    local lift = Instance.new("BodyVelocity")
-    lift.Name = "ClimbLift"
-    lift.MaxForce = Vector3.new(CLIMB_LIFT_FORCE, CLIMB_LIFT_FORCE, CLIMB_LIFT_FORCE)
-    lift.P = CLIMB_LIFT_P
-    lift.Velocity = Vector3.new(0, 11.2, 0)
-    local climbing = false
-    local robloxClimbOn = true
-    local function setRobloxClimbing(on)
-        if robloxClimbOn == on then return end
-        robloxClimbOn = on
-        pcall(function() humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, on) end)
+    local function has(name)
+        name = string.lower(tostring(name or ""))
+        return name:find("trampoline", 1, true) ~= nil or name:find("bounce", 1, true) ~= nil
     end
-    -- how deep the body is (R15: its upper torso can be deeper than the root; R6: the torso)
-    local function halfDepth()
-        local d = rootPart.Size.Z
-        local upper = character:FindFirstChild(isR15 and "UpperTorso" or "Torso")
-        if upper and upper:IsA("BasePart") then d = math.max(d, upper.Size.Z) end
-        return d / 2
+    local function isTrampoline(part)
+        if has(part.Name) or (part.Parent and has(part.Parent.Name)) then return true end
+        local model = part:FindFirstAncestorWhichIsA("Model")
+        return model ~= nil and has(model.Name)
     end
-    local function climbable()
-        local look = rootPart.CFrame.LookVector
-        local length, base = 1, rootPart.Position
-        if isR15 then
-            length = math.max(1, halfDepth() + 0.5)
-            -- (the same heights from the feet as on R6, whose body's middle is 3 studs above its feet)
-            local feet = rootPart.Position.Y - rootPart.Size.Y / 2 - humanoid.HipHeight
-            base = Vector3.new(rootPart.Position.X, feet + 3, rootPart.Position.Z)
-        end
-        local filter = { character }
-        ray.FilterDescendantsInstances = filter
-        local edges, inside, truss = 0, false, false
-        for i = CLIMB_RAYS_FROM, CLIMB_RAYS_TO do
-            local hit
-            for _ = 1, 100 do
-                hit = workspace:Raycast(base + Vector3.new(0, i * CLIMB_RAY_STEP - 2.25, 0), look * length, ray)
-                if not hit or not hit.Instance or not hit.Instance:IsA("BasePart") or hit.Instance.CanCollide then break end
-                table.insert(filter, hit.Instance) -- (walked through: looked through)
-                ray.FilterDescendantsInstances = filter
-            end
-            local part = hit and hit.Instance
-            if part and part:IsA("BasePart") and part.CanCollide and part:IsDescendantOf(workspace) then
-                if not inside then
-                    edges = edges + 1
-                    inside = true
-                end
-                if part:IsA("TrussPart") then truss = true end
-            elseif inside then
-                edges = edges + 1
-                inside = false
-            end
-        end
-        return edges > 1 or truss
+    -- on a landing: true if a trampoline launched you
+    local function onLanded()
+        local fall = lastFallSpeed
+        lastFallSpeed = 0
+        local ok, hit = pcall(function() return workspace:Raycast(rootPart.Position, Vector3.new(0, -6, 0), ray) end)
+        local part = ok and hit and hit.Instance
+        if not (part and isTrampoline(part)) then return false end
+        local launch = math.clamp(math.max(fall, 35) * 0.6 * 4, 50, 300)
+        pcall(function()
+            humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+            humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
+        end)
+        local v = rootPart.AssemblyLinearVelocity
+        rootPart.AssemblyLinearVelocity = Vector3.new(v.X, launch, v.Z)
+        return true
     end
-    setRobloxClimbing(false)
-    local conn = RunService.Heartbeat:Connect(function()
-        if not character.Parent or humanoid.Health <= 0 then return end
-        local md = humanoid.MoveDirection
-        local climbingNow = false
-        if not humanoid.SeatPart and md.Magnitude > 0 then
-            local ok, yes = pcall(climbable)
-            climbingNow = ok and yes == true
-        end
-        if climbingNow then
-            local ws = humanoid.WalkSpeed
-            lift.Velocity = Vector3.new(md.X * ws, ws * CLIMB_SPEED_SHARE, md.Z * ws)
-            if lift.Parent ~= rootPart then lift.Parent = rootPart end
-            -- (the climbing pose: Roblox's Climbing state, only while this climbs)
-            setRobloxClimbing(true)
-            if humanoid:GetState() ~= Enum.HumanoidStateType.Climbing then
-                pcall(function() humanoid:ChangeState(Enum.HumanoidStateType.Climbing) end)
-            end
-        else
-            lift.Parent = nil
-            if robloxClimbOn then
-                setRobloxClimbing(false)
-                if humanoid:GetState() == Enum.HumanoidStateType.Climbing then
-                    pcall(function() humanoid:ChangeState(Enum.HumanoidStateType.Freefall) end)
-                end
-            end
-        end
-        climbing = climbingNow
-        BPGenv.BPClimbing = climbingNow or nil -- (2007 Animation.lua reads this for its climbing pose)
-    end)
-    -- stops it: the lift gone, Roblox's own climbing back on
-    local function stop()
-        conn:Disconnect()
-        pcall(function() lift:Destroy() end)
-        if climbing then BPGenv.BPClimbing = nil end
-        climbing = false
-        if humanoid.Parent then setRobloxClimbing(true) end
-    end
-    return stop, function() return climbing end
+    return onLanded, function() conn:Disconnect() end
 end
 
 local function setupCharacterPhysics(character)
@@ -253,13 +394,13 @@ local function setupCharacterPhysics(character)
         torso:WaitForChild("Left Shoulder", 5)
     end
 
-    -- (Addtion-Scripts) the 2013 climbing (see CLIMBING above), stopped with the rest
-    local stopClimbing2013, isClimbing2013 = startClimbing2013(character, humanoid, rootPart, isR15)
+    -- (Addtion-Scripts) trampolines (see TRAMPOLINES above), stopped with the rest
+    local trampolineLanding, stopTrampolines = startTrampolines(character, humanoid, rootPart)
     table.insert(activeConnections, {
         Connected = true,
         Disconnect = function(self)
             self.Connected = false
-            stopClimbing2013()
+            stopTrampolines()
         end,
     })
 
@@ -344,7 +485,7 @@ local function setupCharacterPhysics(character)
         if humanoid.MoveDirection.Magnitude < 1 then
             fireProtocol("DiscWalking", false)
         end
-        -- (Addtion-Scripts) FWM's climbing handler was here; the 2013 climbing climbs instead
+        -- (Addtion-Scripts) FWM's climbing handler: see CLIMBING above (it runs every frame of a climb)
     end
 
     local function checkIfTrippedState()
@@ -355,6 +496,21 @@ local function setupCharacterPhysics(character)
             or humanoid.Sit
             or state == Enum.HumanoidStateType.Swimming
     end
+
+    -- (Addtion-Scripts) the climbing, FWM's improved (see CLIMBING above): not while gliding or tripped, as FWM
+    local climbFWM = startClimbingFWM({
+        character = character, humanoid = humanoid, rootPart = rootPart, torso = torso, isR15 = isR15,
+        timePeriod = timePeriod,
+        hipBase = function() return r15HipHeight end,
+        canStart = function() return glideVelocity.Parent == nil and not checkIfTrippedState() end,
+    })
+    table.insert(activeConnections, {
+        Connected = true,
+        Disconnect = function(self)
+            self.Connected = false
+            climbFWM.stop()
+        end,
+    })
 
     local function triggerTilt()
         if not isTilting then
@@ -422,6 +578,13 @@ local function setupCharacterPhysics(character)
             end
             glideVelocity.Parent = nil
 
+            -- (Addtion-Scripts) a trampoline under the feet launches you, as on the Old physics; nothing else happens
+            -- (and the next landing counts as the first again, as after a jump)
+            if trampolineLanding() then
+                landCount = 0
+                return
+            end
+
             if landCount <= 1 then
                 if velY >= 0 then
                     glideVelocity.Parent = nil
@@ -482,7 +645,10 @@ local function setupCharacterPhysics(character)
 
     table.insert(activeConnections, UserInputService.JumpRequest:Connect(function()
         if humanoid:GetState() ~= Enum.HumanoidStateType.Jumping then
-            -- (Addtion-Scripts) jumping off a ladder is left to Roblox's climbing, as on the Old physics
+            if climbFWM.isClimbing() or humanoid:GetState() == Enum.HumanoidStateType.Climbing then
+                climbFWM.drop() -- (FWM: jumping lets go of the ladder)
+                return
+            end
             if canJump then
                 task.spawn(handleJumping)
             end
@@ -589,7 +755,7 @@ local function setupCharacterPhysics(character)
             end
         end
         if fwmClimbValue then
-            fwmClimbValue.Value = isClimbing2013() or humanoid:GetState() == Enum.HumanoidStateType.Climbing
+            fwmClimbValue.Value = climbFWM.isClimbing() or humanoid:GetState() == Enum.HumanoidStateType.Climbing
         end
 
         currentTilt = ExtraUtil.Lerp(currentTilt, tiltAngleTarget, 0.3)
@@ -666,6 +832,12 @@ local function setupCharacterPhysics(character)
             end
             local conn = part.Touched:Connect(function(hit)
                 if hit:IsDescendantOf(part.Parent) or not hit.CanCollide then
+                    return
+                end
+                -- (Addtion-Scripts) a part the climbing can take hold of: the glide ends, so you grab it instead of
+                -- being bounced off it
+                if climbFWM.canGrab(hit) then
+                    glideVelocity.Parent = nil
                     return
                 end
                 local minHeight = torso.Position.Y - 2
