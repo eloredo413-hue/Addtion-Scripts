@@ -11,8 +11,11 @@
 --     BadgeService.BadgeAwarded event is listened to as well, when the executor is allowed to.
 -- Nothing is changed in the game.
 --
--- Three ways it can work (the loader picks one for each GUI):
---   "classic": the boxes above (the 2014 GUI, and the 2013 and 2013 mobile GUIs while the old health bar is off)
+-- The ways it can work (the loader picks one for each GUI):
+--   "2014":    the boxes above with the 2014 NotificationScript's words (the one the user gave; the 2014 GUI): a badge
+--              is "Badge Awarded!" with the game's message and the 2014 badge icon, a new friend "You are Friends" /
+--              "With <name>!", and points "Points Awarded!" / "You received <n> points!" with the points icon
+--   "classic": the boxes above (the 2013 and 2013 mobile GUIs while the old health bar is off)
 --   "silent":  nothing is shown or played, and Roblox's own badge and friend request notices are hidden (2011, 2012,
 --              and 2013 / 2013 mobile with the old health bar on)
 --   "sound":   no boxes, Roblox's own notices hidden, and a badge plays victory.wav (the GUIs before 2011)
@@ -57,8 +60,13 @@ local Settings = {
 
 local GUI_NAME = "ClassicNotifications"
 local VICTORY_SOUND = "rbxasset://sounds/victory.wav"
-local MODES = { classic = true, silent = true, sound = true }
+local MODES = { classic = true, silent = true, sound = true, ["2014"] = true }
+-- the 2014 NotificationScript's icons ("Since we can't get the image right, let's just use a nice notification icon")
+local BADGE_ICON_2014 = "rbxassetid://177200377"
+local POINTS_ICON_2014 = "rbxassetid://155363793"
 local mode = MODES[genv.ClassicNotificationsMode] and genv.ClassicNotificationsMode or "classic"
+-- the boxes are shown ("classic" and "2014")
+local function boxes() return mode == "classic" or mode == "2014" end
 local running = false
 local gui, holder = nil, nil
 local ask = nil            -- the Accept / Decline box in the middle: { frame, userId }
@@ -109,7 +117,7 @@ end
 
 -- opts: userId (friend request), lifetime, onClick (a tap on the box; the box goes after it)
 local function notify(title, text, image, opts)
-	if not running or not holder or mode ~= "classic" then return nil end -- (no boxes when "silent" or "sound")
+	if not running or not holder or not boxes() then return nil end -- (no boxes when "silent" or "sound")
 	opts = opts or {}
 	local width = Settings.Width
 	local textX = image and 52 or 12
@@ -308,6 +316,15 @@ local function headshot(userId)
 	return "rbxthumb://type=AvatarHeadShot&id=" .. tostring(userId) .. "&w=100&h=100"
 end
 
+-- a new friend: "Friends" / "You are now friends with <name>." (2014: "You are Friends" / "With <name>!")
+local function friendedNotice(player)
+	if mode == "2014" then
+		notify("You are Friends", "With " .. tostring(player.Name) .. "!", headshot(player.UserId))
+	else
+		notify("Friends", "You are now friends with " .. tostring(player.Name) .. ".", headshot(player.UserId))
+	end
+end
+
 local function friendRequest(player)
 	if friendNotes[player.UserId] then return end
 	friendNotes[player.UserId] = true -- (set again to the notification below)
@@ -341,7 +358,7 @@ local function onFriendStatus(player, status)
 		if type(pending) == "table" then dismiss(pending) end
 		if ask and ask.userId == player.UserId then closeAsk() end
 		if status == Enum.FriendStatus.Friend and before ~= Enum.FriendStatus.Friend then
-			notify("Friends", "You are now friends with " .. player.Name .. ".", headshot(player.UserId))
+			friendedNotice(player)
 		end
 	end
 end
@@ -366,6 +383,10 @@ local function onBadge(message, userId, badgeId)
 	-- again, so the same badge message stopped showing)
 	if badgeShownRecently(tostring(message)) then return end
 	if mode == "sound" then playVictory() return end
+	if mode == "2014" then
+		notify("Badge Awarded!", tostring(message or "You earned a badge!"), BADGE_ICON_2014)
+		return
+	end
 	notify("Badge Awarded", tostring(message or "You earned a badge!"),
 		badgeId and ("rbxthumb://type=BadgeIcon&id=" .. tostring(badgeId) .. "&w=150&h=150") or nil)
 end
@@ -449,7 +470,7 @@ local function inspectNative(label)
 	if gui and label:IsDescendantOf(gui) then return end -- our own notification
 	if isFriendTitle(label) then
 		-- (with the boxes, Roblox's friend request notice is left as it is)
-		if mode == "classic" then return end
+		if boxes() then return end
 		nativeSeen[label] = true
 		local item = noticeOf(label)
 		if item then holdHidden(item) end
@@ -473,9 +494,13 @@ local function inspectNative(label)
 		end
 		if badgeShownRecently(body or "badge") then return end
 		if mode == "sound" then playVictory() return end
-		notify("Badge Awarded", body or "You earned a badge!", image)
+		if mode == "2014" then
+			notify("Badge Awarded!", body or "You earned a badge!", BADGE_ICON_2014)
+		else
+			notify("Badge Awarded", body or "You earned a badge!", image)
+		end
 	end
-	if Settings.HideNativeBadges or mode ~= "classic" then holdHidden(item, showIt) end
+	if Settings.HideNativeBadges or not boxes() then holdHidden(item, showIt) end
 	showIt()
 end
 
@@ -500,7 +525,7 @@ function api.Start(newMode)
 	if MODES[newMode] and newMode ~= mode then
 		mode = newMode
 		print("[Classic Notifications] now " .. mode .. ".")
-		if mode ~= "classic" then
+		if not boxes() then
 			-- (the boxes on screen go)
 			for _, note in ipairs({ table.unpack(active) }) do pcall(dismiss, note) end
 			pcall(closeAsk)
@@ -549,7 +574,18 @@ function api.Start(newMode)
 			if not running or not player then return end
 			if lastStatus[player.UserId] ~= Enum.FriendStatus.Friend then
 				lastStatus[player.UserId] = Enum.FriendStatus.Friend
-				notify("Friends", "You are now friends with " .. tostring(player.Name) .. ".", headshot(player.UserId))
+				friendedNotice(player)
+			end
+		end))
+	end)
+	-- points (PointsService, as the 2013-2014 NotificationScript had them), where the executor may still connect to it
+	pcall(function()
+		track(game:GetService("PointsService").PointsAwarded:Connect(function(userId, pointsAwarded)
+			if not running or userId ~= LocalPlayer.UserId or not boxes() then return end
+			if pointsAwarded > 0 then
+				notify("Points Awarded!", "You received " .. tostring(pointsAwarded) .. " points!", POINTS_ICON_2014)
+			elseif pointsAwarded < 0 then
+				notify("Points Lost!", "You lost " .. tostring(-pointsAwarded) .. " points!", POINTS_ICON_2014)
 			end
 		end))
 	end)

@@ -15,8 +15,15 @@
 --   * Never stuck: game passes, bundles, Premium and the like (which the 2016 prompt doesn't know) go straight to
 --     Roblox's prompt; if the old prompt hasn't shown 4 s after a request, Roblox's prompt is shown; and if Roblox's
 --     prompt opens for a purchase no event told us about, it is shown too.
+-- The 2014 GUI gets the 2014 prompt instead (getgenv().OldPurchasePromptStyle = "2014", set by the loader): Roblox's
+-- 2014 PurchasePromptScript (CoreScripts/2014 in this repo, the one the user gave), run from its source the same way:
+-- the grey "Buy Item" box with "Would you like to buy the <item> <type> for R$<price>?", the item's picture, and the
+-- Buy Now / Cancel buttons. Changed in it only where 2014's web calls are gone: the item's picture is Roblox's
+-- thumbnail, "already own it" is asked with PlayerOwnsAsset, its balance line is left empty (the client can't know
+-- your Robux), its own buying is switched off (Buy goes on in Roblox's prompt, as above), and its LoadLibrary
+-- ("RbxUtility") JSON reader is the HttpService's.
 -- Needs an executor that can run game:GetObjects, read a script's Source, and setfenv. The console says what it did.
--- Run alone: this file starts it. getgenv().OldPurchasePrompt: Start(), Stop(), Running(), Status()
+-- Run alone: this file starts it. getgenv().OldPurchasePrompt: Start(), Stop(), Running(), Status(), Style()
 --========================================================
 
 local CoreGui = game:GetService("CoreGui")
@@ -30,6 +37,8 @@ if type(genv.OldPurchasePrompt) == "table" and type(genv.OldPurchasePrompt.Stop)
 end
 
 local ASSET = "rbxassetid://9139773381" -- the 2016 RobloxGui
+local SOURCE_2014 = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/CoreScripts/2014/PurchasePromptScript.lua"
+local DIALOG_NAMES = { PurchaseDialog = true, PurchaseFrame = true } -- the 2016 dialog, the 2014 one
 local GUI_NAME = "OldPurchasePrompt"
 local SCRIPTS = { "PurchasePromptScript2", "PurchasePromptScript3" }
 local WATCHDOG_SECONDS = 4 -- (the 2016 prompt looks the item up on the web first)
@@ -65,6 +74,8 @@ local watchdog = nil
 local nativeShown = false    -- Roblox's own prompt given back for the purchase going on
 local lastRequestAt = -100
 local lastFed = { key = nil, at = -100 }
+local style = "2016"         -- "2014": the 2014 prompt (its own source), "2016": the 2016 GUI asset's
+local source2014 = nil       -- the 2014 PurchasePromptScript, made to run here (see patch2014)
 local oldHeldHidden = nil    -- the old dialog, kept hidden after Buy / Cancel until the next purchase
 local requests, fallbacks, handoffs = 0, 0, 0
 
@@ -98,10 +109,20 @@ local KNOWN_FAKE = {}
 for _, name in ipairs(OLD_EVENTS) do KNOWN_FAKE[name] = true end
 KNOWN_FAKE.PromptGamePassPurchaseRequested = true
 KNOWN_FAKE.PromptBundlePurchaseRequested = true
+-- (the 2014 script listens for these too; they never fire here)
+KNOWN_FAKE.ServerPurchaseVerification = true
+KNOWN_FAKE.NativePurchaseFinished = true
+KNOWN_FAKE.ClientLuaDialogRequested = true
+-- what the old scripts tell Roblox when they close (only a core script may): nothing happens
+local SILENT_CALLS = {
+	SignalPromptPurchaseFinished = true, SignalPromptProductPurchaseFinished = true, SignalClientPurchaseSuccess = true,
+	SignalServerLuaDialogClosed = true, PromptNativePurchase = true, SignalPromptGamePassPurchaseFinished = true,
+}
 
 local fakeMarket = setmetatable({}, {
 	__index = function(_, key)
 		if KNOWN_FAKE[key] then return fakeSignal(key) end
+		if SILENT_CALLS[key] then return function() end end
 		local value = RealMarket[key]
 		if type(value) == "function" then
 			return function(_, ...) return value(RealMarket, ...) end
@@ -111,9 +132,80 @@ local fakeMarket = setmetatable({}, {
 	__tostring = function() return "MarketplaceService" end,
 })
 
+-- a stand-in for a service (asked for only when the 2014 prompt uses it): its own fields first, the real service's
+-- for the rest (methods called on the real one)
+local function proxyService(serviceName, own, readOnly)
+	local function real() return game:GetService(serviceName) end
+	return setmetatable({}, {
+		__index = function(_, key)
+			if own[key] ~= nil then return own[key] end
+			local service = real()
+			local value = service[key]
+			if type(value) == "function" then
+				return function(_, ...) return value(service, ...) end
+			end
+			return value
+		end,
+		__newindex = function(_, key, value)
+			if readOnly and readOnly[key] then return end
+			real()[key] = value
+		end,
+		__tostring = function() return serviceName end,
+	})
+end
+
+local fakeCoreGui = setmetatable({}, {
+	__index = function(_, key)
+		if key == "RobloxGui" then return host end
+		if key == "FindFirstChild" or key == "WaitForChild" then
+			return function(_, name, ...)
+				if name == "RobloxGui" then return host end
+				return CoreGui[key](CoreGui, name, ...)
+			end
+		end
+		local value = CoreGui[key]
+		if type(value) == "function" then return function(_, ...) return value(CoreGui, ...) end end
+		return value
+	end,
+	__tostring = function() return "CoreGui" end,
+})
+local fakeGuiService = proxyService("GuiService", {
+	-- (only core scripts may ask for the center of the screen: shown at once, and nothing to take back)
+	AddCenterDialog = function(_, _dialog, _kind, show) if show then show() end end,
+	RemoveCenterDialog = function() end,
+	OpenBrowserWindow = function() end,
+})
+local fakeInput = proxyService("UserInputService", {}, { ModalEnabled = true })
+local fakeContent = proxyService("ContentProvider", {
+	Preload = function() end,
+	BaseUrl = "https://www.roblox.com/",
+})
+
 local function serviceFor(name)
 	if name == "MarketplaceService" then return fakeMarket end
+	if style == "2014" then
+		if name == "CoreGui" then return fakeCoreGui end
+		if name == "GuiService" then return fakeGuiService end
+		if name == "UserInputService" then return fakeInput end
+		if name == "ContentProvider" then return fakeContent end
+	end
 	return game:GetService(name)
+end
+
+-- the 2014 script's web calls (those addresses are gone): whether you own the item, from PlayerOwnsAsset; the
+-- balance: the client can't know it, so enough for anything (the balance line is left empty, see patch2014)
+local function httpGet2014(_, url)
+	url = tostring(url)
+	if string.find(url, "ownership/hasAsset", 1, true) then
+		local assetId = tonumber(string.match(url, "assetId=(%d+)"))
+		local owns = false
+		pcall(function() owns = RealMarket:PlayerOwnsAsset(Players.LocalPlayer, assetId) end)
+		return owns and "true" or "false"
+	end
+	if string.find(url, "currency/balance", 1, true) then
+		return '{"robux":999999999,"tickets":999999999}'
+	end
+	error("the 2014 prompt's web call isn't available: " .. url, 0)
 end
 
 local fakeGame = setmetatable({}, {
@@ -122,6 +214,21 @@ local fakeGame = setmetatable({}, {
 			return function(_, name) return serviceFor(name) end
 		end
 		if key == "MarketplaceService" then return fakeMarket end
+		if style == "2014" then
+			if key == "CoreGui" or key == "GuiService" or key == "UserInputService" or key == "ContentProvider" then
+				return serviceFor(key)
+			end
+			if key == "FindFirstChild" then
+				return function(_, name, ...)
+					if name == "CoreGui" then return fakeCoreGui end
+					return game:FindFirstChild(name, ...)
+				end
+			end
+			if key == "HttpGetAsync" or key == "HttpGet" then return httpGet2014 end
+			if key == "HttpPostAsync" then
+				return function() error("the 2014 prompt's own buying is off here", 0) end
+			end
+		end
 		local value = game[key]
 		if type(value) == "function" then
 			return function(_, ...) return value(game, ...) end
@@ -165,8 +272,25 @@ local function safeSettings()
 	})
 end
 
+-- LoadLibrary("RbxUtility"), which the 2014 script reads JSON with, is gone: the HttpService's reader
+local function loadLibrary(name)
+	if name == "RbxUtility" then
+		local http = game:GetService("HttpService")
+		return {
+			DecodeJSON = function(text)
+				local ok, value = pcall(function() return http:JSONDecode(text) end)
+				return ok and value or nil
+			end,
+			EncodeJSON = function(value) return http:JSONEncode(value) end,
+		}
+	end
+	error("LoadLibrary " .. tostring(name) .. " isn't available", 0)
+end
+
 local function makeEnv(scriptInst)
 	return setmetatable({
+		LoadLibrary = loadLibrary,
+		ypcall = pcall,
 		script = scriptInst,
 		require = customRequire,
 		settings = safeSettings,
@@ -210,7 +334,7 @@ end
 local function findDialog()
 	if not host then return nil end
 	for _, d in ipairs(host:GetDescendants()) do
-		if d.Name == "PurchaseDialog" and d:IsA("GuiObject") then return d end
+		if DIALOG_NAMES[d.Name] and d:IsA("GuiObject") then return d end
 	end
 	return nil
 end
@@ -238,6 +362,15 @@ end
 
 local function runScripts()
 	clearRun()
+	if style == "2014" then
+		local fake = Instance.new("LocalScript")
+		fake.Name = "CoreScripts/PurchasePromptScript"
+		fake.Disabled = true
+		fake.Parent = host
+		local ok, err = pcall(runSource, source2014, fake, "CoreScripts/PurchasePromptScript")
+		if ok then return 1, {}, true end
+		return 0, { "PurchasePromptScript (2014): " .. tostring(err) }, false
+	end
 	local robloxGui = CoreGui:FindFirstChild("RobloxGui")
 	local before = {}
 	if robloxGui then
@@ -399,6 +532,7 @@ local function buttonKind(button)
 	if string.find(label, "cancel", 1, true) or string.find(label, "close", 1, true) or string.find(label, "decline", 1, true) then
 		return "cancel"
 	end
+	if string.find(label, "disabled", 1, true) then return nil end -- (the 2014 prompt's grey Buy: nothing to do)
 	if string.find(label, "buy", 1, true) or string.find(label, "free", 1, true) or string.find(label, "purchase", 1, true)
 		or string.find(label, "robux", 1, true) or string.find(label, "upgrade", 1, true) then
 		return "buy"
@@ -488,7 +622,7 @@ local function onRequest(eventName, ...)
 	local ok, started, errors, promptStarted = pcall(runScripts)
 	if not ok or not promptStarted then
 		local why = not ok and tostring(started) or tostring(errors and errors[1])
-		showNative("The 2016 prompt couldn't start (" .. why .. "): Roblox's own prompt is shown.")
+		showNative("The " .. style .. " prompt couldn't start (" .. why .. "): Roblox's own prompt is shown.")
 		return
 	end
 	hookDialog()
@@ -554,6 +688,53 @@ end
 ----------------------------------------------------------------------------------------------------
 local api = {}
 
+-- the 2014 PurchasePromptScript made to run here: only what its gone web calls and core-script powers need. Each change
+-- is a plain find-and-replace; one that isn't found is said in the console (the rest still runs).
+local PATCHES_2014 = {
+	-- its pictures: "http://www.roblox.com/Asset/?id=..." as rbxassetid
+	{ 'local assetUrl = "http://www.roblox.com/Asset/?id="', 'local assetUrl = "rbxassetid://"' },
+	-- the item's picture: Roblox's thumbnail (thumbs/asset.ashx is gone)
+	{ [[purchaseDialog.BodyFrame.ItemPreview.Image = baseUrl .. "thumbs/asset.ashx?assetid=" .. tostring(currentProductInfo["IconImageAssetId"]) .. '&x=100&y=100&format=png']],
+	  [[purchaseDialog.BodyFrame.ItemPreview.Image = "rbxthumb://type=Asset&w=150&h=150&id=" .. tostring(currentProductInfo["IconImageAssetId"])]] },
+	{ [[purchaseDialog.BodyFrame.ItemPreview.Image = baseUrl .. "thumbs/asset.ashx?assetid=" .. tostring(currentAssetId) .. '&x=100&y=100&format=png']],
+	  [[purchaseDialog.BodyFrame.ItemPreview.Image = "rbxthumb://type=Asset&w=150&h=150&id=" .. tostring(currentAssetId)]] },
+	-- today's product info has no MinimumMembershipLevel (comparing nothing threw)
+	{ [[if tonumber(currentProductInfo["MinimumMembershipLevel"]) > membershipTypeToNumber(]],
+	  [[if (tonumber(currentProductInfo["MinimumMembershipLevel"]) or 0) > membershipTypeToNumber(]] },
+	-- the balance line: the client can't know your Robux, so it stays empty
+	{ [[purchaseDialog.BodyFrame.AfterBalanceText.Text = tostring(balancePreText) .. tostring(afterBalanceNumber) .. " " .. currencyTypeToString(currentCurrencyType) .. "."]],
+	  [[purchaseDialog.BodyFrame.AfterBalanceText.Text = "" -- (Addtion-Scripts) your balance isn't known here]] },
+	{ [[purchaseDialog.BodyFrame.AfterBalanceText.Text = tostring(balancePreText) .. currencyTypeToString(currentCurrencyType) .. tostring(afterBalanceNumber) .. "."]],
+	  [[purchaseDialog.BodyFrame.AfterBalanceText.Text = "" -- (Addtion-Scripts) your balance isn't known here]] },
+	-- its own buying (a web call that is gone) is off: Buy goes on in Roblox's prompt (see onOldButton)
+	{ "function doAcceptPurchase(currencyPreferredByUser)\n", "function doAcceptPurchase(currencyPreferredByUser)\n\tdo return end -- (Addtion-Scripts) Roblox's prompt buys\n" },
+	{ "function openBuyCurrencyWindow()\n", "function openBuyCurrencyWindow()\n\tdo return end -- (Addtion-Scripts)\n" },
+	{ "function buyEnoughCurrencyForProduct()\n", "function buyEnoughCurrencyForProduct()\n\tdo return end -- (Addtion-Scripts)\n" },
+	{ "function openBCUpSellWindow()\n", "function openBCUpSellWindow()\n\tdo return end -- (Addtion-Scripts)\n" },
+}
+
+local function patch2014(src)
+	src = string.gsub(src, "\r\n", "\n")
+	local missed = 0
+	for _, pair in ipairs(PATCHES_2014) do
+		local a, b = string.find(src, pair[1], 1, true)
+		if a then
+			src = string.sub(src, 1, a - 1) .. pair[2] .. string.sub(src, b + 1)
+		else
+			missed = missed + 1
+			warn("[Old Purchase Prompt] 2014: a change didn't fit the script: " .. string.sub(pair[1], 1, 60))
+		end
+	end
+	-- (a few lines run twice in the script: the second copy of the item-picture line)
+	src = string.gsub(src, 'baseUrl %.%. "thumbs/asset%.ashx%?assetid=" %.%. tostring%(([%w_]+)%) %.%. \'&x=100&y=100&format=png\'',
+		'"rbxthumb://type=Asset&w=150&h=150&id=" .. tostring(%1)')
+	return src, missed
+end
+
+function api.Style()
+	return style
+end
+
 function api.Stop()
 	if not running then return end
 	running = false
@@ -577,6 +758,41 @@ function api.Start()
 	status = "loading"
 	local mine = {}
 	token = mine
+
+	style = (genv.OldPurchasePromptStyle == "2014") and "2014" or "2016"
+	if style == "2014" then
+		-- the 2014 prompt: its script from this repo, made to run here, in a ScreenGui of its own
+		local okGet, src = pcall(function() return game:HttpGet(SOURCE_2014) end)
+		if token ~= mine then return end
+		if okGet and type(src) == "string" and string.find(src, "createPurchasePromptGui", 1, true) then
+			source2014 = patch2014(src)
+			local gui = Instance.new("ScreenGui")
+			gui.Name = GUI_NAME
+			gui.ResetOnSpawn = false
+			gui.DisplayOrder = 1100
+			gui.IgnoreGuiInset = true
+			gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+			host = gui
+			gui.Parent = guiHolder()
+			local okRun, started, errors, promptStarted = pcall(runScripts)
+			if token ~= mine then return end
+			if okRun and promptStarted then
+				local heard = listenForRequests()
+				hideAllNative()
+				status = "on"
+				genv.OldPurchasePromptStop = api.Stop
+				say("On: the 2014 prompt; listening to " .. heard .. " purchase events. Roblox's prompt is hidden until it is needed.")
+				return
+			end
+			for _, e in ipairs(okRun and errors or { tostring(started) }) do warn("[Old Purchase Prompt] " .. e) end
+			pcall(function() gui:Destroy() end)
+			host = nil
+		else
+			warn("[Old Purchase Prompt] the 2014 prompt's script couldn't be downloaded")
+		end
+		warn("[Old Purchase Prompt] the 2014 prompt didn't start: the 2016 one is used")
+		style = "2016"
+	end
 
 	local okObjects, objs = pcall(function() return game:GetObjects(ASSET) end)
 	if token ~= mine then return end -- stopped while it loaded

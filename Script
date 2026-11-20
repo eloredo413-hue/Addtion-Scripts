@@ -529,6 +529,8 @@ local URL_SAFECHAT_HOOK     = "https://gist.githubusercontent.com/eloredo413-hue
 local URL_BACKPACK_2013     = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2013%20Backpack.lua"
 -- adds "2007" (the old avatar's animation) to Bloxy's "Choose your animations" step (2007 Animation.lua in this repo)
 local URL_ANIM_2007         = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2007%20Animation.lua"
+-- the 2014 forcefield, a "2014" button on Bloxy's forcefield step (2014 ForceField.lua)
+local URL_FF_2014           = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2014%20ForceField.lua"
 -- adds "Modern R6" (the modern R6 animations on an R15 character) to the R15 animations step (Modern R6 Animation.lua)
 local URL_ANIM_MODERN_R6    = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Modern%20R6%20Animation.lua"
 -- "Do you want better emotes?" Yes loads the 7yd7 emote script from its gist (Emotes Hook.lua in this repo)
@@ -712,6 +714,8 @@ end
 local URL_OLD_GUI_FIX = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Old%20Gui%20Fix.lua"
 -- the old red disconnect bar for the 2015 - 2019 GUIs (Legacy Disconnect.lua in this repo, see evaluateAndLoad)
 local URL_LEGACY_DISCONNECT = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Legacy%20Disconnect.lua"
+-- the old loading screens of the 2014 / 2015 / 2016 GUIs, above the GUI (Old Loading Screen.lua, see evaluateAndLoad)
+local URL_OLD_LOADING = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Old%20Loading%20Screen.lua?v=" .. tostring(os.time())
 -- the 2016 purchase prompt for the same GUIs (Old Purchase Prompt.lua in this repo, see evaluateAndLoad)
 local URL_OLD_PURCHASE = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Old%20Purchase%20Prompt.lua?v=" .. tostring(os.time())
 task.spawn(function()
@@ -778,6 +782,7 @@ end)
 loadUrl(URL_TERRAIN_HOOK, "Terrain Hook")
 loadUrl(URL_EMOTES_HOOK, "Emotes Hook")
 loadUrl(URL_ANIM_2007, "2007 Animation")
+loadUrl(URL_FF_2014, "2014 ForceField")
 loadUrl(URL_ANIM_MODERN_R6, "Modern R6 Animation")
 task.wait(1)
 do
@@ -3117,7 +3122,8 @@ end
 
     --========================================================
     -- CLASSIC NOTIFICATIONS (Classic Notifications.lua in this repo): badges and friend requests, by GUI
-    --   2014, and 2013 / 2013 mobile with the old health bar OFF: the 2013-2014 boxes ("classic")
+    --   2014: the 2013-2014 boxes with the 2014 NotificationScript's words ("2014": "Badge Awarded!" and its icon...)
+    --   2013 / 2013 mobile with the old health bar OFF: the 2013-2014 boxes ("classic")
     --   2011, 2012, and 2013 / 2013 mobile with the old health bar ON: nothing shown or played ("silent")
     --   before 2011: no boxes, a badge plays victory.wav ("sound")
     --   2015 and later (and no GUI): Roblox's own notices
@@ -3132,7 +3138,9 @@ end
         local year = tonumber(string.match(pick, "(20%d%d)"))
         local oldBar = env.BPOldHealthBar2013 == true or env.BPOldHealthBar2013Mobile == true
         local mode = nil
-        if year == 2014 or (year == 2013 and not oldBar) then
+        if year == 2014 then
+            mode = "2014" -- (the 2013-2014 boxes with the 2014 NotificationScript's words and icons)
+        elseif year == 2013 and not oldBar then
             mode = "classic"
         elseif year == 2011 or year == 2012 or year == 2013 then
             mode = "silent"
@@ -3167,6 +3175,7 @@ end
 
     local legacyDisconnectOn = false
     local oldPurchaseLoading = false
+    local loadingScreenYear = nil
     local function evaluateAndLoad()
         local era, raw = getSelectedEra()
         if confirmedVariant then
@@ -3198,12 +3207,37 @@ end
                 local stop = getgenv().LegacyDisconnectStop
                 if type(stop) == "function" then pcall(stop) end
             end
+            -- OLD LOADING SCREENS: the 2014, 2015 and 2016 GUIs start with their own year's loading screen, drawn above
+            -- the GUI (Old Loading Screen.lua; it takes away the dark one the 2014 GUI brings). Once for each GUI picked.
+            if year == 2014 or year == 2015 or year == 2016 then
+                if loadingScreenYear ~= year then
+                    loadingScreenYear = year
+                    local env = getgenv()
+                    env.BPLoadingScreenYear = tostring(year)
+                    if type(env.OldLoadingScreen) == "table" and type(env.OldLoadingScreen.Show) == "function" then
+                        pcall(env.OldLoadingScreen.Show, tostring(year))
+                    else
+                        task.spawn(function()
+                            local _, why = loadUrl(URL_OLD_LOADING, "Old Loading Screen")
+                            if why == "download" then warn("[Loader] Old Loading Screen.lua couldn't be downloaded") end
+                        end)
+                    end
+                end
+            else
+                loadingScreenYear = nil
+            end
             -- OLD PURCHASE PROMPT: the 2013 - 2019 GUIs (the 2013 / 2014 GUIs and 2015 - 2019) get the 2016 purchase
             -- prompt in place of Roblox's modern one (Roblox's own comes back if it cannot run, see Old Purchase Prompt.lua)
             local promptApi = getgenv().OldPurchasePrompt
             if year and year >= 2013 and year <= 2019 then
-                print("[Loader] old purchase prompt: " .. year .. " GUI -> on")
+                -- (the 2014 GUI: the 2014 prompt, Roblox's own 2014 script; the others the 2016 one)
+                local promptStyle = (year == 2014) and "2014" or "2016"
+                getgenv().OldPurchasePromptStyle = promptStyle
+                print("[Loader] old purchase prompt: " .. year .. " GUI -> on (" .. promptStyle .. ")")
                 if promptApi then
+                    if type(promptApi.Style) == "function" and promptApi.Style() ~= promptStyle and promptApi.Running() then
+                        pcall(promptApi.Stop)
+                    end
                     pcall(promptApi.Start)
                 elseif not oldPurchaseLoading then
                     oldPurchaseLoading = true
