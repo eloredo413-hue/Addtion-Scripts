@@ -1012,7 +1012,13 @@ task.spawn(function()
 			local pose = "Standing"
 			table.insert(conns, hum.Running:Connect(function(speed) pose = (speed > 0.1) and "Running" or "Standing" end))
 			table.insert(conns, hum.Jumping:Connect(function() pose = "Jumping" end))
-			table.insert(conns, hum.FreeFalling:Connect(function() pose = "FreeFall" end))
+			table.insert(conns, hum.FreeFalling:Connect(function()
+				-- (Addtion-Scripts) the 2006 physics' landing bounce is not a fall
+				local env = (getgenv and getgenv()) or _G
+				local bounce = env.BPLandingBounce
+				if type(bounce) == "number" and os.clock() - bounce < 0.35 and pose ~= "Jumping" then return end
+				pose = "FreeFall"
+			end))
 			table.insert(conns, hum.Seated:Connect(function() pose = "Seated" end))
 			table.insert(conns, hum.Climbing:Connect(function() pose = "Climbing" end))
 			table.insert(conns, hum.Swimming:Connect(function(speed) pose = (speed > 0.1) and "Running" or "Standing" end))
@@ -1027,10 +1033,17 @@ task.spawn(function()
 					rS:SetDesiredAngle(1.57); lS:SetDesiredAngle(-1.57); rH:SetDesiredAngle(1.57); lH:SetDesiredAngle(-1.57)
 				else
 					local amp, freq, climb = 0.1, 1, 0
+					-- (Addtion-Scripts) with the 2006 physics the arms come down slowly from a jump (as the 2007 Animation)
+					local env = (getgenv and getgenv()) or _G
+					local slow = type(env.__Physics2006Cleanup) == "function"
 					if pose == "Running" then
 						rS.MaxVelocity = 0.15; lS.MaxVelocity = 0.15; amp = 1; freq = 9
 					elseif pose == "Climbing" then
 						rS.MaxVelocity = 0.5; lS.MaxVelocity = 0.5; amp = 1; freq = 9; climb = 3.14
+					end
+					if slow and pose ~= "Climbing" then
+						if math.abs(rS.CurrentAngle) > 1.05 then rS.MaxVelocity = 0.09 end
+						if math.abs(lS.CurrentAngle) > 1.05 then lS.MaxVelocity = 0.09 end
 					end
 					local ang = amp * math.sin(os.clock() * freq)
 					rS:SetDesiredAngle(ang + climb)
@@ -1329,6 +1342,10 @@ task.spawn(function()
 			local toolAnim = "None"
 			local toolAnimTime = 0
 			local jumpMaxLimbVelocity = 0.75
+			local HammerEnv = (getgenv and getgenv()) or _G
+			local ARMS_SWING_TOP = 1.05 -- (Addtion-Scripts) above the walking swing: the arms are still coming down
+			local ARMS_DOWN_2006 = 0.09 -- (Addtion-Scripts) how fast they come down with the 2006 physics
+			local BOUNCE_WINDOW = 0.35  -- (Addtion-Scripts) seconds after the 2006 landing bounce in which a fall is the bounce
 
 			local function moveJump()
 				RightShoulder.MaxVelocity = jumpMaxLimbVelocity
@@ -1390,14 +1407,19 @@ task.spawn(function()
 				local frequency = 1
 				local climbFudge = 0
 
+				-- (Addtion-Scripts) with the 2006 physics the arms come down slowly after a jump or a fall (about 0.4 s,
+				-- the time of its landing bounce), as the 2007 Animation does: on every character, also after a reset
+				local slow2006 = type(HammerEnv.__Physics2006Cleanup) == "function"
+				local downSpeed = slow2006 and ARMS_DOWN_2006 or jumpMaxLimbVelocity
+				local top = slow2006 and ARMS_SWING_TOP or 1.5
 				if (pose == "Running") then
-					if (RightShoulder.CurrentAngle > 1.5 or RightShoulder.CurrentAngle < -1.5) then
-						RightShoulder.MaxVelocity = jumpMaxLimbVelocity
+					if (RightShoulder.CurrentAngle > top or RightShoulder.CurrentAngle < -top) then
+						RightShoulder.MaxVelocity = downSpeed
 					else  
 						RightShoulder.MaxVelocity = 0.15
 					end
-					if (LeftShoulder.CurrentAngle > 1.5 or LeftShoulder.CurrentAngle < -1.5) then
-						LeftShoulder.MaxVelocity = jumpMaxLimbVelocity
+					if (LeftShoulder.CurrentAngle > top or LeftShoulder.CurrentAngle < -top) then
+						LeftShoulder.MaxVelocity = downSpeed
 					else  
 						LeftShoulder.MaxVelocity = 0.15
 					end
@@ -1406,6 +1428,9 @@ task.spawn(function()
 				elseif (pose == "Climbing") then
 					RightShoulder.MaxVelocity = 0.5; LeftShoulder.MaxVelocity = 0.5
 					amplitude = 1; frequency = 9; climbFudge = 3.14
+				elseif slow2006 then
+					if math.abs(RightShoulder.CurrentAngle) > ARMS_SWING_TOP then RightShoulder.MaxVelocity = downSpeed end
+					if math.abs(LeftShoulder.CurrentAngle) > ARMS_SWING_TOP then LeftShoulder.MaxVelocity = downSpeed end
 				end
 
 				local desiredAngle = amplitude * math.sin(time * frequency)
@@ -1436,7 +1461,12 @@ task.spawn(function()
 			table.insert(conns, humanoid.Jumping:Connect(function() pose = "Jumping" end))
 			table.insert(conns, humanoid.Climbing:Connect(function() pose = "Climbing" end))
 			table.insert(conns, humanoid.GettingUp:Connect(function() pose = "GettingUp" end))
-			table.insert(conns, humanoid.FreeFalling:Connect(function() pose = "FreeFall" end))
+			table.insert(conns, humanoid.FreeFalling:Connect(function()
+				-- (Addtion-Scripts) the 2006 physics' landing bounce is not a fall: the arms go on coming down
+				local bounce = HammerEnv.BPLandingBounce
+				if type(bounce) == "number" and os.clock() - bounce < BOUNCE_WINDOW and pose ~= "Jumping" then return end
+				pose = "FreeFall"
+			end))
 			table.insert(conns, humanoid.FallingDown:Connect(function() pose = "FallingDown" end))
 			table.insert(conns, humanoid.Seated:Connect(function() pose = "Seated" end))
 			table.insert(conns, humanoid.PlatformStanding:Connect(function() pose = "PlatformStanding" end))
