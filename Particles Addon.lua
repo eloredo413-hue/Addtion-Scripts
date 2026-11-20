@@ -3,8 +3,9 @@
 --   * "2008": fire and smoke are switched off (and kept off), and only sparkles are shown, as old sparkles: like
 --     Retro Studio's 2008 GraphicsPipeline (its OldifySparkle switches a Sparkles off and puts an old sparkle
 --     emitter in its place, in the Sparkles' own colour). The 2008 sparkle is the old Roblox pixel star (the
---     "Old Roblox Sparkle!" decal, 127459800207697) thrown out all round the part and drifting up, in mixed sizes,
---     as in a 2008 recording of sparkles (ROBLOX - Sparkles, 04/02/2008).
+--     "Old Roblox Sparkle!" decal, 127459800207697), small (about half a stud) and many of them, thrown out all
+--     round the part, slowing down and rising into a plume a few studs above it, each gone within about a second,
+--     as in the recording of the first sparkles (ROBLOX - Sparkles, 04/02/2008, the day Sparkles came out).
 --   * the setup step is looked for a few times a second, not every frame, and no longer once it has been answered.)
 
 task.spawn(function()
@@ -99,32 +100,35 @@ local function setupSparkles(sparkles)
 
     local function make()
         if MODE == "2008" then
-            -- 2008: the old pixel star, all round the part (SpreadAngle 180) and drifting up into a plume, in mixed
-            -- sizes, glowing in the Sparkles' colour
+            -- 2008, as the recording of the first sparkles (04/02/2008) shows them: a cloud of many small stars
+            -- (about half a stud) thrown out all round the part, fast at first and slowing down, rising into a plume
+            -- a few studs above it, each gone within about a second, glowing in the Sparkles' colour. (Before: a few
+            -- stars two studs across that hung by the part, far too big.)
             local e = Instance.new("ParticleEmitter")
             e.Name = "Legacy_2008_Sparkles"
             e.Texture = SPARKLE_2008_URL
-            e.Rate = 25
-            e.Speed = NumberRange.new(2, 5)
-            e.Lifetime = NumberRange.new(0.8, 1.6)
-            e.Drag = 1
-            e.Acceleration = Vector3.new(0, 3, 0)
+            e.Rate = 50
+            e.Speed = NumberRange.new(4, 10)
+            e.Lifetime = NumberRange.new(0.8, 1.3)
+            e.Drag = 1.5
+            e.Acceleration = Vector3.new(0, 10, 0)
             e.SpreadAngle = Vector2.new(180, 180)
-            e.RotSpeed = NumberRange.new(-60, 60)
+            e.RotSpeed = NumberRange.new(-90, 90)
             e.Rotation = NumberRange.new(-180, 180)
             e.Color = ColorSequence.new(sparkles.SparkleColor)
             e.Transparency = NumberSequence.new({
-                NumberSequenceKeypoint.new(0, 0.1),
-                NumberSequenceKeypoint.new(0.6, 0.2),
+                NumberSequenceKeypoint.new(0, 0),
+                NumberSequenceKeypoint.new(0.5, 0.05),
                 NumberSequenceKeypoint.new(1, 1)
             })
             e.Size = NumberSequence.new({
-                NumberSequenceKeypoint.new(0, 0.4),
-                NumberSequenceKeypoint.new(0.25, 1.0, 0.5),
-                NumberSequenceKeypoint.new(1, 0.6)
+                NumberSequenceKeypoint.new(0, 0.2),
+                NumberSequenceKeypoint.new(0.15, 0.32, 0.12),
+                NumberSequenceKeypoint.new(1, 0.22)
             })
             e.LightEmission = 1
             e.LightInfluence = 0
+            pcall(function() e.Brightness = 1.4 end) -- (the star picture is grey, not white)
             e.Orientation = Enum.ParticleOrientation.FacingCamera
             return e
         end

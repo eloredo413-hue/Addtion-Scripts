@@ -8,10 +8,12 @@
 --     script's landing squash: about a third of a stud down, back up within about half a second; on the first landing
 --     after a jump)
 --   * after a landing you can't jump again for 0.65 s
+--   * no turning in the air: from a jump until you land you keep facing the way you jumped (the stick still steers
+--     you). This is the script's turning delay above era 14, held to the air only: the script also kept you from
+--     turning for a quarter of a second after landing, and when it missed a landing you couldn't turn at all while
+--     walking; here you turn again as soon as you land
 --   * no jump glide, no forward tilt on hard landings, arms that don't collide (all three are 2006's); a heavy tool
 --     makes you lean when you turn
--- Left out: the script's turning delay above era 14 (no turning in the air, nor for a quarter second after landing):
--- 2007 to 2009 had none.
 -- Climbing is the script's own (FWM's "fly bug" climbing), improved so it doesn't throw you up and off walls all the
 -- time: see CLIMBING below. Trampolines bounce you as on the Old physics: see TRAMPOLINES below.
 -- Changed to run here (each marked "(Addtion-Scripts)" below):
@@ -25,7 +27,8 @@
 --   * the landing bounce (only below 15) holds off the falling state until you're back on the ground, and tells the
 --     2007 animation (getgenv().BPLandingBounce), so no animation puts the arms back up as if you were falling
 --   * a heavy tool's lean, the glide's wall bounce and the rest are as given; the glide (only below 15) ends instead of
---     bouncing you off a part the climbing can take hold of
+--     bouncing you off a part the climbing can take hold of; the lean only sets the torso while there is a lean to
+--     give (the script set it to itself every frame, which on R15 undid the landing squash)
 --   * the character's TorsoAttach.AngularTilt (part of the game's own characters, which steadies you after a hard
 --     landing) is used when it is there; an executor's character has none, so that step is skipped
 --   * math.huge where the decompile says "inf"
@@ -43,7 +46,8 @@ if not LocalPlayer then return end
 
 -- (Addtion-Scripts) FWM's era number. What each value turns on in this script: below 1 no jumping; below 11.5 the arms
 -- collide; up to 14 the jump glide, the landing bounce and tilt, and the old climbing (let go of the stick and you
--- drop); 12 to 14 the tilt only half the time; above 14 a turning delay after landing; 17 and up the landing squash.
+-- drop); 12 to 14 the tilt only half the time; above 14 no turning in the air after a jump; 17 and up the landing
+-- squash.
 -- FWM doesn't publish what number each year has. 17 is FWM's 2008-2009 physics as the user knows it: no landing bounce,
 -- going into the ground a bit on landing instead (17 and up all do the same in this script). 1 to 11 is the 2006
 -- physics (the bounce, colliding arms, the tilt on every hard landing). Set getgenv().FWMTimePeriod to a number before
@@ -528,9 +532,32 @@ local function CharacterPhysics(script, R15)
 		end
 	end
 	local function v_u_47() end -- name: HipHeight
+	-- (Addtion-Scripts) the script's turning delay above era 14 (it set AutoRotate to os.clock() > v_u_7 every frame,
+	-- v_u_7 being os.time() from a jump and os.clock() + 0.25 from a landing), made to hold only in the air: from a jump
+	-- until you are back on the ground you keep facing the way you jumped (the stick still steers you, as in the
+	-- script). You turn again as soon as you land: the script waited a quarter of a second more, and when it missed a
+	-- landing its lock stayed on, so you couldn't turn while walking. (Retro Camera's HumanoidRotate, which turns an R6
+	-- body with a gyro instead, holds too while getgenv().BPAirTurnLock is set.)
+	local v_airLocked, v_airLockedAt = false, 0
+	local function v_airTurn(v_lock)
+		if v_lock == v_airLocked then return end
+		v_airLocked = v_lock
+		v_airLockedAt = os.clock()
+		BPGenv.BPAirTurnLock = v_lock or nil
+		pcall(function() v_u_10.AutoRotate = not v_lock end)
+	end
+	local v_inAir = {
+		[Enum.HumanoidStateType.Jumping] = true,
+		[Enum.HumanoidStateType.Freefall] = true,
+	}
+	table.insert(v_u_1, { Disconnect = function()
+		if v_airLocked then v_airTurn(false) end
+	end })
 	local v48 = v_u_10.StateChanged
 	local function v54(_, p49)
 		-- upvalues: (ref) v_u_7, (copy) v_u_11, (ref) v_u_14, (copy) v_u_17, (copy) v_u_3, (copy) v_u_41, (copy) v_u_45, (copy) v_u_44, (ref) v_u_18, (ref) v_u_21, (copy) v_u_38, (copy) v_u_10, (copy) v_u_47, (copy) v_u_46, (ref) v_u_19
+		-- (Addtion-Scripts) back on the ground (or climbing, swimming, sitting...): you can turn again
+		if v_airLocked and not v_inAir[p49] then v_airTurn(false) end
 		if p49 == Enum.HumanoidStateType.Landed then
 			v_u_7 = os.clock() + 0.25
 			local v50 = v_u_11.AssemblyLinearVelocity.Y
@@ -597,6 +624,7 @@ local function CharacterPhysics(script, R15)
 		else
 			if p49 == Enum.HumanoidStateType.Jumping then
 				v_u_7 = os.time()
+				if v_u_3 > 14 then v_airTurn(true) end -- (Addtion-Scripts) no turning until you land (see above)
 				v_u_18 = false
 				task.spawn(v_u_46)
 				return
@@ -647,8 +675,15 @@ local function CharacterPhysics(script, R15)
 		-- upvalues: (copy) v_u_11, (copy) v_u_3, (copy) v_u_10, (ref) v_u_7, (copy) v_u_36, (copy) v_u_38, (copy) v_u_17, (copy) v_u_8, (copy) v_u_5, (ref) v_u_58, (copy) v_u_4, (ref) v_u_21, (ref) v_u_15, (copy) v_u_9, (ref) v_u_26, (ref) v_u_59, (ref) v_u_16, (copy) v_u_12, (ref) v_u_57, (ref) v_u_56, (ref) v_u_19, (copy) v_u_6, (ref) v_u_22, (ref) v_u_18
 		if not v_u_11.Parent then return end -- (Addtion-Scripts) the character is gone
 		v_u_11:GetConnectedParts()
-		-- (Addtion-Scripts) the script's turning delay above era 14 (AutoRotate off in the air and for a quarter second
-		-- after landing) is left out: 2007 to 2009 had none
+		-- (Addtion-Scripts) the script's turning delay above era 14 was here: see v_airTurn (no turning in the air only).
+		-- Here only in case a landing went by unseen: not in the air any more, or on the ground a moment after the jump,
+		-- and you can turn again
+		if v_airLocked then
+			local v_state = v_u_10:GetState()
+			if not v_inAir[v_state] or (v_u_10.FloorMaterial ~= Enum.Material.Air and os.clock() - v_airLockedAt > 0.2) then
+				v_airTurn(false)
+			end
+		end
 		-- (Addtion-Scripts) the script's fly-bug climbing was here (walking into any small part climbed it); the 2013
 		-- climbing climbs instead
 		-- (Addtion-Scripts) R15: its own hip height is the base, followed if something else (Roblox scaling the body)
@@ -657,11 +692,9 @@ local function CharacterPhysics(script, R15)
 			v_u_15 = v_u_10.HipHeight
 		end
 		v_u_58 = v_u_4.Lerp(v_u_58, v_u_21, 0.5)
-		if R15 then
-			v_squashR15(v_u_58)
-		else
+		if not R15 then
 			v_u_10.HipHeight = v_u_58 + v_u_15
-		end
+		end -- (Addtion-Scripts) R15: the squash is put on the root joint below, after the lean
 		for _, v64 in pairs(v_u_9:GetChildren()) do
 			if not v64:GetAttribute("FWMClimb") then
 				continue
@@ -684,7 +717,9 @@ local function CharacterPhysics(script, R15)
 		v_u_57 = v_u_57 * (0.9 + p61)
 		v_u_57 = v_u_57 + v_u_11.AssemblyAngularVelocity.Y / 2000 * v65
 		v_u_56 = v_u_4.Lerp(v_u_56, v_u_57, 0.3)
-		if not v_u_38() then
+		-- (Addtion-Scripts) only while there is a lean (or the tilt) to give: otherwise the script set the torso's CFrame
+		-- to itself every frame, which on R15 put the body back where it was before the landing squash
+		if not v_u_38() and (v_u_19 or math.abs(v_u_56) > 0.0001) then
 			if v_u_19 then
 				if v_u_11.AssemblyAngularVelocity.Y < 0 then
 					local v67 = v_u_11
@@ -702,6 +737,11 @@ local function CharacterPhysics(script, R15)
 				local v72 = v_u_11
 				v72.CFrame = v72.CFrame * v_u_6.fromEulerAnglesXYZ(-v_u_56 / 5, 0, v_u_56 / 5)
 			end
+		end
+		-- (Addtion-Scripts) R15: the landing squash on the root joint, after the lean (a lean puts the torso back where it
+		-- was before this frame's squash)
+		if R15 then
+			v_squashR15(v_u_58)
 		end
 		if tick() - v_u_22 > 0.05 and (v_u_17.Parent ~= nil and (v_u_10.FloorMaterial ~= Enum.Material.Air and (v_u_11.AssemblyLinearVelocity.Y < 1 and v_u_11.AssemblyLinearVelocity.Y > -1))) then
 			v_u_17.Parent = nil
@@ -884,4 +924,4 @@ BPGenv.__Physics2007Cleanup = function()
 	if stopCurrent then pcall(stopCurrent) stopCurrent = nil end
 	BPGenv.__Physics2007Cleanup = nil
 end
-print("[2008 Physics] on: FWM's CharacterPhysics, its 2008-2009 physics (time period " .. tostring(TIME_PERIOD) .. ": no landing bounce, into the ground a bit instead).")
+print("[2008 Physics] on: FWM's CharacterPhysics, its 2008-2009 physics (time period " .. tostring(TIME_PERIOD) .. ": no landing bounce, into the ground a bit instead; no turning in the air).")
