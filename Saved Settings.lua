@@ -695,7 +695,8 @@ local function fromSettings(title, files)
 		local choice = config.physicsCameraChoice
 		if choice == "none" then return { "None" } end
 		-- the dropdowns show the types picked last time, which may not be these: open each, pick, then press
-		local label = ({ ["2006"] = "2006", ["2007"] = "2007" })[config.physicsVariant] or "Old"
+		-- (the physics saved as "2007" is labelled "2008" now)
+		local label = ({ ["2006"] = "2006", ["2007"] = "2008", ["2008"] = "2008" })[config.physicsVariant] or "Old"
 		local cam = ({ ["2018"] = "2018", ["2007"] = "2007" })[config.cameraVariant] or "2013"
 		if choice == "camera" then return { CAMERA_DROPDOWN, cam .. " Camera", cam .. " Camera" } end
 		if choice == "physics" then return { DROPDOWN, label .. " Physics", label .. " Physics" } end
