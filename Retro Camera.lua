@@ -1455,6 +1455,10 @@ do
 	------------------------------------------------------------------------------------------------
 	-- HumanoidRotate, as given (StarterCharacterScripts.HumanoidRotate), on each of your characters
 	------------------------------------------------------------------------------------------------
+	-- (Addtion-Scripts) each holder's gyro, so stepping aside removes it even while it is on the body (destroying the
+	-- holder alone left it there, undamped, holding the body to an old way while Roblox's turning pulled it round)
+	local holderGyros = setmetatable({}, { __mode = "k" })
+
 	local function HumanoidRotate(script, game)
 		local v1 = game:GetService("RunService")
 		local v_u_2 = game:GetService("UserInputService")
@@ -1469,6 +1473,7 @@ do
 			v_u_5.P = 3800
 			v_u_5.Name = "HumanoidRotate"
 			v_u_5.Parent = script
+			holderGyros[script] = v_u_5 -- (Addtion-Scripts) see holderGyros
 			local v_u_6 = {
 				[Enum.HumanoidStateType.Dead] = true,
 				[Enum.HumanoidStateType.Ragdoll] = true,
@@ -1567,10 +1572,20 @@ do
 	local Players = game:GetService("Players")
 	local LocalPlayer = Players.LocalPlayer
 
+	-- (Addtion-Scripts) a physics that turns you its own way: the Old physics (Rowind's own HumanoidRotate) and the
+	-- 2006 physics (FWM's game turns you with Roblox's own turning; this gyro has no damping, D = 0, and keeps
+	-- Roblox's turning off even with the stick let go, so on top of the 2006 physics nothing stopped a turn once it
+	-- got going: the body spun round and round, the user's recordings)
+	local function physicsTurnsYou()
+		if _G.__RetroMasterCleanup then return true end
+		local env = (getgenv and getgenv()) or _G
+		return type(env.__Physics2006Cleanup) == "function"
+	end
+
 	local function onCharacter(character)
 		task.wait(1) -- (the physics picked with this camera has started by then)
 		if not character.Parent or character ~= LocalPlayer.Character then return end
-		if _G.__RetroMasterCleanup then return end -- (the Old physics turns you with Rowind's own HumanoidRotate)
+		if physicsTurnsYou() then return end -- (see physicsTurnsYou above)
 		local holder = Instance.new("Folder")
 		holder.Name = "HumanoidRotate"
 		holder.Parent = character
@@ -1580,12 +1595,14 @@ do
 			conns = {}
 			local humanoid = character:FindFirstChildOfClass("Humanoid")
 			if humanoid then pcall(function() humanoid.AutoRotate = true end) end
+			local gyro = holderGyros[holder]
+			if gyro then pcall(function() gyro:Destroy() end) end
 			pcall(function() holder:Destroy() end)
 		end
 		local fakeGame = makeGame(function(fn)
 			local c = RealRunService.RenderStepped:Connect(function(dt)
-				-- (this character is gone, or the Old physics has started: stepped aside)
-				if not holder.Parent or not character.Parent or _G.__RetroMasterCleanup then
+				-- (this character is gone, or the Old or 2006 physics has started: stepped aside)
+				if not holder.Parent or not character.Parent or physicsTurnsYou() then
 					stop()
 					return
 				end

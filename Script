@@ -534,7 +534,7 @@ local URL_WIZARD_SMOOTH    = "https://raw.githubusercontent.com/eloredo413-hue/A
 
 -- Old physics camera addon: the "Old" physics climbs like the 2006 physics (Old physics camera addon.lua in this
 -- repo). The old gist is the fallback if the repo copy can't be downloaded.
-local URL_OLD_PHYSICS      = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Old%20physics%20camera%20addon.lua"
+local URL_OLD_PHYSICS      = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Old%20physics%20camera%20addon.lua?v=" .. tostring(os.time())
 local URL_OLD_PHYSICS_GIST = "https://gist.githubusercontent.com/eloredo413-hue/6ec77a9b2884b534cd09f653a0fe023d/raw/94075a70190110e81a9c4153c340b19f3c903790/Old%2520physics%2520camera%2520addon"
 
 -- Hammer stuff 1 (Hammer stuff 1.lua in this repo): the gist plus a "sky & world" category title. The gist is the fallback.

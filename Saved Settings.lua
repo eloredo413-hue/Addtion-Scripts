@@ -143,6 +143,7 @@ local HAMMER_BOXES = {
 	RemoveLeaderboardCheckbox = "isRemoveLeaderboardEnabled",
 	OldHealthBarCheckbox = "isOldHealthBarEnabled",
 	NightSky2008Checkbox = "is2008NightSkyEnabled",
+	Shapes2006Checkbox = "is2006ShapesEnabled",
 	AllPlayersCheckbox = "isAllPlayersEnabled",
 	FpsCapCheckbox = "isFpsCapEnabled",
 	HideMobileControlsCheckbox = "isHideMobileControlsEnabled",
