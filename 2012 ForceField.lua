@@ -8,8 +8,8 @@
 --   * forceFieldRadial: big soft flares at the middle of the body. 2 a second, 5 studs and growing 6 a second, turned
 --     any way and spinning (4 to 100 degrees a second), fading out over their 2 seconds.
 -- Both glow (added light), and both are the one texture the old forcefield used for them: the white star the user
--- found (this repo's assets/forcefield2012.png, its black background made see-through, 96 x 96 and softened a little
--- for an old low-resolution look), in its own colours. It is
+-- found, recreated in high quality from the old clips (this repo's assets/forcefield2012.png, 512 x 512: a bright
+-- core, a soft halo and thin rays, white going lavender at the edges, see-through round it), in its own colours. It is
 -- downloaded once into the executor's folder and shown with getcustomasset; Roblox's own sparkle until then (or if
 -- the executor can't).
 -- With them, the sphere of Bloxy's original 2012 forcefield: two navy neon spheres round the torso (6.3 and 6.93
@@ -42,7 +42,7 @@ do
 	local BLOXY_HOLDER = "FFCloneHolder" -- (Bloxy's 2012 forcefield, the blue bubble, puts its model in this)
 	local STAR_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/assets/forcefield2012.png"
 	-- (a new name for each new picture: the executor keeps the file, so an old copy would otherwise stay)
-	local STAR_FILE = "AddtionAssets/forcefield2012_v2.png"
+	local STAR_FILE = "AddtionAssets/forcefield2012_v3.png"
 	local STAR_FALLBACK = "rbxasset://textures/particles/sparkles_main.dds"
 	local SPHERE_HOLDER = "Forcefield2012Spheres"
 	local SPHERE_COLOR = Color3.fromRGB(0, 0, 128)   -- (the original's navy neon)
