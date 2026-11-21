@@ -66,6 +66,15 @@ do
 	while showing() and os.clock() - started < 20 do task.wait(0.1) end
 end
 ]]
+	-- (Addtion-Scripts) the 2006 GUI's lighting: its ColorShift_Bottom (122, 155, 128) with the green all the way up
+	-- (122, 255, 128); the red and blue as they were
+	local function greener2006(src)
+		local patched, count = string.gsub(src,
+			"(local LIGHTING_COLOR_SHIFT_BOTTOM = Color3%.fromRGB%(%s*%d+%s*,%s*)%d+(%s*,%s*%d+%s*%))", "%1255%2", 1)
+		if count == 0 then warn("[2006] its lighting colour wasn't found: it stays as it was") end
+		return patched
+	end
+
 	local function without2006Loading(src)
 		local a = string.find(src, 'local LoadingGui = Instance.new("ScreenGui")', 1, true)
 		local _, b = string.find(src, "LoadingGui:Destroy()", a or 1, true)
@@ -262,7 +271,7 @@ end
 				getgenv().BP_PendingTopbar = nil
 				getgenv().BP_2023Variant = nil
 				local src = fetchURL(URL_2006, "2006")
-				if src then return _ORIG_LS(without2006Loading(src), name) end
+				if src then return _ORIG_LS(greener2006(without2006Loading(src)), name) end
 				return _ORIG_LS("-- [Hook] 2006 fetch failed", name)
 
 			elseif pending == "2005" and code:find(SIG_2013, 1, true) then

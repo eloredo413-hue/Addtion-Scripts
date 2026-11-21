@@ -51,6 +51,8 @@ task.spawn(function()
 	local state = {
 		isHealthESPEnabled   = config.isHealthESPEnabled or false,
 		isRemoveProEnabled   = config.isRemoveProEnabled or false,
+		isRemoveEffectsEnabled = config.isRemoveEffectsEnabled or false,
+		is2006LightingEnabled = config.is2006LightingEnabled or false,
 		isOutlineEnabled     = config.isOutlineEnabled or false,
 		isLensFlareEnabled   = config.isLensFlareEnabled or false,
 		isOldAvatarEnabled   = config.isOldAvatarEnabled or false,
@@ -400,6 +402,115 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
+	-- 2A. REMOVE EFFECTS (Addtion-Scripts; it used to be part of Remove Pro)
+	-- The game's Atmosphere and its other effects (bloom, blur, colour correction, depth of field, sun rays...) taken
+	-- away, in Lighting and on the camera, also ones the game adds later. The effects this repo's own options make
+	-- (Remove Pro's colour correction, iw legacy lighting's) are left. Unticking puts the game's back.
+	------------------------------------------------------------
+	do
+		local OUR_EFFECTS = {
+			CustomColorCorrection = true, LegacyCorrection = true, LegacyGrading = true, LegacyBloom = true,
+		}
+		local reState = { active = false, removed = {}, conns = {} }
+
+		local function take(child)
+			if not reState.active or reState.removed[child] or OUR_EFFECTS[child.Name] then return end
+			if not (child:IsA("PostEffect") or child:IsA("Atmosphere")) then return end
+			local parent = child.Parent
+			if pcall(function() child.Parent = nil end) then
+				reState.removed[child] = parent
+			end
+		end
+
+		function actions.applyRemoveEffects()
+			if reState.active then return end
+			reState.active = true
+			local holders = { Lighting }
+			local camera = workspace.CurrentCamera
+			if camera then table.insert(holders, camera) end
+			for _, holder in ipairs(holders) do
+				for _, child in ipairs(holder:GetChildren()) do pcall(take, child) end
+				table.insert(reState.conns, holder.ChildAdded:Connect(function(child)
+					-- (a moment later: the game may still be naming it)
+					task.defer(function()
+						if child.Parent == holder then pcall(take, child) end
+					end)
+				end))
+			end
+			print("[Remove Effects] The game's Atmosphere and effects taken away.")
+		end
+
+		function actions.restoreRemoveEffects()
+			if not reState.active then return end
+			reState.active = false
+			for _, c in ipairs(reState.conns) do pcall(function() c:Disconnect() end) end
+			reState.conns = {}
+			for child, parent in pairs(reState.removed) do
+				pcall(function()
+					if parent then child.Parent = parent end -- (a parent that is gone: left out)
+				end)
+			end
+			reState.removed = {}
+			print("[Remove Effects] The game's Atmosphere and effects put back.")
+		end
+	end
+
+	------------------------------------------------------------
+	-- 2B. 2006-07 LIGHTING (Addtion-Scripts)
+	-- The game's Atmosphere colour turned all the way up (white: the brightest of its colours), as the 2006-07 sky
+	-- looked. A game without an Atmosphere gets none (nothing is added); one the game adds later is turned up too,
+	-- and kept so if the game changes it. Unticking puts each Atmosphere's own colour back.
+	------------------------------------------------------------
+	do
+		local MAX_COLOR = Color3.fromRGB(255, 255, 255)
+		local lState = { active = false, saved = {}, conns = {} }
+
+		local function brighten(atmosphere)
+			if not lState.active or not atmosphere:IsA("Atmosphere") then return end
+			if lState.saved[atmosphere] == nil then
+				lState.saved[atmosphere] = atmosphere.Color
+				table.insert(lState.conns, atmosphere:GetPropertyChangedSignal("Color"):Connect(function()
+					if lState.active and atmosphere.Color ~= MAX_COLOR then
+						pcall(function() atmosphere.Color = MAX_COLOR end)
+					end
+				end))
+			end
+			pcall(function() atmosphere.Color = MAX_COLOR end)
+		end
+
+		function actions.apply2006Lighting()
+			if lState.active then return end
+			lState.active = true
+			local found = 0
+			for _, child in ipairs(Lighting:GetChildren()) do
+				if child:IsA("Atmosphere") then
+					found = found + 1
+					pcall(brighten, child)
+				end
+			end
+			table.insert(lState.conns, Lighting.ChildAdded:Connect(function(child)
+				task.defer(function()
+					if child.Parent == Lighting then pcall(brighten, child) end
+				end)
+			end))
+			print("[2006-07 Lighting] " .. (found > 0 and "The Atmosphere's colour turned all the way up."
+				or "This game has no Atmosphere: nothing to change."))
+		end
+
+		function actions.restore2006Lighting()
+			if not lState.active then return end
+			lState.active = false
+			for _, c in ipairs(lState.conns) do pcall(function() c:Disconnect() end) end
+			lState.conns = {}
+			for atmosphere, color in pairs(lState.saved) do
+				pcall(function() atmosphere.Color = color end)
+			end
+			lState.saved = {}
+			print("[2006-07 Lighting] The Atmosphere's own colour put back.")
+		end
+	end
+
+	------------------------------------------------------------
 	-- 2. REMOVE PRO LOGIC
 	------------------------------------------------------------
 	do
@@ -437,12 +548,7 @@ task.spawn(function()
 
 			local Workspace = game:GetService("Workspace")
 			rpState.savedLighting = captureLighting()
-
-			for _, child in ipairs(Lighting:GetChildren()) do
-				if child:IsA("PostEffect") or child:IsA("Atmosphere") then
-					pcall(function() child:Destroy() end)
-				end
-			end
+			-- (the Atmosphere and the other effects are their own option now: "remove effects", below)
 
 			pcall(function() sethiddenproperty(Lighting, "Technology", Enum.Technology.Compatibility) end)
 			pcall(function() Lighting.Technology = Enum.Technology.Compatibility end)
@@ -5120,7 +5226,31 @@ task.spawn(function()
 		stateKey      = "isRemoveProEnabled",
 		onEnable      = actions.applyRemovePro,
 		onDisable     = actions.restoreRemovePro,
-		helpText      = "Removes modern post-processing (Atmosphere, Bloom, DepthOfField, etc.) and applies classic 2016-era flat lighting with Retro tonemapper. Parts are converted to SmoothPlastic. Shadows are kept. Disabling restores lighting; material changes persist."
+		helpText      = "Applies classic 2016-era flat lighting with the Retro tonemapper. Parts are converted to SmoothPlastic. Shadows are kept. The game's Atmosphere and effects are their own option now: remove effects. Disabling restores lighting; material changes persist."
+	})
+
+	createAddonRow({
+		containerName = "RemoveEffectsContainer",
+		checkboxName  = "RemoveEffectsCheckbox",
+		helpName      = "RemoveEffectsHelpButton",
+		label         = "remove effects",
+		yPos          = startY + ROW_HEIGHT,
+		stateKey      = "isRemoveEffectsEnabled",
+		onEnable      = actions.applyRemoveEffects,
+		onDisable     = actions.restoreRemoveEffects,
+		helpText      = "Takes away the game's Atmosphere and its other effects (bloom, blur, colour correction, depth of field, sun rays...), also ones it adds later. Untick to put them back."
+	})
+
+	createAddonRow({
+		containerName = "Lighting2006Container",
+		checkboxName  = "Lighting2006Checkbox",
+		helpName      = "Lighting2006HelpButton",
+		label         = "2006-07 lighting",
+		yPos          = startY + ROW_HEIGHT,
+		stateKey      = "is2006LightingEnabled",
+		onEnable      = actions.apply2006Lighting,
+		onDisable     = actions.restore2006Lighting,
+		helpText      = "The 2006-07 look of the sky: the game's Atmosphere colour turned all the way up (white). A game with no Atmosphere gets none. Untick to put its own colour back."
 	})
 
 	createAddonRow({
@@ -5782,6 +5912,8 @@ task.spawn(function()
 	------------------------------------------------------------
 	if state.isHealthESPEnabled then task.spawn(actions.applyHealthESP) end
 	if state.isRemoveProEnabled then task.spawn(actions.applyRemovePro) end
+	if state.isRemoveEffectsEnabled then task.spawn(actions.applyRemoveEffects) end
+	if state.is2006LightingEnabled then task.spawn(actions.apply2006Lighting) end
 	if state.isOutlineEnabled then task.spawn(actions.applyOutline) end
 	if state.isLensFlareEnabled then task.spawn(actions.applyLensFlare) end
 	if state.isOldAvatarEnabled then task.spawn(actions.applyOldAvatar)
