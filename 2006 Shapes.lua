@@ -14,8 +14,9 @@
 	  * a mesh with a picture on it (a texture, its own colour left plain white or grey): coloured by its name or its
 	    material (leaves green, wood brown, rock grey...), one colour, as parts were in 2006.
 	The game itself isn't changed: what you collide with, stand on and touch stays exactly as it was (the bricks are
-	only a look, welded on, and the old shape is hidden on your screen), so nothing breaks. Characters, hats and tools
-	are left alone. Parts that come in later (streaming, spawning) are done as they come.
+	only a look, welded on, and the old shape is hidden on your screen), so nothing breaks. Players are never changed:
+	every player's character, anything welded to one, any other character (NPCs), hats and tools are left alone.
+	Parts that come in later (streaming, spawning) are done as they come.
 	Run again to start over; getgenv().__Shapes2006Cleanup() puts every shape back.
 ]]
 
@@ -23,6 +24,7 @@ local Env = (getgenv and getgenv()) or _G
 if type(Env.__Shapes2006Cleanup) == "function" then pcall(Env.__Shapes2006Cleanup) end
 
 local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
 local Workspace = workspace
 
 local PARTS_PER_FRAME = 120   -- parts looked at each frame
@@ -106,15 +108,39 @@ end
 ------------------------------------------------------------------------------------------------------------------------
 -- WHICH PARTS
 ------------------------------------------------------------------------------------------------------------------------
--- characters (anything with a Humanoid), hats, tools, the camera's own parts and ours are left alone
+-- PLAYERS ARE NEVER CHANGED: every player's character and anything in it, anything welded to a character (a body
+-- built of parts welded on, a cape, something carried: one assembly with it), characters of any kind (a model with
+-- a Humanoid or an AnimationController: NPCs too), hats and tools. Also the camera's own parts and ours.
+local function characterModel(model)
+	return model:FindFirstChildOfClass("Humanoid") ~= nil or model:FindFirstChildOfClass("AnimationController") ~= nil
+end
+local function onCharacter(part)
+	for _, player in ipairs(Players:GetPlayers()) do
+		local character = player.Character
+		if character and part:IsDescendantOf(character) then return true end
+	end
+	local ok, root = pcall(function() return part.AssemblyRootPart end)
+	if ok and root and root ~= part then
+		local model = root:FindFirstAncestorOfClass("Model")
+		while model do
+			if characterModel(model) then return true end
+			model = model:FindFirstAncestorOfClass("Model")
+		end
+	end
+	return false
+end
 local function leftAlone(part)
 	local node = part.Parent
 	while node and node ~= Workspace do
-		if node == folder or node:IsA("Accessory") or node:IsA("Tool") or node:IsA("Camera") then return true end
-		if node:IsA("Model") and node:FindFirstChildOfClass("Humanoid") then return true end
+		if node == folder or node:IsA("Accessory") or node:IsA("Accoutrement") or node:IsA("Tool")
+			or node:IsA("Camera") then
+			return true
+		end
+		if node:IsA("Model") and characterModel(node) then return true end
 		node = node.Parent
 	end
-	return node ~= Workspace
+	if node ~= Workspace then return true end
+	return onCharacter(part)
 end
 
 local function solid(part)
@@ -484,9 +510,10 @@ local function undo(part)
 end
 
 local function track(rec, part)
-	-- gone from the game (removed, streamed out): its bricks go and it is put back as it was
+	-- gone from the game (removed, streamed out), or now part of a player or character (picked up, put in a
+	-- character): its bricks go and it is put back as it was
 	rec.conns[#rec.conns + 1] = part.AncestryChanged:Connect(function()
-		if not part:IsDescendantOf(Workspace) then undo(part) end
+		if not part:IsDescendantOf(Workspace) or leftAlone(part) then undo(part) end
 	end)
 	if #rec.bricks > 0 then
 		-- the game fading it or recolouring it: its bricks do the same

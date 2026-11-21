@@ -89,6 +89,7 @@ for _, env in ipairs({ _G, BPGenv }) do
     if env.__RetroMasterCleanup then pcall(env.__RetroMasterCleanup) end
 end
 
+local walkLockOn = nil -- (Addtion-Scripts) whether the walking direction lock could start (see below)
 local function cleanupConnections()
     for i, conn in pairs(activeConnections) do
         if conn and conn.Connected then
@@ -326,6 +327,146 @@ local function startClimbingFWM(o)
     }
 end
 
+-- (Addtion-Scripts) WALKING DIRECTION LOCK: the 2008 physics' lock (you keep the way you jumped until you land)
+-- carried onto the ground. Press the stick and the way you walk is locked in the world: it turns when you turn the
+-- stick, or when you turn the camera yourself (dragging it, the mouse, the arrow keys, a gamepad's right stick), and
+-- never when the camera turns by itself. Walking is relative to the camera, so with a camera that turns after you as
+-- you walk (the 2007 camera, any camera on Follow, Roblox's own Follow mode) holding left, right or back went round
+-- and round: the camera turned after you, your "left" turned with it and so did your body (it faces where you walk);
+-- close up, a spin on the spot. Holding forward was the only way it stopped. Now holding left walks straight left.
+-- Let go of the stick and it is unlocked. Not while climbing, sitting, swimming or tripped. The cameras themselves
+-- are not changed.
+local LOCK_PAN_GRACE = 0.25 -- seconds after the player turned the camera that its turning still steers
+local function startWalkLock(o)
+    -- o: humanoid, isOff() (true while the lock must stay out of the way)
+    local humanoid, isOff = o.humanoid, o.isOff
+    local controls = nil
+    pcall(function()
+        local scripts = LocalPlayer:FindFirstChild("PlayerScripts")
+        local module = scripts and scripts:FindFirstChild("PlayerModule")
+        if module then controls = require(module):GetControls() end
+    end)
+    if not (type(controls) == "table" and type(controls.GetMoveVector) == "function") then
+        return nil -- (a game with controls of its own: there is no stick to read, and walking is left as it is)
+    end
+    local alive = true
+    local lockedDir, lastStick, lastYaw = nil, nil, nil
+    local lastPan, lastMousePan = -1, -1
+    local cameraTouches = {}
+    local conns = {}
+    local function viewportWidth()
+        local cam = workspace.CurrentCamera
+        return cam and cam.ViewportSize.X or 1000
+    end
+    table.insert(conns, UserInputService.InputBegan:Connect(function(input, processed)
+        -- (a touch away from the thumbstick, on the right part of the screen, turns the camera)
+        if input.UserInputType == Enum.UserInputType.Touch and not processed
+            and input.Position.X > viewportWidth() * 0.4 then
+            cameraTouches[input] = true
+        end
+    end))
+    table.insert(conns, UserInputService.InputEnded:Connect(function(input)
+        if cameraTouches[input] then
+            cameraTouches[input] = nil
+            -- (finger up: the camera turning from now on is its own again)
+            if next(cameraTouches) == nil then lastPan = -1 end
+        end
+    end))
+    table.insert(conns, UserInputService.InputChanged:Connect(function(input)
+        local kind = input.UserInputType
+        if kind == Enum.UserInputType.Touch then
+            if cameraTouches[input] then lastPan = os.clock() end
+        elseif kind == Enum.UserInputType.MouseMovement then
+            if UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter
+                or UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+                lastMousePan = os.clock()
+            end
+        elseif input.KeyCode == Enum.KeyCode.Thumbstick2 and input.Position.Magnitude > 0.2 then
+            lastMousePan = os.clock()
+        end
+    end))
+    local function keysTurningCamera()
+        return UserInputService:IsKeyDown(Enum.KeyCode.Left) or UserInputService:IsKeyDown(Enum.KeyCode.Right)
+            or UserInputService:IsKeyDown(Enum.KeyCode.Comma) or UserInputService:IsKeyDown(Enum.KeyCode.Period)
+    end
+    -- the player turning the camera now: a finger on the camera part of the screen (moved in the last moment), the
+    -- mouse or a gamepad's right stick just now, or the arrow keys held
+    local function playerTurningCamera()
+        local now = os.clock()
+        if next(cameraTouches) ~= nil and now - lastPan < LOCK_PAN_GRACE then return true end
+        if now - lastMousePan < 0.1 then return true end
+        return keysTurningCamera()
+    end
+    local function cameraLook()
+        local cam = workspace.CurrentCamera
+        if not cam then return nil end
+        local l = cam.CFrame.LookVector
+        local flat = Vector3.new(l.X, 0, l.Z)
+        if flat.Magnitude < 1e-3 then return nil end
+        return flat.Unit
+    end
+    -- (turning right on the screen: from looking along -Z towards +X)
+    local function turnRight(v, a)
+        local c, s = math.cos(a), math.sin(a)
+        return Vector3.new(v.X * c - v.Z * s, 0, v.X * s + v.Z * c)
+    end
+    local function wrap(a) return (a + math.pi) % (2 * math.pi) - math.pi end
+    -- the stick (or keys) as the controls have it: on the screen, x to the right, z backwards
+    local function stickNow()
+        local ok, flat = pcall(function()
+            local raw = controls:GetMoveVector()
+            return Vector3.new(raw.X, 0, raw.Z)
+        end)
+        if not ok or not flat or flat.Magnitude < 0.05 then return nil end
+        return flat
+    end
+    local function walk(stick)
+        humanoid:Move(lockedDir * math.min(stick.Magnitude, 1), false)
+    end
+    local function step()
+        if not alive then return end
+        local stick = stickNow()
+        local look = cameraLook()
+        if not stick or not look or isOff() then
+            lockedDir, lastStick = nil, nil
+            lastYaw = look and math.atan2(look.X, -look.Z) or nil
+            return
+        end
+        local stickAngle = math.atan2(stick.X, -stick.Z) -- 0 forward, more to the right on the screen
+        local yaw = math.atan2(look.X, -look.Z)
+        if not lockedDir then
+            -- pressed: this way from where the camera looks now, kept in the world
+            local right = Vector3.new(-look.Z, 0, look.X)
+            local dir = look * -stick.Z + right * stick.X
+            lockedDir = Vector3.new(dir.X, 0, dir.Z).Unit
+        else
+            -- the stick turned: the way turns as much
+            lockedDir = turnRight(lockedDir, wrap(stickAngle - lastStick))
+            -- the player turned the camera: that still steers, as it always did
+            if lastYaw and playerTurningCamera() then
+                lockedDir = turnRight(lockedDir, wrap(yaw - lastYaw))
+            end
+        end
+        lastStick, lastYaw = stickAngle, yaw
+        walk(stick)
+    end
+    local name = "BP2006WalkLock" .. tostring(math.random(1, 1000000000))
+    -- right after the controls move you (Roblox's at Input, the mobile controls one after), so this way is kept
+    RunService:BindToRenderStep(name, Enum.RenderPriority.Input.Value + 2, step)
+    -- and again just before the physics step, after anything else that moved you later in the frame
+    table.insert(conns, RunService.Stepped:Connect(function()
+        if not (alive and lockedDir) or isOff() then return end
+        local stick = stickNow()
+        if stick then walk(stick) end
+    end))
+    return function()
+        alive = false
+        pcall(function() RunService:UnbindFromRenderStep(name) end)
+        for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
+        table.clear(conns)
+    end
+end
+
 -- (Addtion-Scripts) TRAMPOLINES, as the Old physics has them: landing on a part whose name (or its parent's, or its
 -- model's) has "trampoline" or "bounce" in it launches you up at 2.4 times the speed you fell at (50 to 300 studs a
 -- second), instead of any landing of the physics' own.
@@ -527,6 +668,36 @@ local function setupCharacterPhysics(character)
             climbFWM.stop()
         end,
     })
+
+    -- (Addtion-Scripts) the walking direction lock (see WALKING DIRECTION LOCK above)
+    local noLockStates = {
+        [Enum.HumanoidStateType.Climbing] = true, [Enum.HumanoidStateType.Swimming] = true,
+        [Enum.HumanoidStateType.Seated] = true, [Enum.HumanoidStateType.Dead] = true,
+        [Enum.HumanoidStateType.FallingDown] = true, [Enum.HumanoidStateType.Ragdoll] = true,
+        [Enum.HumanoidStateType.Physics] = true, [Enum.HumanoidStateType.GettingUp] = true,
+        [Enum.HumanoidStateType.PlatformStanding] = true,
+    }
+    local stopWalkLock = startWalkLock({
+        humanoid = humanoid,
+        isOff = function()
+            if humanoid.Health <= 0 or humanoid.Sit or humanoid.SeatPart or humanoid.PlatformStand then return true end
+            if climbFWM.isClimbing() or checkIfTrippedState() then return true end
+            return noLockStates[humanoid:GetState()] == true
+        end,
+    })
+    if walkLockOn == nil and not stopWalkLock then
+        print("[2006 Physics] the walking direction lock is off: this game has controls of its own (no stick to read)")
+    end
+    walkLockOn = stopWalkLock ~= nil
+    if stopWalkLock then
+        table.insert(activeConnections, {
+            Connected = true,
+            Disconnect = function(self)
+                self.Connected = false
+                stopWalkLock()
+            end,
+        })
+    end
 
     local function triggerTilt()
         if not isTilting then
@@ -1066,5 +1237,5 @@ BPGenv.__Physics2006Cleanup = function()
 end
 
 -- (so it can be seen in the console which copy is running)
-print("[2006 Physics] On (time period " .. tostring(getTimePeriod()) .. "): Roblox's own turning (the 2013 camera's"
-    .. " turning steps aside), spin guard on.")
+print("[2006 Physics] On (time period " .. tostring(getTimePeriod()) .. "): the walking direction lock (the way you"
+    .. " walk turns with the stick, not with the camera turning by itself), spin guard on.")

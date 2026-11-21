@@ -1,7 +1,10 @@
 --[[ SAVED SETTINGS (Addtion-Scripts) ]]
--- A panel like Bloxy's hammer one, opened by the floppy disk (decal 137454100118380) under the hammer:
--- save what is set now under a name, and load, rename or delete what was saved. They are kept in
--- BloxyParadoxSavedSettings.json, so they are still there after leaving the game or running the script again.
+-- A panel like Bloxy's hammer one, opened by the floppy disk under the hammer (the user's pixel floppy, this repo's
+-- assets/floppy.png; decal 137454100118380 until it is there): save what is set now under a name, and load, rename
+-- or delete what was saved. They are kept in BloxyParadoxSavedSettings.json, so they are still there after leaving
+-- the game or running the script again.
+-- The plus over the hammer (assets/plus.png) opens the PRESETS: a year in one tap (2005 to 2024, see PRESETS).
+-- The plus, the hammer and the floppy stand on one straight line down the right of the screen (see THE ICON COLUMN).
 --
 -- What one holds, exactly as it was:
 --   * Bloxy's whole settings file (BloxyParadoxConfig.json): every setup (wizard) choice, skip setup, every
@@ -32,7 +35,7 @@
 -- The loader loads it, and so do the 2021 / 2023 old / 2023 new GUIs after the rejoin they do (the loader
 -- doesn't run in the server they rejoin). Running it again replaces the earlier copy.
 --
--- getgenv().BPSavedSettings = { Open, Close, Save, Load, Rename, Delete, List, Destroy }
+-- getgenv().BPSavedSettings = { Open, Close, Save, Load, Rename, Delete, List, Presets, LoadPreset, OpenPresets, Destroy }
 
 local Env = (getgenv and getgenv()) or _G
 if Env.BPSavedSettings and type(Env.BPSavedSettings.Destroy) == "function" then
@@ -85,14 +88,34 @@ local BLOXY_GUI = "BloxyParadoxProject"
 local MAX_NAME = 24
 local CONFIRM_TIME = 3
 
--- where things go: the same places as Bloxy's hammer and its panel
+-- THE ICON COLUMN on the right of the screen: the presets plus, Bloxy's hammer and the floppy disk, one above the
+-- other on one straight line, evenly spaced, the plus and the floppy upright (the hammer keeps its own tilt). The
+-- hammer is moved onto the line too: Bloxy leaves it with the middle of its picture on the very edge of the screen
+-- (half of it off a screen without a notch), and the floppy stood further in and tilted, a bump in the line.
 local ICON_SIZE = 46
-local ICON_HIDDEN = UDim2.new(1, 40, 0.5, 50)
-local ICON_REST = UDim2.new(1, -38, 0.5, 50)
-local ICON_OUT = UDim2.new(1, -46, 0.5, 50) -- (only a little over the open panel)
+local HALF_ICON = 23      -- (half of ICON_SIZE)
+local COLUMN_X = -26      -- the line, from the right edge
+local COLUMN_Y = -6       -- the hammer's picture is 6 above the middle of its 80 x 80 image (tilted -20)
+local ICON_GAP = 70       -- from the hammer's middle to the plus's and the floppy's
+local function columnSpot(dy, dx)
+	return UDim2.new(1, COLUMN_X - HALF_ICON + (dx or 0), 0.5, COLUMN_Y + dy - HALF_ICON)
+end
+local ICON_REST = columnSpot(ICON_GAP)          -- the floppy: under the hammer
+local ICON_OUT = columnSpot(ICON_GAP, -8)       -- (its panel open: a little over it)
+local ICON_HIDDEN = UDim2.new(1, 40, 0.5, COLUMN_Y + ICON_GAP - HALF_ICON)
+local PLUS_REST = columnSpot(-ICON_GAP)         -- the presets plus: over the hammer
+local PLUS_OUT = columnSpot(-ICON_GAP, -8)
+local PLUS_HIDDEN = UDim2.new(1, 40, 0.5, COLUMN_Y - ICON_GAP - HALF_ICON)
 local PANEL_CLOSED = UDim2.new(1, 40, 0, -40)
 local PANEL_OPEN = UDim2.new(0.65, -40, 0, -40)
-local HAMMER_REST = UDim2.new(1, -40, 0.5, -40)
+-- Bloxy's hammer (80 x 80): resting with its middle on the line; open, 30 further in, as Bloxy pops it out
+local HAMMER_REST = UDim2.new(1, COLUMN_X - 40, 0.5, -40)
+local HAMMER_OPEN = UDim2.new(1, COLUMN_X - 70, 0.5, -40)
+-- the icons' pictures (this repo's assets, kept in the executor's folder and shown with getcustomasset); the floppy
+-- has the old decal until then (or if the executor can't), the plus a drawn "+"
+local ASSET_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/assets/"
+local FLOPPY_FILE, PLUS_FILE = "floppy.png", "plus.png"
+local ASSET_VERSION = "v1"
 
 -- Bloxy's own boxes: pressing one makes Bloxy write its whole settings file, so these are pressed before
 -- the saved files go back
@@ -362,6 +385,8 @@ end
 ------------------------------------------------------------
 local connections = {}
 local gui, icon, panel, nameBox, saveButton, list, emptyLabel
+local plusIcon, presetsPanel, presetsOpen = nil, nil, false
+local closePresets -- (set further down)
 local clickSound
 local bloxyGui, hammer, hammerPanel, hammerClicker
 local isOpen = false
@@ -942,16 +967,16 @@ local function savedAnswers(files)
 	return nil
 end
 
-local function loadSettings(name)
-	local profile = store.profiles[name]
-	if not profile then return false, "missing" end
+-- puts a set of settings files in place and applies them (a saved file, or a preset); remember: it becomes the
+-- "loaded" one in the list
+local function loadFiles(sourceFiles, name, remember)
 	if not canWrite then
 		warn("[Saved Settings] this executor can't write files, so nothing can be loaded")
 		return false, "no files"
 	end
 	applying = true
 	local files = {}
-	for file, text in pairs(profile.files) do files[file] = text end
+	for file, text in pairs(sourceFiles) do files[file] = text end
 	local answers = savedAnswers(files) -- (nil for a file saved before answers were kept: its settings answer)
 	-- "skip setup" stays as it is now (the player's own choice, not part of a file: a file with it on made
 	-- Bloxy skip the setup and load its plain year, 2013 for 2013 mobile)
@@ -1015,8 +1040,10 @@ local function loadSettings(name)
 	end)
 	applying = false
 
-	store.lastLoaded = name
-	writeStore()
+	if remember then
+		store.lastLoaded = name
+		writeStore()
+	end
 	if not ok then
 		warn("[Saved Settings] something went wrong while loading \"" .. name .. "\"; its files were put back")
 		putFilesBack(files)
@@ -1041,6 +1068,83 @@ local function loadSettings(name)
 	end
 	local setupNow = answerSetup(answers, files, name, onScreen and 5 or 20)
 	return true, setupNow
+end
+
+local function loadSettings(name)
+	local profile = store.profiles[name]
+	if not profile then return false, "missing" end
+	return loadFiles(profile.files, name, true)
+end
+
+------------------------------------------------------------
+-- PRESETS (the plus over the hammer): a year in one tap
+------------------------------------------------------------
+-- Each one picks the year's GUI in the setup (the topbar question) and sets what it lists; everything else stays as
+-- it is now (the other setup answers as last given, the hammer's options as they are). The rest of each year's
+-- settings come from the user's videos, one per preset.
+local PRESETS = {
+	{ name = "2005", topbar = "2005" },
+	{ name = "2006", topbar = "2006" },
+	{ name = "2007", topbar = "2006", note = "the 2006-2007 GUI" },
+	{ name = "2008", topbar = "2008" },
+	{ name = "2010", topbar = "2010" },
+	{ name = "2011", topbar = "2011" },
+	{ name = "2012", topbar = "2012" },
+	{ name = "2013", topbar = "2013", note = "old health bar on", config = { isOldHealthBarEnabled = true } },
+	{ name = "2013 - early 2014", topbar = "2013", note = "old health bar off", config = { isOldHealthBarEnabled = false } },
+	{ name = "early 2015", topbar = "2015 early", note = "the 2014 loading screen" },
+	{ name = "2016", topbar = "2016" },
+	{ name = "2017", topbar = "2017" },
+	{ name = "2019", topbar = "2019" },
+	{ name = "2021", topbar = "2021" },
+	{ name = "2023 old", topbar = "2023 old", note = "early 2023" },
+	{ name = "2023 new", topbar = "2023 new", note = "late 2023" },
+	{ name = "2024", topbar = "2024" },
+}
+-- Bloxy's own ids for its own years (More guis' added ones are kept in the topbar pick file instead)
+local BLOXY_TOPBAR_IDS = {
+	["2024"] = "2024", ["2024(fflags)"] = "2023_FFlags", ["2023(w.i.p)"] = "2023_WIP", ["2019"] = "2019", ["2017"] = "2017",
+	["2016(no chat)"] = "2016_Adv", ["2016"] = "2016_Simp", ["2015"] = "2015", ["2014"] = "2014",
+	["2013 mobile"] = "2013mobile", ["2013"] = "2013", ["2012"] = "2012", ["2010"] = "2010",
+}
+
+local function findPreset(name)
+	for _, preset in ipairs(PRESETS) do
+		if preset.name == name then return preset end
+	end
+	return nil
+end
+
+-- the settings files for a preset: today's, with the preset's year and settings put in
+local function presetFiles(preset)
+	local files = captureFiles()
+	local config = decode(files[CONFIG_FILE])
+	if type(config) ~= "table" then config = {} end
+	for key, value in pairs(preset.config or {}) do config[key] = value end
+	config.Choices = type(config.Choices) == "table" and config.Choices or {}
+	if BLOXY_TOPBAR_IDS[preset.topbar] then config.Choices.Topbar = BLOXY_TOPBAR_IDS[preset.topbar] end
+	files[CONFIG_FILE] = encode(config) or files[CONFIG_FILE] or "{}"
+	files[TOPBAR_PICK_FILE] = encode({ Pick = preset.topbar }) or files[TOPBAR_PICK_FILE]
+	-- the setup's answers: this year's GUI first, then the others as they were last given (a preset's own answers,
+	-- when it has them, in place of those)
+	local answers = { { q = TOPBAR_QUESTION, a = preset.topbar }, { q = TOPBAR_QUESTION, a = "confirm" } }
+	local own = {}
+	for _, step in ipairs(preset.answers or {}) do own[step.q] = true end
+	for _, step in ipairs(savedAnswers(files) or {}) do
+		local q = type(step.q) == "string" and step.q or ""
+		if not string.find(string.lower(q), "topbar", 1, true) and not own[q] then table.insert(answers, step) end
+	end
+	for _, step in ipairs(preset.answers or {}) do table.insert(answers, step) end
+	files[SETUP_FILE] = encode({ answers = answers, at = os.time() }) or files[SETUP_FILE]
+	return files
+end
+
+local function loadPreset(name)
+	local preset = findPreset(name)
+	if not preset then return false, "missing" end
+	print("[Saved Settings] preset " .. preset.name .. ": the " .. preset.topbar .. " GUI"
+		.. (preset.note and (" (" .. preset.note .. ")") or "") .. ", everything else as it is")
+	return loadFiles(presetFiles(preset), "preset " .. preset.name, false)
 end
 
 ------------------------------------------------------------
@@ -1095,6 +1199,21 @@ local function hookBloxy(sg)
 		connect(hammerClicker.MouseButton1Click, function()
 			hammerOpen = not hammerOpen
 			if hammerOpen and isOpen then closePanel() end
+			if hammerOpen and presetsOpen and closePresets then closePresets() end
+			-- (Bloxy slides the hammer to its own spots: right after, it goes to the same ones on the icon line)
+			task.defer(function()
+				if hammer and hammer.Parent and not destroyed then
+					tween(hammer, { Position = hammerOpen and HAMMER_OPEN or HAMMER_REST, Rotation = hammerOpen and 5 or -20 })
+				end
+			end)
+		end)
+	end
+	-- the hammer onto the icon line (after Bloxy's own slide in)
+	if hammer and not hammerOpen then
+		task.delay(0.2, function()
+			if hammer and hammer.Parent and not destroyed and not hammerOpen then
+				tween(hammer, { Position = HAMMER_REST }, 0.8)
+			end
 		end)
 	end
 	if hammerPanel then
@@ -1366,6 +1485,101 @@ refreshList = function()
 	emptyLabel.Visible = #store.order == 0
 end
 
+-- an icon's picture from this repo: downloaded once into the executor's folder and shown with getcustomasset
+local function useAssetImage(file, apply)
+	task.spawn(function()
+		local getAsset = (type(getcustomasset) == "function" and getcustomasset)
+			or (type(getsynasset) == "function" and getsynasset) or nil
+		if not (getAsset and canRead and canWrite) then return end
+		pcall(function()
+			local path = "AddtionAssets/" .. ASSET_VERSION .. "_" .. file
+			if type(isfolder) == "function" and type(makefolder) == "function" and not isfolder("AddtionAssets") then
+				makefolder("AddtionAssets")
+			end
+			if not isfile(path) then
+				local data = game:HttpGet(ASSET_URL .. file .. "?v=" .. tostring(os.time()))
+				if type(data) == "string" and #data > 64 and string.sub(data, 2, 4) == "PNG" then rawWritefile(path, data) end
+			end
+			if isfile(path) then
+				local id = getAsset(path)
+				if type(id) == "string" and id ~= "" and not destroyed then apply(id) end
+			end
+		end)
+	end)
+end
+
+local function buildPresetsPanel()
+	presetsPanel = Instance.new("Frame")
+	presetsPanel.Name = "PresetsPanel"
+	presetsPanel.Size = UDim2.new(0.35, 0, 0.88, 60)
+	presetsPanel.Position = PANEL_CLOSED
+	presetsPanel.BackgroundColor3 = GREY
+	presetsPanel.BackgroundTransparency = 0.5
+	presetsPanel.BorderSizePixel = 0
+	presetsPanel.ZIndex = 95
+	presetsPanel.Parent = gui
+	outline(presetsPanel, WHITE, 1.5)
+
+	label(presetsPanel, "Title", "presets", UDim2.new(1, -30, 0, 22), UDim2.new(0, 15, 0, 44), 18)
+	local hint = label(presetsPanel, "Hint", "a year in one tap: its GUI, the rest as you have it",
+		UDim2.new(1, -30, 0, 16), UDim2.new(0, 15, 0, 68), 12)
+	hint.TextTransparency = 0.15
+
+	local plist = Instance.new("ScrollingFrame")
+	plist.Name = "PresetList"
+	plist.BackgroundTransparency = 1
+	plist.BorderSizePixel = 0
+	plist.Position = UDim2.new(0, 15, 0, 92)
+	plist.Size = UDim2.new(1, -24, 1, -112)
+	plist.CanvasSize = UDim2.new(0, 0, 0, 0)
+	plist.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	plist.ScrollingDirection = Enum.ScrollingDirection.Y
+	plist.ScrollBarThickness = 5
+	plist.ZIndex = 96
+	plist.Parent = presetsPanel
+	local layout = Instance.new("UIListLayout")
+	layout.Padding = UDim.new(0, 6)
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Parent = plist
+	local pad = Instance.new("UIPadding")
+	pad.PaddingTop = UDim.new(0, 2)
+	pad.PaddingLeft = UDim.new(0, 1)
+	pad.Parent = plist
+
+	for i, preset in ipairs(PRESETS) do
+		local row = Instance.new("Frame")
+		row.Name = "Preset_" .. i
+		row.LayoutOrder = i
+		row.Size = UDim2.new(1, -10, 0, 44)
+		row.BackgroundColor3 = WHITE
+		row.BackgroundTransparency = 0.85
+		row.BorderSizePixel = 0
+		row.ZIndex = 96
+		row.Parent = plist
+		outline(row, WHITE, 1)
+		local nameLabel = label(row, "NameLabel", preset.name, UDim2.new(1, -90, 0, 18),
+			UDim2.new(0, 8, 0, preset.note and 4 or 13), 15)
+		nameLabel.ZIndex = 97
+		if preset.note then
+			local noteLabel = label(row, "NoteLabel", preset.note, UDim2.new(1, -90, 0, 12), UDim2.new(0, 8, 0, 24), 11)
+			noteLabel.TextTransparency = 0.15
+		end
+		local loadBtn = button(row, "LoadButton", "load", "green", UDim2.new(0, 64, 0, 26), UDim2.new(1, -72, 0.5, -13))
+		connect(loadBtn.MouseButton1Click, function()
+			playClick()
+			if applying or replaying then return end
+			loadBtn.Text = "loading…"
+			task.spawn(function()
+				local ok = loadPreset(preset.name)
+				if loadBtn.Parent then
+					loadBtn.Text = "load"
+					flash(loadBtn, ok and "loaded ✓" or "can't")
+				end
+			end)
+		end)
+	end
+end
+
 local function buildGui()
 	local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui", 30)
 	if not playerGui then
@@ -1388,16 +1602,43 @@ local function buildGui()
 	clickSound.Volume = 0.6
 	clickSound.Parent = SoundService
 
-	-- the icon: a floppy disk under the hammer, half out of the screen like it
+	-- the icons on the line (see THE ICON COLUMN at the top): the floppy disk under the hammer, the presets plus over it
 	icon = Instance.new("ImageButton")
 	icon.Name = "SaveDiskIcon"
 	icon.BackgroundTransparency = 1
 	icon.Image = ICON_IMAGE
 	icon.Size = UDim2.new(0, ICON_SIZE, 0, ICON_SIZE)
 	icon.Position = ICON_HIDDEN
-	icon.Rotation = -12
+	icon.Rotation = 0
 	icon.ZIndex = 100
 	icon.Parent = gui
+	useAssetImage(FLOPPY_FILE, function(id) if icon then icon.Image = id end end)
+
+	plusIcon = Instance.new("ImageButton")
+	plusIcon.Name = "PresetsPlusIcon"
+	plusIcon.BackgroundTransparency = 1
+	plusIcon.Image = ""
+	plusIcon.Size = UDim2.new(0, ICON_SIZE, 0, ICON_SIZE)
+	plusIcon.Position = PLUS_HIDDEN
+	plusIcon.ZIndex = 100
+	plusIcon.Parent = gui
+	local plusDrawn = Instance.new("TextLabel") -- (until its picture is there, or if the executor can't show it)
+	plusDrawn.Name = "DrawnPlus"
+	plusDrawn.BackgroundTransparency = 1
+	plusDrawn.Size = UDim2.new(1, 0, 1, 0)
+	plusDrawn.FontFace = fontBold
+	plusDrawn.TextScaled = true
+	plusDrawn.Text = "+"
+	plusDrawn.TextColor3 = Color3.fromRGB(40, 170, 70)
+	plusDrawn.TextStrokeTransparency = 0.4
+	plusDrawn.ZIndex = 101
+	plusDrawn.Parent = plusIcon
+	useAssetImage(PLUS_FILE, function(id)
+		if plusIcon then
+			plusIcon.Image = id
+			plusDrawn.Visible = false
+		end
+	end)
 
 	panel = Instance.new("Frame")
 	panel.Name = "SaveDiskPanel"
@@ -1485,19 +1726,37 @@ local function buildGui()
 			readStore() -- (another copy of the script, or the game, may have changed it)
 			refreshList()
 			closeHammer()
+			if presetsOpen then closePresets() end
 			tween(icon, { Position = ICON_OUT, Rotation = 0 })
 			tween(panel, { Position = PANEL_OPEN })
 		end
 	end)
 
-	-- (nothing here ever hides the icon: if another script does, it is shown again)
+	-- the presets: the plus opens its panel (one panel open at a time: this, the saved settings or the hammer's)
+	buildPresetsPanel()
+	connect(plusIcon.MouseButton1Click, function()
+		playClick()
+		if presetsOpen then closePresets() else
+			presetsOpen = true
+			if isOpen then closePanel() end
+			closeHammer()
+			tween(plusIcon, { Position = PLUS_OUT })
+			tween(presetsPanel, { Position = PANEL_OPEN })
+		end
+	end)
+
+	-- (nothing here ever hides the icons: if another script does, they are shown again)
 	connect(icon:GetPropertyChangedSignal("Visible"), function()
 		if not icon.Visible then icon.Visible = true end
+	end)
+	connect(plusIcon:GetPropertyChangedSignal("Visible"), function()
+		if not plusIcon.Visible then plusIcon.Visible = true end
 	end)
 
 	gui.Parent = playerGui
 	task.defer(function()
 		if icon and icon.Parent then tween(icon, { Position = ICON_REST }, 1.0) end
+		if plusIcon and plusIcon.Parent then tween(plusIcon, { Position = PLUS_REST }, 1.0) end
 	end)
 	return true
 end
@@ -1505,12 +1764,19 @@ end
 closePanel = function()
 	isOpen = false
 	if nameBox then pcall(function() nameBox:ReleaseFocus() end) end
-	if icon then tween(icon, { Position = ICON_REST, Rotation = -12 }) end
+	if icon then tween(icon, { Position = ICON_REST, Rotation = 0 }) end
 	if panel then tween(panel, { Position = PANEL_CLOSED }) end
+end
+
+closePresets = function()
+	presetsOpen = false
+	if plusIcon then tween(plusIcon, { Position = PLUS_REST }) end
+	if presetsPanel then tween(presetsPanel, { Position = PANEL_CLOSED }) end
 end
 
 closeParadox = function()
 	if isOpen then closePanel() end
+	if presetsOpen then closePresets() end
 	closeHammer()
 end
 
@@ -1521,13 +1787,17 @@ local function destroy()
 	if gui then pcall(function() gui:Destroy() end) end
 	if clickSound then pcall(function() clickSound:Destroy() end) end
 	gui, icon, panel, list, clickSound = nil, nil, nil, nil, nil
+	plusIcon, presetsPanel, presetsOpen = nil, nil, false
 	if Env.BPSavedSettings and Env.BPSavedSettings.Destroy == destroy then Env.BPSavedSettings = nil end
 end
 
 hideEverything = function()
 	isOpen = false
+	presetsOpen = false
 	if not (icon and panel) then destroy() return end
-	tween(icon, { Position = UDim2.new(1.3, 0, 0.5, 50) }, 0.6)
+	tween(icon, { Position = UDim2.new(1.3, 0, ICON_REST.Y.Scale, ICON_REST.Y.Offset) }, 0.6)
+	if plusIcon then tween(plusIcon, { Position = UDim2.new(1.3, 0, PLUS_REST.Y.Scale, PLUS_REST.Y.Offset) }, 0.6) end
+	if presetsPanel then tween(presetsPanel, { Position = UDim2.new(1.3, 0, 0, -40) }, 0.6) end
 	local t = tween(panel, { Position = UDim2.new(1.3, 0, 0, -40) }, 0.6)
 	t.Completed:Connect(function() destroy() end)
 end
@@ -1551,6 +1821,13 @@ Env.BPSavedSettings = {
 		for i, name in ipairs(store.order) do names[i] = name end
 		return names
 	end,
+	Presets = function()
+		local names = {}
+		for i, preset in ipairs(PRESETS) do names[i] = preset.name end
+		return names
+	end,
+	LoadPreset = function(name) return loadPreset(name) end,
+	OpenPresets = function() if not presetsOpen and plusIcon then press(plusIcon) end end,
 	Destroy = destroy,
 }
 
@@ -1580,6 +1857,7 @@ task.spawn(function()
 		if child == bloxyGui then
 			bloxyGui = nil
 			if isOpen and closePanel then pcall(closePanel) end
+			if presetsOpen and closePresets then pcall(closePresets) end
 			if gui and not playerGui:FindFirstChild(BLOXY_GUI) then gui.Enabled = false end
 		end
 	end)
