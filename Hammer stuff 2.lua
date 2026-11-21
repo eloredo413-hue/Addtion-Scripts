@@ -73,6 +73,7 @@ task.spawn(function()
 		is2016AudioEnabled      = config.is2016AudioEnabled or false,
 		isOldHealthBarEnabled   = config.isOldHealthBarEnabled or false,
 		is2008NightSkyEnabled   = config.is2008NightSkyEnabled or false,
+		is2006ShapesEnabled     = config.is2006ShapesEnabled or false,
 		isAllPlayersEnabled     = config.isAllPlayersEnabled or false,
 		isFpsCapEnabled         = config.isFpsCapEnabled or false,
 		isHideMobileControlsEnabled = config.isHideMobileControlsEnabled or false,
@@ -3949,6 +3950,41 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
+	-- 17B. 2006 SHAPES (2006 Shapes.lua in this repo)
+	-- Meshes, unions and trusses shown as 2006's basic parts (bricks with studs, balls, cylinders), built out
+	-- of bricks when they are another shape; parts with a mesh in them shown plain. Only a look: what you
+	-- collide with stays. Unticking puts every shape back.
+	------------------------------------------------------------
+	do
+		local SHAPES_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2006%20Shapes.lua"
+		local genv = (getgenv and getgenv()) or _G
+		local loading = false
+		local function cleanup()
+			local fn = genv.__Shapes2006Cleanup
+			if type(fn) == "function" then pcall(fn) end
+		end
+		function actions.apply2006Shapes()
+			if loading then return end
+			loading = true
+			task.spawn(function()
+				local ok, err = pcall(function()
+					loadstring(game:HttpGet(SHAPES_URL .. "?v=" .. tostring(os.time())))()
+				end)
+				loading = false
+				if not ok then
+					warn("[2006 Shapes] couldn't load: " .. tostring(err))
+					return
+				end
+				-- unticked while it was downloading
+				if not state.is2006ShapesEnabled then cleanup() end
+			end)
+		end
+		function actions.restore2006Shapes()
+			cleanup()
+		end
+	end
+
+	------------------------------------------------------------
 	-- 18. ALL PLAYERS (All Players.lua in this repo)
 	-- Your setup choices for how a character looks (Bloxy's forcefield, animations and 2006 body) on
 	-- everyone else too, on your screen only. Not the physics, camera or GUIs. Unticking puts them back.
@@ -5302,6 +5338,18 @@ task.spawn(function()
 	})
 
 	createAddonRow({
+		containerName = "Shapes2006Container",
+		checkboxName  = "Shapes2006Checkbox",
+		helpName      = "Shapes2006HelpButton",
+		label         = "2006 shapes",
+		yPos          = startY + 13 * ROW_HEIGHT,
+		stateKey      = "is2006ShapesEnabled",
+		onEnable      = actions.apply2006Shapes,
+		onDisable     = actions.restore2006Shapes,
+		helpText      = "Meshes and other shapes 2006 didn't have, shown as its basic parts: bricks with studs on top, balls and cylinders. Round meshes become balls or cylinders, boxy ones one brick, and anything else is built out of bricks (a tree: a trunk and a block of leaves). Parts with a mesh in them show as the plain part underneath; trusses become bricks; textured meshes get one colour from their name or material. Only a look: what you collide with stays the same. Characters, hats and tools are left alone. Untick to put every shape back."
+	})
+
+	createAddonRow({
 		containerName = "OldMoonContainer",
 		checkboxName  = "OldMoonCheckbox",
 		helpName      = "OldMoonHelpButton",
@@ -6027,6 +6075,7 @@ task.spawn(function()
 	if state.isRemoveLeaderboardEnabled then task.spawn(actions.applyRemoveLeaderboard) end
 	if state.isOldHealthBarEnabled then task.spawn(actions.applyOldHealthBar) end
 	if state.is2008NightSkyEnabled then task.spawn(actions.apply2008NightSky) end
+	if state.is2006ShapesEnabled then task.spawn(actions.apply2006Shapes) end
 	if state.isAllPlayersEnabled then task.spawn(actions.applyAllPlayers) end
 	if state.isFpsCapEnabled then task.spawn(actions.applyFpsCap) end
 	if state.isHideMobileControlsEnabled then task.spawn(actions.applyHideMobileControls) end

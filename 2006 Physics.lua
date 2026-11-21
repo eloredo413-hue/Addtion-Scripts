@@ -712,6 +712,95 @@ local function setupCharacterPhysics(character)
     local currentSquash = 0
     local currentTilt = 0
 
+    -- (Addtion-Scripts) SPIN GUARD: the body going round one way faster than SPIN_RATE for SPIN_TIME is a spin, not a
+    -- turn (turning to where you walk is half a turn at most, so it can never last that long), whatever is doing it:
+    -- for SPIN_HOLD the body is then held still, facing where you walk (or the way it faced, with the stick let go),
+    -- and the console says once what was turning it. On the ground (and in the 2006 jump glide); not while climbing,
+    -- sitting, tripped or flung.
+    local SPIN_RATE = 8     -- radians a second (more than a turn every 0.8 s)
+    local SPIN_TIME = 0.4   -- seconds (more than half a turn at that speed)
+    local SPIN_HOLD = 0.5   -- seconds held still
+    local GROUND_STATES = {
+        [Enum.HumanoidStateType.Running] = true,
+        [Enum.HumanoidStateType.RunningNoPhysics] = true,
+        [Enum.HumanoidStateType.Landed] = true,
+    }
+    local lastYaw, spinFor, spinSign, holdUntil, holdLook, spinReported = nil, 0, 0, 0, nil, false
+    local function flatLookOf(cframe)
+        local look = cframe.LookVector * xzVector
+        if look.Magnitude < 0.01 then return nil end
+        return look.Unit
+    end
+    local function yawOf(look)
+        return math.atan2(-look.X, -look.Z)
+    end
+    local function whatTurns()
+        local found = {}
+        for _, d in ipairs(character:GetDescendants()) do
+            if d:IsA("BodyGyro") or d:IsA("BodyAngularVelocity") or d:IsA("AlignOrientation")
+                or d:IsA("AngularVelocity") or d:IsA("Torque") then
+                local on = true
+                pcall(function() if d.Enabled == false then on = false end end)
+                if on then table.insert(found, d.ClassName .. " " .. d.Name .. " (in " .. tostring(d.Parent and d.Parent.Name) .. ")") end
+            end
+        end
+        table.insert(found, "AutoRotate " .. tostring(humanoid.AutoRotate))
+        if glideVelocity.Parent then table.insert(found, "the jump glide") end
+        if isTilting then table.insert(found, "the landing tilt") end
+        if character:FindFirstChildWhichIsA("Tool") then table.insert(found, "a tool in hand") end
+        return table.concat(found, ", ")
+    end
+    local function spinGuard(dt)
+        local body = rootPart or torso
+        if not body or not body.Parent or not dt or dt <= 0 then return end
+        local state = humanoid:GetState()
+        local guarded = GROUND_STATES[state] or (glideVelocity.Parent ~= nil
+            and (state == Enum.HumanoidStateType.Jumping or state == Enum.HumanoidStateType.Freefall))
+        if not guarded or climbFWM.isClimbing() or humanoid.Sit or humanoid.PlatformStand or checkIfTrippedState()
+            or humanoid.Health <= 0 then
+            lastYaw, spinFor = nil, 0
+            return
+        end
+        local look = flatLookOf(body.CFrame)
+        if not look then return end
+        local now = os.clock()
+        if now < holdUntil then
+            local md = humanoid.MoveDirection * xzVector
+            local want = md.Magnitude > 0.1 and md.Unit or holdLook or look
+            local v = body.AssemblyAngularVelocity
+            body.AssemblyAngularVelocity = Vector3.new(v.X, 0, v.Z)
+            if want:Dot(look) < 0.999 then
+                local pos = body.Position
+                body.CFrame = CFrame.lookAt(pos, pos + want)
+            end
+            lastYaw, spinFor = yawOf(want), 0
+            return
+        end
+        local yaw = yawOf(look)
+        if lastYaw then
+            local turned = (yaw - lastYaw + math.pi) % (2 * math.pi) - math.pi
+            local rate = turned / dt
+            local sign = rate > 0 and 1 or -1
+            if math.abs(rate) > SPIN_RATE and (spinFor == 0 or sign == spinSign) then
+                spinSign = sign
+                spinFor = spinFor + dt
+            else
+                spinFor = 0
+            end
+            if spinFor >= SPIN_TIME then
+                spinFor = 0
+                holdUntil = now + SPIN_HOLD
+                holdLook = look
+                if not spinReported then
+                    spinReported = true
+                    warn(("[2006 Physics] stopped a spin (%.1f turns a second). Turning the body then: %s")
+                        :format(math.abs(rate) / (2 * math.pi), whatTurns()))
+                end
+            end
+        end
+        lastYaw = yaw
+    end
+
     -- (Addtion-Scripts) the sink (see SINKING INTO THE GROUND above)
     local sinkRay = RaycastParams.new()
     sinkRay.FilterType = Enum.RaycastFilterType.Exclude
@@ -843,6 +932,8 @@ local function setupCharacterPhysics(character)
             body.CFrame = body.CFrame * cf.fromEulerAnglesXYZ(pitchAngle, 0, currentSway / rollDivisor)
         end
 
+        spinGuard(dt) -- (see SPIN GUARD above)
+
         if tick() - lastJumpTick > 0.05
             and glideVelocity.Parent ~= nil
             and humanoid.FloorMaterial ~= Enum.Material.Air
@@ -973,3 +1064,7 @@ BPGenv.__Physics2006Cleanup = function()
     cleanupConnections()
     BPGenv.__Physics2006Cleanup = nil
 end
+
+-- (so it can be seen in the console which copy is running)
+print("[2006 Physics] On (time period " .. tostring(getTimePeriod()) .. "): Roblox's own turning (the 2013 camera's"
+    .. " turning steps aside), spin guard on.")

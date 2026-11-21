@@ -32,11 +32,12 @@ task.spawn(function()
 	local CAMERA_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Retro%20Camera.lua"
 	local CAMERA_GIST = "https://gist.githubusercontent.com/eloredo413-hue/81660979f9506a61e0344f32a8096f96/raw/05a2619b3a2737d7c4a97814650f8980e103c5ef/Retro%2520camera"
 	-- the repo copy works with R15 avatars too; the gist (R6 only) is the fallback
-	local PHYSICS_2006_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2006%20Physics.lua"
+	-- (?v=: a fresh copy each time, not one GitHub kept from a few minutes before)
+	local PHYSICS_2006_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2006%20Physics.lua?v=" .. tostring(os.time())
 	local PHYSICS_2006_GIST = "https://gist.githubusercontent.com/eloredo413-hue/03ef8e46682bfb53e26e6847abfde344/raw/0fb71153c3b4a369a0390228a2bec3a4a5655c56/2006%2520Physics"
 	-- the 2008 physics (its id is still "2007"): the CharacterPhysics script the user gave, made to run from an
 	-- executor (R6 and R15)
-	local PHYSICS_2007_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2008%20Physics.lua"
+	local PHYSICS_2007_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2008%20Physics.lua?v=" .. tostring(os.time())
 
 	local player = Players.LocalPlayer
 	local pg = player:WaitForChild("PlayerGui", 15)
