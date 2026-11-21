@@ -7,8 +7,10 @@
 --     tall, standing upright; it fades in over its first second and out over its second (2 s each).
 --   * forceFieldRadial: big soft flares at the middle of the body. 2 a second, 5 studs and growing 6 a second, turned
 --     any way and spinning (4 to 100 degrees a second), fading out over their 2 seconds.
--- Both glow (added light). The beams are rbxassetid://5101923607 and the sparkles rbxassetid://398330155 (the user's
--- picks; that one is a decal, so its picture, 398330154, is what's used).
+-- Both glow (added light), and both are the one texture the old forcefield used for them: the white star the user
+-- found (this repo's assets/forcefield2012.png, its black background made see-through), in its own colours. It is
+-- downloaded once into the executor's folder and shown with getcustomasset; Roblox's own sparkle until then (or if
+-- the executor can't).
 -- With them, the sphere of Bloxy's original 2012 forcefield: two navy neon spheres round the torso (6.3 and 6.93
 -- studs), taking turns to show (the original's pulse). Roblox's own forcefield is hidden while it shows.
 --
@@ -37,9 +39,9 @@ do
 	local STEP_TEXT = "choose your forcefield"
 	local EFFECT_NAME = "Forcefield2012Particles"
 	local BLOXY_HOLDER = "FFCloneHolder" -- (Bloxy's 2012 forcefield, the blue bubble, puts its model in this)
-	local BEAM_TEXTURE = "rbxassetid://5101923607"   -- (the user's beam: blue and purple)
-	local SPARKLE_TEXTURE = "rbxassetid://398330154" -- (the picture of the user's sparkle decal, 398330155)
-	local SPARKLE_COLOR = Color3.fromRGB(200, 225, 255) -- (a slight blue: the sparkle itself is grey)
+	local STAR_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/assets/forcefield2012.png"
+	local STAR_FILE = "AddtionAssets/forcefield2012.png"
+	local STAR_FALLBACK = "rbxasset://textures/particles/sparkles_main.dds"
 	local SPHERE_HOLDER = "Forcefield2012Spheres"
 	local SPHERE_COLOR = Color3.fromRGB(0, 0, 128)   -- (the original's navy neon)
 
@@ -59,6 +61,34 @@ do
 	local watched = {}
 	local handled = setmetatable({}, { __mode = "k" })
 	local sphereHolder = nil
+	local starImage = STAR_FALLBACK
+
+	------------------------------------------------------------
+	-- the star (this repo's, kept in the executor's folder)
+	------------------------------------------------------------
+	task.spawn(function()
+		local getAsset = (type(getcustomasset) == "function" and getcustomasset)
+			or (type(getsynasset) == "function" and getsynasset) or nil
+		if not (getAsset and type(writefile) == "function" and type(isfile) == "function") then return end
+		pcall(function()
+			if type(isfolder) == "function" and type(makefolder) == "function" and not isfolder("AddtionAssets") then
+				makefolder("AddtionAssets")
+			end
+			if not isfile(STAR_FILE) then
+				local data = game:HttpGet(STAR_URL)
+				if type(data) == "string" and #data > 64 and string.sub(data, 2, 4) == "PNG" then writefile(STAR_FILE, data) end
+			end
+			if isfile(STAR_FILE) then
+				local id = getAsset(STAR_FILE)
+				if type(id) == "string" and id ~= "" then
+					starImage = id
+					for _, entry in pairs(effects) do
+						for _, e in ipairs(entry.emitters) do e.Texture = id end
+					end
+				end
+			end
+		end)
+	end)
 
 	local function disconnectAll(list)
 		for _, c in ipairs(list) do pcall(function() c:Disconnect() end) end
@@ -147,8 +177,8 @@ do
 		ring.Position = Vector3.new(0, -BEAM.below, 0)
 		local beams = Instance.new("ParticleEmitter")
 		beams.Name = "Beam"
-		beams.Texture = BEAM_TEXTURE
-		beams.Color = ColorSequence.new(Color3.new(1, 1, 1)) -- (its own colours)
+		beams.Texture = starImage
+		beams.Color = ColorSequence.new(Color3.new(1, 1, 1)) -- (the star's own colours)
 		beams.LightEmission = 1
 		beams.LightInfluence = 0
 		beams.Rate = BEAM.rate
@@ -177,8 +207,8 @@ do
 		middle.Name = EFFECT_NAME .. "Middle"
 		local radial = Instance.new("ParticleEmitter")
 		radial.Name = "Radial"
-		radial.Texture = SPARKLE_TEXTURE
-		radial.Color = ColorSequence.new(SPARKLE_COLOR)
+		radial.Texture = starImage
+		radial.Color = ColorSequence.new(Color3.new(1, 1, 1))
 		radial.LightEmission = 1
 		radial.LightInfluence = 0
 		radial.Rate = RADIAL.rate
