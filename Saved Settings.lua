@@ -1079,27 +1079,70 @@ end
 ------------------------------------------------------------
 -- PRESETS (the plus over the hammer): a year in one tap
 ------------------------------------------------------------
--- Each one picks the year's GUI in the setup (the topbar question) and sets what it lists; everything else stays as
--- it is now (the other setup answers as last given, the hammer's options as they are). The rest of each year's
--- settings come from the user's videos, one per preset.
+-- Each one picks the year's GUI in the setup (the topbar question) and sets its era's look, from the user's run-through
+-- of each preset: anything before 2013 with the mobile controls hidden; the year's plastic (2005, 2006 / 2007, 2008,
+-- 2010 for 2010 - 2013); the era's sky (2008 up to 2008, 2009 for 2010 - 2012, 2013 for 2013 - 2014); 2006-07 lighting
+-- for 2006 / 2007; iw legacy lighting with the year's lighting era for 2014 and early 2015 (with legacy lighting for
+-- 2013 - early 2014), and the year's lighting era from 2016 on; 2006 without the old safe chat; 2007 with the old
+-- players (old avatar) and no forcefields. Each preset sets every material, sky and lighting option, on or off, so
+-- one picked after another leaves nothing of the one before. The other setup answers stay as last given, and the
+-- hammer's other options as they are.
+local SAFE_CHAT_QUESTION, FORCEFIELD_QUESTION = "Do you want the old safe chat?", "choose your forcefield"
+local MATERIAL_KEYS = { "isSmoothPlasticEnabled", "isPlasticEnabled", "is2005MaterialsEnabled", "is2006MaterialsEnabled",
+	"is2008MaterialsEnabled", "is2009MaterialsEnabled", "is2010MaterialsEnabled", "is2016MaterialsEnabled",
+	"isLegacyMaterialsEnabled" }
+local SKY_KEYS = { "isSkyboxEnabled", "isSkybox2009Enabled", "isSkybox2013Enabled", "is2008NightSkyEnabled" }
+local LIGHTING_KEYS = { "is2006LightingEnabled", "isLegacyLightingEnabled", "isIWLegacyLightingEnabled",
+	"isIWLighting2014Enabled", "isIWLighting2015Enabled", "isIWLighting2016Enabled", "isIWLighting2017Enabled",
+	"isIWLighting2019Enabled", "isIWLighting2020Enabled" }
+local function era(t)
+	local config = {}
+	for _, key in ipairs(MATERIAL_KEYS) do config[key] = false end
+	for _, key in ipairs(SKY_KEYS) do config[key] = false end
+	for _, key in ipairs(LIGHTING_KEYS) do config[key] = false end
+	if t.material then config[t.material] = true end
+	for _, key in ipairs(t.sky or {}) do config[key] = true end
+	for _, key in ipairs(t.lighting or {}) do config[key] = true end
+	config.isHideMobileControlsEnabled = t.hideControls == true
+	for key, value in pairs(t.extra or {}) do config[key] = value end
+	return { name = t.name, topbar = t.topbar, note = t.note, config = config, answers = t.answers, choices = t.choices }
+end
+local SKY_2008, SKY_2009, SKY_2013 = { "isSkyboxEnabled" }, { "isSkybox2009Enabled" }, { "isSkybox2013Enabled" }
 local PRESETS = {
-	{ name = "2005", topbar = "2005" },
-	{ name = "2006", topbar = "2006" },
-	{ name = "2007", topbar = "2006", note = "the 2006-2007 GUI" },
-	{ name = "2008", topbar = "2008" },
-	{ name = "2010", topbar = "2010" },
-	{ name = "2011", topbar = "2011" },
-	{ name = "2012", topbar = "2012" },
-	{ name = "2013", topbar = "2013", note = "old health bar on", config = { isOldHealthBarEnabled = true } },
-	{ name = "2013 - early 2014", topbar = "2013", note = "old health bar off", config = { isOldHealthBarEnabled = false } },
-	{ name = "early 2015", topbar = "2015 early", note = "the 2014 loading screen" },
-	{ name = "2016", topbar = "2016" },
-	{ name = "2017", topbar = "2017" },
-	{ name = "2019", topbar = "2019" },
-	{ name = "2021", topbar = "2021" },
-	{ name = "2023 old", topbar = "2023 old", note = "early 2023" },
-	{ name = "2023 new", topbar = "2023 new", note = "late 2023" },
-	{ name = "2024", topbar = "2024" },
+	era { name = "2005", topbar = "2005", note = "2005 plastic, 2008 sky, no mobile controls",
+		hideControls = true, material = "is2005MaterialsEnabled", sky = SKY_2008 },
+	era { name = "2006", topbar = "2006", note = "2006 plastic, 2006-07 lighting, no safe chat",
+		hideControls = true, material = "is2006MaterialsEnabled", sky = SKY_2008, lighting = { "is2006LightingEnabled" },
+		answers = { { q = SAFE_CHAT_QUESTION, a = "No" } }, choices = { SafeChat = false } },
+	era { name = "2007", topbar = "2006", note = "the 2006-2007 GUI, old players, no forcefields",
+		hideControls = true, material = "is2006MaterialsEnabled", sky = SKY_2008, lighting = { "is2006LightingEnabled" },
+		extra = { isOldAvatarEnabled = true, isAllPlayersEnabled = false },
+		answers = { { q = FORCEFIELD_QUESTION, a = "normal" } }, choices = { Forcefield = "normal" } },
+	era { name = "2008", topbar = "2008", note = "2008 plastic, 2008 sky and night sky",
+		hideControls = true, material = "is2008MaterialsEnabled", sky = { "isSkyboxEnabled", "is2008NightSkyEnabled" } },
+	era { name = "2010", topbar = "2010", note = "2010 plastic, 2009 sky",
+		hideControls = true, material = "is2010MaterialsEnabled", sky = SKY_2009 },
+	era { name = "2011", topbar = "2011", note = "2010 plastic, 2009 sky",
+		hideControls = true, material = "is2010MaterialsEnabled", sky = SKY_2009 },
+	era { name = "2012", topbar = "2012", note = "2010 plastic, 2009 sky",
+		hideControls = true, material = "is2010MaterialsEnabled", sky = SKY_2009 },
+	era { name = "2013", topbar = "2013", note = "old health bar, 2010 plastic, 2013 sky",
+		material = "is2010MaterialsEnabled", sky = SKY_2013, extra = { isOldHealthBarEnabled = true } },
+	era { name = "2013 - early 2014", topbar = "2013", note = "iw + legacy lighting, 2013 sky",
+		sky = SKY_2013, lighting = { "isIWLegacyLightingEnabled", "isLegacyLightingEnabled" },
+		extra = { isOldHealthBarEnabled = false } },
+	era { name = "2014", topbar = "2014", note = "iw lighting with the 2014 era, 2013 sky",
+		sky = SKY_2013, lighting = { "isIWLegacyLightingEnabled", "isIWLighting2014Enabled" } },
+	era { name = "early 2015", topbar = "2015 early", note = "iw lighting with the 2015 era, the 2014 loading screen",
+		lighting = { "isIWLegacyLightingEnabled", "isIWLighting2015Enabled" } },
+	era { name = "2016", topbar = "2016", note = "2016 lighting, 2016 materials",
+		material = "is2016MaterialsEnabled", lighting = { "isIWLighting2016Enabled" } },
+	era { name = "2017", topbar = "2017", note = "2017 lighting", lighting = { "isIWLighting2017Enabled" } },
+	era { name = "2019", topbar = "2019", note = "2019 lighting", lighting = { "isIWLighting2019Enabled" } },
+	era { name = "2021", topbar = "2021", note = "2020 lighting", lighting = { "isIWLighting2020Enabled" } },
+	era { name = "2023 old", topbar = "2023 old", note = "early 2023" },
+	era { name = "2023 new", topbar = "2023 new", note = "late 2023" },
+	era { name = "2024", topbar = "2024" },
 }
 -- Bloxy's own ids for its own years (More guis' added ones are kept in the topbar pick file instead)
 local BLOXY_TOPBAR_IDS = {
@@ -1123,6 +1166,7 @@ local function presetFiles(preset)
 	for key, value in pairs(preset.config or {}) do config[key] = value end
 	config.Choices = type(config.Choices) == "table" and config.Choices or {}
 	if BLOXY_TOPBAR_IDS[preset.topbar] then config.Choices.Topbar = BLOXY_TOPBAR_IDS[preset.topbar] end
+	for key, value in pairs(preset.choices or {}) do config.Choices[key] = value end
 	files[CONFIG_FILE] = encode(config) or files[CONFIG_FILE] or "{}"
 	files[TOPBAR_PICK_FILE] = encode({ Pick = preset.topbar }) or files[TOPBAR_PICK_FILE]
 	-- the setup's answers: this year's GUI first, then the others as they were last given (a preset's own answers,

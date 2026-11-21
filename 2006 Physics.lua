@@ -1105,6 +1105,18 @@ local function setupCharacterPhysics(character)
 
         spinGuard(dt) -- (see SPIN GUARD above)
 
+        -- (Addtion-Scripts) THE AIR LOCK, as the 2008 physics': from a jump until you land you keep facing the way you
+        -- jumped. The jump glide turns Roblox's turning off for the jump, but the body still had the turn it was making
+        -- as it left the ground and kept going round in the air (turning left or right while jumping: a spin, the
+        -- user's video). That turn is stopped here.
+        if glideVelocity.Parent ~= nil and not humanoid.AutoRotate then
+            local body = rootPart or torso
+            local w = body.AssemblyAngularVelocity
+            if math.abs(w.Y) > 0.01 then
+                body.AssemblyAngularVelocity = Vector3.new(w.X, 0, w.Z)
+            end
+        end
+
         if tick() - lastJumpTick > 0.05
             and glideVelocity.Parent ~= nil
             and humanoid.FloorMaterial ~= Enum.Material.Air
