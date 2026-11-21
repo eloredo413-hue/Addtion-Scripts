@@ -35,7 +35,8 @@
 -- The loader loads it, and so do the 2021 / 2023 old / 2023 new GUIs after the rejoin they do (the loader
 -- doesn't run in the server they rejoin). Running it again replaces the earlier copy.
 --
--- getgenv().BPSavedSettings = { Open, Close, Save, Load, Rename, Delete, List, Presets, LoadPreset, OpenPresets, Destroy }
+-- getgenv().BPSavedSettings = { Open, Close, Save, Load, Rename, Delete, List, Presets, LoadPreset, OpenPresets,
+-- SetSetupAnswers, Destroy }
 
 local Env = (getgenv and getgenv()) or _G
 if Env.BPSavedSettings and type(Env.BPSavedSettings.Destroy) == "function" then
@@ -926,7 +927,12 @@ local function answerSetup(answers, files, name, firstWait)
 						stopReason = "\"" .. title .. "\" doesn't go on when answered: the rest of the setup is up to you"
 						break
 					end
-					if press(btn) then given = given + 1 end
+					if press(btn) then
+						given = given + 1
+						-- (the setup's < > remember it as this question's answer: ">" gives it again)
+						local wizard = Env.BPWizard
+						if type(wizard) == "table" and type(wizard.noteTap) == "function" then pcall(wizard.noteTap, btn) end
+					end
 					lastFrame, lastTitle, lastAt = frame, title, os.clock()
 					if not queues[title] or #queues[title] == 0 then
 						answered[frame] = answered[frame] or {}
@@ -1088,6 +1094,15 @@ end
 -- one picked after another leaves nothing of the one before. The other setup answers stay as last given, and the
 -- hammer's other options as they are.
 local SAFE_CHAT_QUESTION, FORCEFIELD_QUESTION = "Do you want the old safe chat?", "choose your forcefield"
+-- The physics / camera step ("Old physics or old camera?"): a preset that says what it wants there doesn't keep the one
+-- given last time (2006 physics picked once came back with the 2016 preset). From early 2015 to 2017 only the 2018
+-- camera (no physics, nothing from before the year); from 2019 on neither. The other years keep the last one given.
+local PHYSICS_QUESTION = "Old physics or old camera?"
+local PHYSICS_CAMERA = {
+	camera2018 = { config = { physicsCameraChoice = "camera", cameraVariant = "2018" },
+		answers = { CAMERA_DROPDOWN, "2018 Camera", "2018 Camera" } },
+	none = { config = { physicsCameraChoice = "none" }, answers = { "None" } },
+}
 local MATERIAL_KEYS = { "isSmoothPlasticEnabled", "isPlasticEnabled", "is2005MaterialsEnabled", "is2006MaterialsEnabled",
 	"is2008MaterialsEnabled", "is2009MaterialsEnabled", "is2010MaterialsEnabled", "is2016MaterialsEnabled",
 	"isLegacyMaterialsEnabled" }
@@ -1105,7 +1120,15 @@ local function era(t)
 	for _, key in ipairs(t.lighting or {}) do config[key] = true end
 	config.isHideMobileControlsEnabled = t.hideControls == true
 	for key, value in pairs(t.extra or {}) do config[key] = value end
-	return { name = t.name, topbar = t.topbar, note = t.note, config = config, answers = t.answers, choices = t.choices }
+	local answers = t.answers
+	local step = t.physicsCamera and PHYSICS_CAMERA[t.physicsCamera]
+	if step then
+		for key, value in pairs(step.config) do config[key] = value end
+		answers = {}
+		for _, a in ipairs(t.answers or {}) do table.insert(answers, a) end
+		for _, a in ipairs(step.answers) do table.insert(answers, { q = PHYSICS_QUESTION, a = a }) end
+	end
+	return { name = t.name, topbar = t.topbar, note = t.note, config = config, answers = answers, choices = t.choices }
 end
 local SKY_2008, SKY_2009, SKY_2013 = { "isSkyboxEnabled" }, { "isSkybox2009Enabled" }, { "isSkybox2013Enabled" }
 local PRESETS = {
@@ -1133,16 +1156,17 @@ local PRESETS = {
 		extra = { isOldHealthBarEnabled = false } },
 	era { name = "2014", topbar = "2014", note = "iw lighting with the 2014 era, 2013 sky",
 		sky = SKY_2013, lighting = { "isIWLegacyLightingEnabled", "isIWLighting2014Enabled" } },
-	era { name = "early 2015", topbar = "2015 early", note = "iw lighting with the 2015 era, the 2014 loading screen",
-		lighting = { "isIWLegacyLightingEnabled", "isIWLighting2015Enabled" } },
-	era { name = "2016", topbar = "2016", note = "2016 lighting, 2016 materials",
-		material = "is2016MaterialsEnabled", lighting = { "isIWLighting2016Enabled" } },
-	era { name = "2017", topbar = "2017", note = "2017 lighting", lighting = { "isIWLighting2017Enabled" } },
-	era { name = "2019", topbar = "2019", note = "2019 lighting", lighting = { "isIWLighting2019Enabled" } },
-	era { name = "2021", topbar = "2021", note = "2020 lighting", lighting = { "isIWLighting2020Enabled" } },
-	era { name = "2023 old", topbar = "2023 old", note = "early 2023" },
-	era { name = "2023 new", topbar = "2023 new", note = "late 2023" },
-	era { name = "2024", topbar = "2024" },
+	era { name = "early 2015", topbar = "2015 early", note = "iw lighting with the 2015 era, the 2014 loading screen, 2018 camera",
+		lighting = { "isIWLegacyLightingEnabled", "isIWLighting2015Enabled" }, physicsCamera = "camera2018" },
+	era { name = "2016", topbar = "2016", note = "2016 lighting, 2016 materials, 2018 camera",
+		material = "is2016MaterialsEnabled", lighting = { "isIWLighting2016Enabled" }, physicsCamera = "camera2018" },
+	era { name = "2017", topbar = "2017", note = "2017 lighting, 2018 camera", lighting = { "isIWLighting2017Enabled" },
+		physicsCamera = "camera2018" },
+	era { name = "2019", topbar = "2019", note = "2019 lighting", lighting = { "isIWLighting2019Enabled" }, physicsCamera = "none" },
+	era { name = "2021", topbar = "2021", note = "2020 lighting", lighting = { "isIWLighting2020Enabled" }, physicsCamera = "none" },
+	era { name = "2023 old", topbar = "2023 old", note = "early 2023", physicsCamera = "none" },
+	era { name = "2023 new", topbar = "2023 new", note = "late 2023", physicsCamera = "none" },
+	era { name = "2024", topbar = "2024", physicsCamera = "none" },
 }
 -- Bloxy's own ids for its own years (More guis' added ones are kept in the topbar pick file instead)
 local BLOXY_TOPBAR_IDS = {
@@ -1872,6 +1896,20 @@ Env.BPSavedSettings = {
 	end,
 	LoadPreset = function(name) return loadPreset(name) end,
 	OpenPresets = function() if not presetsOpen and plusIcon then press(plusIcon) end end,
+	-- the setup's answers as they finally were (Setup Back Forward.lua, after its last question: going back and
+	-- forward left earlier answers in the recording)
+	SetSetupAnswers = function(list)
+		if type(list) ~= "table" then return false end
+		local clean = {}
+		for _, step in ipairs(list) do
+			if type(step) == "table" and type(step.q) == "string" and type(step.a) == "string" then
+				table.insert(clean, { q = step.q, a = step.a })
+			end
+		end
+		recording = { answers = clean }
+		saveRecording()
+		return true
+	end,
 	Destroy = destroy,
 }
 

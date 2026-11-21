@@ -29,6 +29,8 @@
 --   of ours runs over them); 2011-2014 / mobile use the built-in 2011-style ones; 2015/2016 the 2017 ones
 -- + Saved settings: a floppy disk under Bloxy's hammer opens a panel to save / load / rename / delete named
 --   copies of the setup and hammer settings (Saved Settings.lua)
+-- + Setup back / forward: a round "<" and ">" on every setup question; answers are only remembered until the last
+--   question, then everything picked loads together (Setup Back Forward.lua)
 -- + "Skip setup" brings back More guis' topbars too (2013 mobile, 2023 old...): the pick is saved at Confirm
 -- + 2006 / 2008 / 2010: the inventory sits right on the chat bar (no gap), the green outline just inside its slot;
 --   2010's "Health" text a little bigger and the medium blue of a 2010 screenshot; 2010's player list text all one size and
@@ -758,6 +760,15 @@ local function loadUrl(url, label, patch)
     return pcall(chunk)
 end
 
+-- SETUP BACK / FORWARD (Setup Back Forward.lua in this repo): a round "<" and ">" on each of the setup's questions.
+-- Answers are only remembered while the setup is on (back and forward as much as you like), and everything loads
+-- together after the last question. Loaded first, so it is there before the topbar question is answered.
+local URL_SETUP_BACK_FORWARD = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Setup%20Back%20Forward.lua?v=" .. tostring(os.time())
+task.spawn(function()
+    local _, why = loadUrl(URL_SETUP_BACK_FORWARD, "Setup Back Forward")
+    if why == "download" then warn("[Loader] Setup Back Forward.lua couldn't be downloaded: the setup works as before, without < >") end
+end)
+
 -- Bloxy's 2012 / 2013 GUIs: the menu above the hotbar, and a PC's size on a phone (and the safe chat's size to
 -- match): see "Old Gui Fix.lua"
 local URL_OLD_GUI_FIX = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Old%20Gui%20Fix.lua"
@@ -831,7 +842,14 @@ loadUrl(URL_SAFECHAT_HOOK, "SafeChat Hook", function(src)
     if count == 0 then warn("[Loader] SafeChat Hook: its link wasn't found, so it keeps its own Better SafeChat") end
     return patched
 end)
-loadUrl(URL_TERRAIN_HOOK, "Terrain Hook")
+-- (with the setup's < > on, the terrain picked loads after the last question)
+loadUrl(URL_TERRAIN_HOOK, "Terrain Hook", function(src)
+    local patched, count = replacePlain(src, "if not bloxySkipOn() then runTerrain(choice) end",
+        "if not bloxySkipOn() then local wizard = Env.BPWizard; if not (type(wizard) == \"table\" and type(wizard.later) == \"function\" "
+        .. "and wizard.later(\"terrain\", function() runTerrain(choice) end)) then runTerrain(choice) end end")
+    if count == 0 then warn("[Loader] Terrain Hook: its pick wasn't found, so with < > on it loads as soon as it is picked") end
+    return patched
+end)
 loadUrl(URL_EMOTES_HOOK, "Emotes Hook")
 loadUrl(URL_ANIM_2007, "2007 Animation")
 loadUrl(URL_FF_2012, "2012 ForceField")
@@ -3506,14 +3524,22 @@ end
                     writefile(TOPBAR_PICK_FILE, HttpService:JSONEncode({ Pick = tostring(pick) }))
                 end)
             end
+        end
+        confirmSeen = true
+        -- the GUI's follow-up (bubbles, dialogs, loading screen, escape menu ...). With the setup's < > on, the GUI
+        -- itself only loads after the last question, so this waits for it too (the last Confirm's wins).
+        local function followUp()
             if getgenv().BPMenuRecheck then
                 for _, delay in ipairs({ 0.3, 1.5, 4 }) do task.delay(delay, getgenv().BPMenuRecheck) end
             end
+            -- (8 s: a GUI that takes a while to download, like 2011, has started by then)
+            for _, delay in ipairs({ 0.5, 2, 4, 8 }) do
+                task.delay(delay, evaluateAndLoad)
+            end
         end
-        confirmSeen = true
-        -- (8 s: a GUI that takes a while to download, like 2011, has started by then)
-        for _, delay in ipairs({ 0.5, 2, 4, 8 }) do
-            task.delay(delay, evaluateAndLoad)
+        local wizard = getgenv().BPWizard
+        if not (type(wizard) == "table" and type(wizard.later) == "function" and wizard.later("loader: the GUI's follow-up", followUp)) then
+            followUp()
         end
     end
 
