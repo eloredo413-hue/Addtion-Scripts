@@ -33,6 +33,7 @@ local TweenService = game:GetService("TweenService")
 local BLOXY_GUI = "BloxyParadoxProject"
 local BACK_NAME, FORWARD_NAME = "BPWizardBack", "BPWizardForward"
 local CLICK_ID = "rbxassetid://12221967"
+local TEXTURES_AFTER = 3 -- seconds after the rest that the textures (and studs) load: last of all
 local STABLE = 0.25 -- seconds a question has to sit still before it counts (an addon may still be changing it)
 
 local getConnections = getconnections or get_signal_cons
@@ -150,11 +151,13 @@ end
 local finishLater = nil -- (the end of the setup: set below)
 local originalOf = setmetatable({}, { __mode = "k" })
 local pickOrder, lastArgs = {}, {}
+local pickPage = setmetatable({}, { __mode = "k" }) -- Bloxy's pick -> the question it came from
 local function wrapPick(orig, info)
 	if isWrapper[orig] then return orig end
 	local w = function(...)
 		if W.session then
 			lastArgs[orig] = table.pack(...)
+			pickPage[orig] = info and info.firstTitle
 			local seen = false
 			for _, f in ipairs(pickOrder) do
 				if f == orig then seen = true break end
@@ -515,13 +518,19 @@ local function finish(why)
 	navTarget = nil
 	removeButtons()
 	local given = 0
+	-- the textures (and their studs) load last of all, once the rest has started (the GUI takes a moment to download)
+	local function isTextures(orig) return string.find(string.lower(tostring(pickPage[orig] or "")), "texture", 1, true) ~= nil end
+	local lastOnes = {}
 	-- Bloxy's own picks, in the order they were first given (the topbar first), each the last way it was given
 	-- (in Bloxy's "configure" its own rules decide, as when answering without < >)
 	for _, orig in ipairs(pickOrder) do
 		local args = lastArgs[orig]
 		if args then
-			local ok, err = pcall(orig, table.unpack(args, 1, args.n))
-			if ok then given = given + 1 else warn("[Setup Back/Forward] a pick didn't load: " .. tostring(err)) end
+			local function give()
+				local ok, err = pcall(orig, table.unpack(args, 1, args.n))
+				if ok then given = given + 1 else warn("[Setup Back/Forward] a pick didn't load: " .. tostring(err)) end
+			end
+			if isTextures(orig) then table.insert(lastOnes, give) else give() end
 		end
 	end
 	-- the addons' picks and the loader's follow-up of the GUI, in the order they were first given
@@ -530,11 +539,18 @@ local function finish(why)
 		local item = queue[key]
 		if item then
 			ran = ran + 1
-			task.spawn(function()
+			local function run()
 				local ok, err = pcall(item.fn)
 				if not ok then warn("[Setup Back/Forward] \"" .. tostring(key) .. "\" didn't load: " .. tostring(err)) end
-			end)
+			end
+			if key == "textures" then table.insert(lastOnes, run) else task.spawn(run) end
 		end
+	end
+	if #lastOnes > 0 then
+		task.delay(TEXTURES_AFTER, function()
+			for _, fn in ipairs(lastOnes) do task.spawn(fn) end
+			print("[Setup Back/Forward] the textures load now, last")
+		end)
 	end
 	table.clear(queue)
 	table.clear(queueOrder)
@@ -567,7 +583,7 @@ end
 ------------------------------------------------------------
 local function hookFrame(frame)
 	if frameInfo[frame] then return frameInfo[frame] end
-	local info = { pages = {} }
+	local info = { pages = {}, firstTitle = questionTitle(frame) }
 	frameInfo[frame] = info
 	if navShow then
 		info.show = navShow
