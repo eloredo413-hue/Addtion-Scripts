@@ -846,8 +846,26 @@ end
 ------------------------------------------------------------
 local candidate = { frame = nil, title = nil, since = 0 }
 
+local emptySince = nil
 local function step(dt)
 	if not alive or not (W.sg and W.sg.Parent) then return end
+	-- the end of the setup, whatever answered the last question: no question left on screen for 2 seconds
+	if W.session and not busy and not replaying then
+		local any = false
+		for _, c in ipairs(W.sg:GetChildren()) do
+			if c:IsA("Frame") and c:FindFirstChild("HeaderImage") then any = true break end
+		end
+		if any then
+			emptySince = nil
+		elseif not emptySince then
+			emptySince = os.clock()
+		elseif os.clock() - emptySince > 2 then
+			emptySince = nil
+			finish("setup done")
+		end
+	else
+		emptySince = nil
+	end
 	local f = restingFrame()
 	local t = f and questionTitle(f)
 	if f ~= candidate.frame or t ~= candidate.title then
