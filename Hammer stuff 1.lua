@@ -1978,11 +1978,13 @@ task.spawn(function()
 
 	------------------------------------------------------------
 	-- 2005 / 2006 / 2008 / 2010 MATERIALS
-	-- Each year's old plastic: the MaterialVariants the user gave (no colour picture, a roughness picture, and for
-	-- 2006 and 2008 a metalness one), put over SmoothPlastic and over Plastic (old parts were all one smooth plastic;
-	-- 2009 materials covers both too). One year at a time. 2010 works together with 2009 materials (2009's textures
-	-- underneath, the 2010 plastic over its plastic); 2005, 2006 and 2008 come before 2009, so they turn it off.
-	-- 2016 materials can stay on with any of them (it leaves plastic alone).
+	-- Each year's plastic as FWM has it: the MaterialVariants the user gave (SmoothPlastic, no colour picture, a
+	-- roughness picture, and for 2006 and 2008 a metalness one: the shiny old plastic). Every part is made
+	-- SmoothPlastic with that year's variant set on it (new parts too), and SmoothPlastic is pointed at the variant
+	-- as well. Roblox's 2022 material system is switched on while it is on (custom materials need it).
+	-- One year at a time. 2010 works together with 2009 materials: then only the plastic parts are changed, so
+	-- 2009's textures stay on the rest. 2005, 2006 and 2008 come before 2009, so they turn it off.
+	-- Unticking puts every part's own material back, and the rest as it was.
 	------------------------------------------------------------
 	local ERA_PLASTICS = {
 		["2005"] = { roughness = 13470288211 },
@@ -1990,13 +1992,38 @@ task.spawn(function()
 		["2008"] = { roughness = 2654856319, metalness = 85855853900157 },
 		["2010"] = { roughness = 126140643051088 },
 	}
-	local ERA_PLASTIC_MATERIALS = { "SmoothPlastic", "Plastic" }
+	local SMOOTH = Enum.Material.SmoothPlastic
+	local PLASTIC = Enum.Material.Plastic
 
 	local eraPlastic = {
 		active = nil,
-		variants = {},
-		overrides = {}
+		variant = nil,
+		previousOverride = nil,
+		previous2022 = nil,
+		parts = {}, -- part -> { material, materialVariant }
+		conn = nil,
+		onlyPlastic = false
 	}
+
+	local function set2022(value)
+		pcall(function() MaterialService.Use2022Materials = value end)
+		local ok, now = pcall(function() return MaterialService.Use2022Materials end)
+		if ok and now ~= value and sethiddenproperty then
+			pcall(sethiddenproperty, MaterialService, "Use2022Materials", value)
+		end
+	end
+
+	local function eraPart(part)
+		if not eraPlastic.active or not eraPlastic.variant then return end
+		if not part:IsA("BasePart") or part:IsA("Terrain") or eraPlastic.parts[part] then return end
+		if eraPlastic.onlyPlastic and part.Material ~= PLASTIC and part.Material ~= SMOOTH then return end
+		local name = eraPlastic.variant.Name
+		pcall(function()
+			eraPlastic.parts[part] = { part.Material, part.MaterialVariant }
+			part.Material = SMOOTH
+			part.MaterialVariant = name
+		end)
+	end
 
 	local function restoreEraPlastic()
 
@@ -2007,27 +2034,42 @@ task.spawn(function()
 		local year = eraPlastic.active
 		eraPlastic.active = nil
 
-		for name, previous in pairs(eraPlastic.overrides) do
+		if eraPlastic.conn then
+			pcall(function() eraPlastic.conn:Disconnect() end)
+			eraPlastic.conn = nil
+		end
+
+		-- every part as it was (unless something else changed it meanwhile)
+		local name = eraPlastic.variant and eraPlastic.variant.Name
+		for part, was in pairs(eraPlastic.parts) do
 			pcall(function()
-				-- (a previous override whose variant is gone meanwhile: none)
-				if previous and previous ~= "" and not MaterialService:FindFirstChild(previous, true) then
-					previous = ""
+				if part.Parent and part.MaterialVariant == name then
+					part.MaterialVariant = was[2] or ""
+					part.Material = was[1]
 				end
-				MaterialService:
-					SetBaseMaterialOverride(
-						Enum.Material[name],
-						(previous and previous ~= "") and previous or ""
-					)
 			end)
 		end
+		eraPlastic.parts = {}
 
-		eraPlastic.overrides = {}
+		pcall(function()
+			local previous = eraPlastic.previousOverride
+			-- (a previous override whose variant is gone meanwhile: none)
+			if previous and previous ~= "" and not MaterialService:FindFirstChild(previous, true) then
+				previous = ""
+			end
+			MaterialService:SetBaseMaterialOverride(SMOOTH, (previous and previous ~= "") and previous or "")
+		end)
+		eraPlastic.previousOverride = nil
 
-		for _, variant in ipairs(eraPlastic.variants) do
-			pcall(function() variant:Destroy() end)
+		if eraPlastic.variant then
+			pcall(function() eraPlastic.variant:Destroy() end)
+			eraPlastic.variant = nil
 		end
 
-		eraPlastic.variants = {}
+		if eraPlastic.previous2022 == false then
+			set2022(false)
+		end
+		eraPlastic.previous2022 = nil
 
 		print(
 			"[Bloxy Paradox] " .. year .. " Materials restored."
@@ -2044,61 +2086,73 @@ task.spawn(function()
 
 		restoreEraPlastic()
 		eraPlastic.active = year
+		-- (2010 on top of 2009 materials: only the plastic parts, 2009's textures kept on the rest)
+		eraPlastic.onlyPlastic = year == "2010" and is2009MaterialsEnabled
 
-		for _, name in ipairs(ERA_PLASTIC_MATERIALS) do
+		-- custom materials need Roblox's 2022 material system
+		pcall(function() eraPlastic.previous2022 = MaterialService.Use2022Materials end)
+		set2022(true)
 
-			local material = Enum.Material[name]
-			local variantName = "BP" .. year .. "_" .. name
+		local variantName = "BP" .. year .. "_SmoothPlastic"
+		local old = MaterialService:FindFirstChild(variantName)
+		if old then
+			pcall(function() old:Destroy() end)
+		end
 
-			local old = MaterialService:FindFirstChild(variantName)
-			if old then
-				pcall(function() old:Destroy() end)
-			end
+		local variant = Instance.new("MaterialVariant")
+		variant.Name = variantName
 
-			local variant = Instance.new("MaterialVariant")
-			variant.Name = variantName
+		local made =
+			pcall(function()
+				variant.BaseMaterial = SMOOTH
+				variant.ColorMap = ""
+				variant.NormalMap = ""
+				variant.RoughnessMap = "rbxassetid://" .. tostring(maps.roughness)
+				variant.MetalnessMap = maps.metalness
+					and ("rbxassetid://" .. tostring(maps.metalness))
+					or ""
+			end)
 
-			local made =
-				pcall(function()
-					variant.BaseMaterial = material
-					variant.ColorMap = ""
-					variant.NormalMap = ""
-					variant.RoughnessMap = "rbxassetid://" .. tostring(maps.roughness)
-					variant.MetalnessMap = maps.metalness
-						and ("rbxassetid://" .. tostring(maps.metalness))
-						or ""
-				end)
+		if not made then
+			pcall(function() variant:Destroy() end)
+			eraPlastic.active = nil
+			warn("[Bloxy Paradox] " .. year .. " Materials: the material couldn't be made here.")
+			return
+		end
 
-			if made then
+		variant.Parent = MaterialService
+		eraPlastic.variant = variant
 
-				variant.Parent = MaterialService
-				table.insert(eraPlastic.variants, variant)
+		pcall(function()
+			eraPlastic.previousOverride = MaterialService:GetBaseMaterialOverride(SMOOTH)
+		end)
+		pcall(function()
+			MaterialService:SetBaseMaterialOverride(SMOOTH, variant.Name)
+		end)
 
-				local previous = nil
+		-- every part (new ones too): SmoothPlastic with this year's material on it
+		eraPlastic.conn =
+			Workspace.DescendantAdded:Connect(
+				function(object)
+					if eraPlastic.active == year then
+						task.defer(function()
+							eraPart(object)
+						end)
+					end
+				end
+			)
 
-				pcall(function()
-					previous =
-						MaterialService:
-						GetBaseMaterialOverride(material)
-				end)
-
-				eraPlastic.overrides[name] = previous or false
-
-				pcall(function()
-					MaterialService:
-						SetBaseMaterialOverride(
-							material,
-							variant.Name
-						)
-				end)
-
-			else
-				pcall(function() variant:Destroy() end)
-			end
+		local count = 0
+		for _, object in ipairs(Workspace:GetDescendants()) do
+			if eraPlastic.active ~= year then break end
+			eraPart(object)
+			count = count + 1
+			if count % 2000 == 0 then task.wait() end
 		end
 
 		print(
-			"[Bloxy Paradox] " .. year .. " Materials ON."
+			"[Bloxy Paradox] " .. year .. " Materials ON"
+				.. (eraPlastic.onlyPlastic and " (the plastic parts, with 2009 materials)." or " (every part).")
 		)
 	end
 
@@ -3244,6 +3298,14 @@ task.spawn(function()
 						config.is2009MaterialsEnabled = false
 					end
 
+					-- (legacy materials turns the 2022 material system off, which custom materials need)
+					if isLegacyMaterialsEnabled then
+						isLegacyMaterialsEnabled = false
+						lmCB.Text = ""
+						config.isLegacyMaterialsEnabled = false
+						task.spawn(function() pcall(restoreLegacy) end)
+					end
+
 				else
 
 					eraPlasticEnabled[year] = false
@@ -3318,7 +3380,21 @@ task.spawn(function()
 				isLegacyMaterialsEnabled = true
 				lmCB.Text = "✓"
 
+				-- (the 2005 / 2006 / 2008 / 2010 materials need the 2022 material system this turns off)
+				local wasEra = false
+				for _, year in ipairs(ERA_PLASTIC_YEARS) do
+					if eraPlasticEnabled[year] then
+						wasEra = true
+						eraPlasticEnabled[year] = false
+						eraCB[year].Text = ""
+						config["is" .. year .. "MaterialsEnabled"] = false
+					end
+				end
+
 				task.spawn(function()
+					if wasEra then
+						rebuildPlastics()
+					end
 					pcall(applyLegacy)
 				end)
 
@@ -3661,11 +3737,13 @@ task.spawn(function()
 			function()
 				playClick()
 				showHelp(
-					"The " .. year .. " plastic: smooth and plastic parts get that year's look (its roughness"
+					"The " .. year .. " plastic, as FWM has it: every part is made SmoothPlastic with that year's shiny"
+						.. " material on it (its roughness"
 						.. (ERA_PLASTICS[year].metalness and " and metalness" or "")
-						.. " pictures). One year at a time; "
-						.. (year == "2010" and "works together with 2009 materials (2009's textures, the 2010 plastic)."
+						.. " pictures), new parts too. One year at a time; "
+						.. (year == "2010" and "works together with 2009 materials (then only the plastic parts change)."
 							or "turns off 2009 materials (it came before them).")
+						.. " Untick to put every part's own material back."
 				)
 			end
 		)
