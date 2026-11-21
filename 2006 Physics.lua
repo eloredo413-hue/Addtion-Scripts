@@ -823,16 +823,24 @@ local function setupCharacterPhysics(character)
             end
         end
 
-        targetSway = targetSway * (0.9 + dt) + (torso.AssemblyAngularVelocity.Y / 2000) * toolMass
+        -- (Addtion-Scripts) the sway fades the same at any frame rate: FWM's 0.9 + dt stopped fading at all on a slow
+        -- frame (a tenth of a second), and with a tool in hand the turning then fed it until it spun you round
+        targetSway = targetSway * (0.9 + math.min(dt, 0.05)) + (torso.AssemblyAngularVelocity.Y / 2000) * toolMass
         currentSway = ExtraUtil.Lerp(currentSway, targetSway, 0.3)
 
-        if not checkIfTrippedState() then
+        -- (Addtion-Scripts) the lean and the landing tilt only while there is one to give, and turned on the body's root
+        -- (HumanoidRootPart). FWM set the torso's CFrame to itself every frame, also with nothing to lean: the torso's
+        -- CFrame holds what the walk animation does to the waist joint, so writing it back turned the whole body by that
+        -- again every frame you walked, a spin (holding left, right or up: the user's recording). FWM's own animations
+        -- don't turn that joint; other games' and Bloxy's can. (The 2008 physics already only leans when there is one.)
+        if not checkIfTrippedState() and (isTilting or math.abs(currentSway) > 0.0001) then
             local rollDivisor = torso.AssemblyAngularVelocity.Y < 0 and 2.5 or 5
             local pitchAngle = -currentSway / 5
             if isTilting then
                 pitchAngle = -math.rad(currentTilt) - currentSway / 5
             end
-            torso.CFrame = torso.CFrame * cf.fromEulerAnglesXYZ(pitchAngle, 0, currentSway / rollDivisor)
+            local body = rootPart or torso
+            body.CFrame = body.CFrame * cf.fromEulerAnglesXYZ(pitchAngle, 0, currentSway / rollDivisor)
         end
 
         if tick() - lastJumpTick > 0.05

@@ -3221,7 +3221,7 @@ end
     end
     --========================================================
     -- OLD LOADING SCREENS (Old Loading Screen.lua): the loading screen each GUI starts with, drawn above the GUI
-    --   2006: the 2008 GUI's box in the 2006 GUI's font ("2006"), in place of its own "Loading Character..."
+    --   2006: none of ours: the 2006 GUI shows its own "Loading Character..." screen, as it always had
     --   2011, 2012, and 2013 / 2013 mobile with the old health bar ON: the same in a black box ("2011")
     --   2013 / 2013 mobile with the old health bar OFF: "Powered By ROBLOX" ("2013", about 7 s)
     --   2014 and 2015 early: the 2014 one ("2014"; the 2014 GUI's own dark 2016 one never shows, see Get2014)
@@ -3230,7 +3230,7 @@ end
     --========================================================
     local function loadingStyleFor(era, year)
         if era == "early2015" then return "2014" end
-        if era == "y2006" then return "2006" end
+        if era == "y2006" then return nil end -- (the 2006 GUI's own loading screen)
         if era == "y2010" or era == "y2005" or era == "none" then return nil end
         if year == 2011 or year == 2012 then return "2011" end
         if year == 2013 then
