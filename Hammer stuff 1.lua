@@ -160,6 +160,13 @@ task.spawn(function()
 	local is2016MaterialsEnabled =
 		config.is2016MaterialsEnabled == true
 
+	-- (Addtion-Scripts) 2005 / 2006 / 2008 / 2010 materials: one year's old plastic at a time
+	local ERA_PLASTIC_YEARS = { "2005", "2006", "2008", "2010" }
+	local eraPlasticEnabled = {}
+	for _, year in ipairs(ERA_PLASTIC_YEARS) do
+		eraPlasticEnabled[year] = config["is" .. year .. "MaterialsEnabled"] == true
+	end
+
 	local isNoShadowsEnabled =
 		config.isNoShadowsEnabled == true
 
@@ -1970,6 +1977,132 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
+	-- 2005 / 2006 / 2008 / 2010 MATERIALS
+	-- Each year's old plastic: the MaterialVariants the user gave (no colour picture, a roughness picture, and for
+	-- 2006 and 2008 a metalness one), put over SmoothPlastic and over Plastic (old parts were all one smooth plastic;
+	-- 2009 materials covers both too). One year at a time. 2010 works together with 2009 materials (2009's textures
+	-- underneath, the 2010 plastic over its plastic); 2005, 2006 and 2008 come before 2009, so they turn it off.
+	-- 2016 materials can stay on with any of them (it leaves plastic alone).
+	------------------------------------------------------------
+	local ERA_PLASTICS = {
+		["2005"] = { roughness = 13470288211 },
+		["2006"] = { roughness = 96693714170014, metalness = 85855853900157 },
+		["2008"] = { roughness = 2654856319, metalness = 85855853900157 },
+		["2010"] = { roughness = 126140643051088 },
+	}
+	local ERA_PLASTIC_MATERIALS = { "SmoothPlastic", "Plastic" }
+
+	local eraPlastic = {
+		active = nil,
+		variants = {},
+		overrides = {}
+	}
+
+	local function restoreEraPlastic()
+
+		if not eraPlastic.active then
+			return
+		end
+
+		local year = eraPlastic.active
+		eraPlastic.active = nil
+
+		for name, previous in pairs(eraPlastic.overrides) do
+			pcall(function()
+				-- (a previous override whose variant is gone meanwhile: none)
+				if previous and previous ~= "" and not MaterialService:FindFirstChild(previous, true) then
+					previous = ""
+				end
+				MaterialService:
+					SetBaseMaterialOverride(
+						Enum.Material[name],
+						(previous and previous ~= "") and previous or ""
+					)
+			end)
+		end
+
+		eraPlastic.overrides = {}
+
+		for _, variant in ipairs(eraPlastic.variants) do
+			pcall(function() variant:Destroy() end)
+		end
+
+		eraPlastic.variants = {}
+
+		print(
+			"[Bloxy Paradox] " .. year .. " Materials restored."
+		)
+	end
+
+	local function applyEraPlastic(year)
+
+		local maps = ERA_PLASTICS[year]
+
+		if not maps or eraPlastic.active == year then
+			return
+		end
+
+		restoreEraPlastic()
+		eraPlastic.active = year
+
+		for _, name in ipairs(ERA_PLASTIC_MATERIALS) do
+
+			local material = Enum.Material[name]
+			local variantName = "BP" .. year .. "_" .. name
+
+			local old = MaterialService:FindFirstChild(variantName)
+			if old then
+				pcall(function() old:Destroy() end)
+			end
+
+			local variant = Instance.new("MaterialVariant")
+			variant.Name = variantName
+
+			local made =
+				pcall(function()
+					variant.BaseMaterial = material
+					variant.ColorMap = ""
+					variant.NormalMap = ""
+					variant.RoughnessMap = "rbxassetid://" .. tostring(maps.roughness)
+					variant.MetalnessMap = maps.metalness
+						and ("rbxassetid://" .. tostring(maps.metalness))
+						or ""
+				end)
+
+			if made then
+
+				variant.Parent = MaterialService
+				table.insert(eraPlastic.variants, variant)
+
+				local previous = nil
+
+				pcall(function()
+					previous =
+						MaterialService:
+						GetBaseMaterialOverride(material)
+				end)
+
+				eraPlastic.overrides[name] = previous or false
+
+				pcall(function()
+					MaterialService:
+						SetBaseMaterialOverride(
+							material,
+							variant.Name
+						)
+				end)
+
+			else
+				pcall(function() variant:Destroy() end)
+			end
+		end
+
+		print(
+			"[Bloxy Paradox] " .. year .. " Materials ON."
+		)
+	end
+
+	------------------------------------------------------------
 	-- NO SHADOWS
 	------------------------------------------------------------
 	local shState = {
@@ -2469,7 +2602,7 @@ task.spawn(function()
 			"MaterialsDropdown",
 			"materials",
 			240,
-			5
+			9
 		)
 
 	local spCB, spHelp =
@@ -2490,20 +2623,39 @@ task.spawn(function()
 			materialsOptions
 		)
 
+	-- (the old plastics of 2005 / 2006 / 2008 / 2010, in year order with 2009 among them)
+	local eraCB, eraHelp = {}, {}
+	local function eraToggle(year, y)
+		eraCB[year], eraHelp[year] =
+			makeToggle(
+				"Materials" .. year,
+				year .. " materials",
+				y,
+				eraPlasticEnabled[year],
+				materialsOptions
+			)
+	end
+
+	eraToggle("2005", 60)
+	eraToggle("2006", 90)
+	eraToggle("2008", 120)
+
 	local m09CB, m09Help =
 		makeToggle(
 			"Materials2009",
 			"2009 materials",
-			60,
+			150,
 			is2009MaterialsEnabled,
 			materialsOptions
 		)
+
+	eraToggle("2010", 180)
 
 	local m16CB, m16Help =
 		makeToggle(
 			"Materials2016",
 			"2016 materials",
-			90,
+			210,
 			is2016MaterialsEnabled,
 			materialsOptions
 		)
@@ -2512,7 +2664,7 @@ task.spawn(function()
 		makeToggle(
 			"LegacyMaterials",
 			"legacy materials",
-			120,
+			240,
 			isLegacyMaterialsEnabled,
 			materialsOptions
 		)
@@ -2979,19 +3131,55 @@ task.spawn(function()
 	)
 
 	------------------------------------------------------------
-	-- 2009 MATERIAL BUTTON
+	-- 2009 materials and a year's plastic share Plastic / SmoothPlastic: 2009 underneath, the year's plastic on top.
+	-- When either changes, both are taken off (the top one first) and put on again as they are ticked now, so the
+	-- overrides always come back right.
+	------------------------------------------------------------
+	local plasticsBusy, plasticsAgain = false, false
+	local function rebuildPlastics()
+		if plasticsBusy then
+			plasticsAgain = true
+			return
+		end
+		plasticsBusy = true
+		repeat
+			plasticsAgain = false
+			pcall(restoreEraPlastic)
+			pcall(restore2009)
+			if is2009MaterialsEnabled then
+				pcall(apply2009)
+			end
+			for _, year in ipairs(ERA_PLASTIC_YEARS) do
+				if eraPlasticEnabled[year] then
+					pcall(applyEraPlastic, year)
+					break
+				end
+			end
+		until not plasticsAgain
+		plasticsBusy = false
+	end
+
+	-- (the years that came before 2009 materials, so can't be on with them)
+	local function beforeIt(year)
+		return year ~= "2010"
+	end
+
+	------------------------------------------------------------
+	-- 2009 MATERIAL BUTTON (turns 2016 materials and the 2005 / 2006 / 2008 plastic off; 2010 stays)
 	------------------------------------------------------------
 	m09CB.MouseButton1Click:Connect(
 		function()
 
 			playClick()
 
+			local was2016 = false
+
 			if not is2009MaterialsEnabled then
 
 				is2009MaterialsEnabled = true
 				m09CB.Text = "✓"
 
-				local was2016 = is2016MaterialsEnabled
+				was2016 = is2016MaterialsEnabled
 
 				if was2016 then
 					is2016MaterialsEnabled = false
@@ -2999,22 +3187,26 @@ task.spawn(function()
 					config.is2016MaterialsEnabled = false
 				end
 
-				task.spawn(function()
-					if was2016 then
-						pcall(restore2016)
+				for _, year in ipairs(ERA_PLASTIC_YEARS) do
+					if eraPlasticEnabled[year] and beforeIt(year) then
+						eraPlasticEnabled[year] = false
+						eraCB[year].Text = ""
+						config["is" .. year .. "MaterialsEnabled"] = false
 					end
-					pcall(apply2009)
-				end)
+				end
 
 			else
 
 				is2009MaterialsEnabled = false
 				m09CB.Text = ""
-
-				task.spawn(function()
-					pcall(restore2009)
-				end)
 			end
+
+			task.spawn(function()
+				if was2016 then
+					pcall(restore2016)
+				end
+				rebuildPlastics()
+			end)
 
 			config.is2009MaterialsEnabled =
 				is2009MaterialsEnabled
@@ -3022,6 +3214,51 @@ task.spawn(function()
 			saveConfig()
 		end
 	)
+
+	------------------------------------------------------------
+	-- 2005 / 2006 / 2008 / 2010 MATERIAL BUTTONS (one year at a time; 2005 / 2006 / 2008 turn 2009 materials off,
+	-- 2010 works with them)
+	------------------------------------------------------------
+	for _, year in ipairs(ERA_PLASTIC_YEARS) do
+		eraCB[year].MouseButton1Click:Connect(
+			function()
+
+				playClick()
+
+				if not eraPlasticEnabled[year] then
+
+					for _, other in ipairs(ERA_PLASTIC_YEARS) do
+						if other ~= year and eraPlasticEnabled[other] then
+							eraPlasticEnabled[other] = false
+							eraCB[other].Text = ""
+							config["is" .. other .. "MaterialsEnabled"] = false
+						end
+					end
+
+					eraPlasticEnabled[year] = true
+					eraCB[year].Text = "✓"
+
+					if is2009MaterialsEnabled and beforeIt(year) then
+						is2009MaterialsEnabled = false
+						m09CB.Text = ""
+						config.is2009MaterialsEnabled = false
+					end
+
+				else
+
+					eraPlasticEnabled[year] = false
+					eraCB[year].Text = ""
+				end
+
+				task.spawn(rebuildPlastics)
+
+				config["is" .. year .. "MaterialsEnabled"] =
+					eraPlasticEnabled[year]
+
+				saveConfig()
+			end
+		)
+	end
 
 	------------------------------------------------------------
 	-- 2016 MATERIAL BUTTON (turns 2009 materials off)
@@ -3046,7 +3283,7 @@ task.spawn(function()
 
 				task.spawn(function()
 					if was2009 then
-						pcall(restore2009)
+						rebuildPlastics()
 					end
 					pcall(apply2016)
 				end)
@@ -3237,6 +3474,16 @@ task.spawn(function()
 			table.insert(restores, restorePlastic)
 		end
 
+		-- (the year plastic first, then 2009 under it)
+		for _, year in ipairs(ERA_PLASTIC_YEARS) do
+			if eraPlasticEnabled[year] then
+				eraPlasticEnabled[year] = false
+				eraCB[year].Text = ""
+				config["is" .. year .. "MaterialsEnabled"] = false
+				table.insert(restores, restoreEraPlastic)
+			end
+		end
+
 		if is2009MaterialsEnabled then
 			is2009MaterialsEnabled = false
 			m09CB.Text = ""
@@ -3377,7 +3624,7 @@ task.spawn(function()
 		function()
 			playClick()
 			showHelp(
-				"Press the arrow to open the material options: smooth plastic, plastic, 2009 materials, 2016 materials and legacy materials."
+				"Press the arrow to open the material options: smooth plastic, plastic, 2005, 2006, 2008, 2009, 2010 and 2016 materials, and legacy materials."
 			)
 		end
 	)
@@ -3408,6 +3655,21 @@ task.spawn(function()
 			)
 		end
 	)
+
+	for _, year in ipairs(ERA_PLASTIC_YEARS) do
+		eraHelp[year].MouseButton1Click:Connect(
+			function()
+				playClick()
+				showHelp(
+					"The " .. year .. " plastic: smooth and plastic parts get that year's look (its roughness"
+						.. (ERA_PLASTICS[year].metalness and " and metalness" or "")
+						.. " pictures). One year at a time; "
+						.. (year == "2010" and "works together with 2009 materials (2009's textures, the 2010 plastic)."
+							or "turns off 2009 materials (it came before them).")
+				)
+			end
+		)
+	end
 
 	m16Help.MouseButton1Click:Connect(
 		function()
@@ -3461,8 +3723,22 @@ task.spawn(function()
 
 		if is2016MaterialsEnabled then
 			pcall(apply2016)
-		elseif is2009MaterialsEnabled then
+		end
+
+		local savedEra = nil
+		for _, year in ipairs(ERA_PLASTIC_YEARS) do
+			if eraPlasticEnabled[year] and not savedEra then
+				savedEra = year
+			end
+		end
+
+		-- (2009 underneath first, then the year's plastic over it)
+		if is2009MaterialsEnabled and not is2016MaterialsEnabled
+			and not (savedEra and beforeIt(savedEra)) then
 			pcall(apply2009)
+		end
+		if savedEra then
+			pcall(applyEraPlastic, savedEra)
 		end
 
 		if isLegacyMaterialsEnabled then
@@ -3486,6 +3762,9 @@ task.spawn(function()
 	print("[Bloxy Paradox] Plastic:", isPlasticEnabled)
 	print("[Bloxy Paradox] 2009 Materials:", is2009MaterialsEnabled)
 	print("[Bloxy Paradox] 2016 Materials:", is2016MaterialsEnabled)
+	for _, year in ipairs(ERA_PLASTIC_YEARS) do
+		print("[Bloxy Paradox] " .. year .. " Materials:", eraPlasticEnabled[year])
+	end
 	print("[Bloxy Paradox] Legacy Materials:", isLegacyMaterialsEnabled)
 	print("[Bloxy Paradox] No Shadows:", isNoShadowsEnabled)
 	print("==================================================")
