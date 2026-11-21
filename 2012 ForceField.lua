@@ -8,7 +8,8 @@
 --   * forceFieldRadial: big soft flares at the middle of the body. 2 a second, 5 studs and growing 6 a second, turned
 --     any way and spinning (4 to 100 degrees a second), fading out over their 2 seconds.
 -- Both glow (added light), and both are the one texture the old forcefield used for them: the white star the user
--- found (this repo's assets/forcefield2012.png, its black background made see-through), in its own colours. It is
+-- found (this repo's assets/forcefield2012.png, its black background made see-through, 96 x 96 and softened a little
+-- for an old low-resolution look), in its own colours. It is
 -- downloaded once into the executor's folder and shown with getcustomasset; Roblox's own sparkle until then (or if
 -- the executor can't).
 -- With them, the sphere of Bloxy's original 2012 forcefield: two navy neon spheres round the torso (6.3 and 6.93
@@ -40,7 +41,8 @@ do
 	local EFFECT_NAME = "Forcefield2012Particles"
 	local BLOXY_HOLDER = "FFCloneHolder" -- (Bloxy's 2012 forcefield, the blue bubble, puts its model in this)
 	local STAR_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/assets/forcefield2012.png"
-	local STAR_FILE = "AddtionAssets/forcefield2012.png"
+	-- (a new name for each new picture: the executor keeps the file, so an old copy would otherwise stay)
+	local STAR_FILE = "AddtionAssets/forcefield2012_v2.png"
 	local STAR_FALLBACK = "rbxasset://textures/particles/sparkles_main.dds"
 	local SPHERE_HOLDER = "Forcefield2012Spheres"
 	local SPHERE_COLOR = Color3.fromRGB(0, 0, 128)   -- (the original's navy neon)
@@ -50,8 +52,10 @@ do
 		rate = 20, lifetime = 2, speedMin = 2, speedMax = 5,
 		ringOuter = 2.5, ringInner = 2.5 * 0.8, below = 2, -- (width / height 5, inner 0.8; position 0 -2 0)
 		width = 0.5, height = 2,
+		brightest = 0.3, -- (less flicker: never fully solid)
 	}
-	local RADIAL = { rate = 2, lifetime = 2, size = 5, grow = 6, spinMin = 4, spinMax = 100 }
+	-- (less flicker than the files: spinning 4 to 30 degrees a second, not to 100)
+	local RADIAL = { rate = 2, lifetime = 2, size = 5, grow = 6, spinMin = 4, spinMax = 30, brightest = 0.2 }
 
 	local alive, running, everyone = true, false, false
 	local connections = {}
@@ -75,7 +79,7 @@ do
 				makefolder("AddtionAssets")
 			end
 			if not isfile(STAR_FILE) then
-				local data = game:HttpGet(STAR_URL)
+				local data = game:HttpGet(STAR_URL .. "?v=" .. tostring(os.time()))
 				if type(data) == "string" and #data > 64 and string.sub(data, 2, 4) == "PNG" then writefile(STAR_FILE, data) end
 			end
 			if isfile(STAR_FILE) then
@@ -190,10 +194,11 @@ do
 		-- half a stud wide and two tall: square particles stretched up (Squash 1: twice as tall, half as wide)
 		beams.Size = NumberSequence.new(BEAM.width)
 		pcall(function() beams.Squash = NumberSequence.new(1) end)
-		-- ColourFader2: the alpha goes up 1 a second for the first second, then down 1 a second
+		-- ColourFader2: the alpha goes up for the first second, then down for the second. (Less flicker: at their
+		-- brightest a little see-through, so many of them over each other don't flash)
 		beams.Transparency = NumberSequence.new({
 			NumberSequenceKeypoint.new(0, 1),
-			NumberSequenceKeypoint.new(0.5, 0),
+			NumberSequenceKeypoint.new(0.5, BEAM.brightest),
 			NumberSequenceKeypoint.new(1, 1),
 		})
 		beams.LockedToPart = false
@@ -223,8 +228,13 @@ do
 			NumberSequenceKeypoint.new(0, RADIAL.size / 2),
 			NumberSequenceKeypoint.new(1, (RADIAL.size + RADIAL.grow * RADIAL.lifetime) / 2),
 		})
-		-- ColourFader alpha -0.5: from whole to gone over the 2 seconds
-		radial.Transparency = NumberSequence.new(0, 1)
+		-- ColourFader alpha -0.5: from whole to gone over the 2 seconds. (Less flicker: each one fades in over its first
+		-- fifth instead of popping up at full brightness)
+		radial.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1),
+			NumberSequenceKeypoint.new(0.2, RADIAL.brightest),
+			NumberSequenceKeypoint.new(1, 1),
+		})
 		radial.LockedToPart = false
 		radial.Parent = middle
 		middle.Parent = body
