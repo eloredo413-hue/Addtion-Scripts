@@ -20,7 +20,7 @@
 --   * "2008": the 2008 GUI's one (2008 Gui.lua): the world hidden and the camera looking at it from afar, a see-through
 --     grey box in the middle with "Connecting to Server", then "Bricks: N   Connectors: N" counting up while the world
 --     comes back.
---   * "2006" (the 2006 GUI, in place of its own "Loading Character..."): the same in the 2006 GUI's font.
+--   * "2006": the same in the 2006 GUI's font. (The loader doesn't use it: the 2006 GUI shows its own loading screen.)
 --   * "2011" (the 2011 and 2012 GUIs, and the 2013 GUIs with the old health bar on): the same as 2008 in a black box
 --     with white Arial letters and no edge, as the 2011 client had it (the user's video: youtu.be/7oRq9hvQQF0).
 -- The GUI under it (the one picked, its health bar, backpack...) is hidden while it shows and comes back as it goes, as

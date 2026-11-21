@@ -51,21 +51,6 @@ do
 
 	local ownLegacy -- (below: the Legacy and RBXM Suite fixes, also used on every GUI downloaded here)
 
-	-- (Addtion-Scripts) the 2006 GUI's own "Loading Character..." screen is taken out: the 2006 GUI gets the 2008 one
-	-- (the loader shows it, Old Loading Screen.lua). The GUI waits for that one to finish, as it waited for its own, and
-	-- goes on by itself if none shows within 3 seconds.
-	local WAIT_FOR_2008_LOADING = [[
-do
-	local genv = (getgenv and getgenv()) or _G
-	local function showing()
-		local api = genv.OldLoadingScreen
-		return type(api) == "table" and type(api.Running) == "function" and api.Running()
-	end
-	local started = os.clock()
-	while os.clock() - started < 3 and not showing() do task.wait(0.1) end
-	while showing() and os.clock() - started < 20 do task.wait(0.1) end
-end
-]]
 	-- (Addtion-Scripts) the 2006 GUI's lighting: its ColorShift_Bottom (122, 155, 128) with the green all the way up
 	-- (122, 255, 128); the red and blue as they were
 	local function greener2006(src)
@@ -75,15 +60,6 @@ end
 		return patched
 	end
 
-	local function without2006Loading(src)
-		local a = string.find(src, 'local LoadingGui = Instance.new("ScreenGui")', 1, true)
-		local _, b = string.find(src, "LoadingGui:Destroy()", a or 1, true)
-		if not (a and b) then
-			warn("[2006] its loading screen wasn't found: it shows as it was")
-			return src
-		end
-		return string.sub(src, 1, a - 1) .. WAIT_FOR_2008_LOADING .. string.sub(src, b + 1)
-	end
 
 	-- (Addtion-Scripts) a download is tried twice (a phone's connection drops a request now and then), then the gist
 	local function fetchOnce(url)
@@ -271,7 +247,7 @@ end
 				getgenv().BP_PendingTopbar = nil
 				getgenv().BP_2023Variant = nil
 				local src = fetchURL(URL_2006, "2006")
-				if src then return _ORIG_LS(greener2006(without2006Loading(src)), name) end
+				if src then return _ORIG_LS(greener2006(src), name) end
 				return _ORIG_LS("-- [Hook] 2006 fetch failed", name)
 
 			elseif pending == "2005" and code:find(SIG_2013, 1, true) then
