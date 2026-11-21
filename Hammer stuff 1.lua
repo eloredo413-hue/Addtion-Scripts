@@ -1986,12 +1986,15 @@ task.spawn(function()
 	-- 2009's textures stay on the rest. 2005, 2006 and 2008 come before 2009, so they turn it off.
 	-- Unticking puts every part's own material back, and the rest as it was.
 	------------------------------------------------------------
+	-- (pack: FWM's baked texture pack for it. A material made by a script in a live game doesn't draw its pictures:
+	-- Roblox only bakes them into a texture pack in Studio, so FWM's own packs are put on, a hidden property)
 	local ERA_PLASTICS = {
-		["2005"] = { roughness = 13470288211 },
-		["2006"] = { roughness = 96693714170014, metalness = 85855853900157 },
-		["2008"] = { roughness = 2654856319, metalness = 85855853900157 },
-		["2010"] = { roughness = 126140643051088 },
+		["2005"] = { roughness = 13470288211, pack = 116398152354922 },
+		["2006"] = { roughness = 96693714170014, metalness = 85855853900157, pack = 87646664622482 },
+		["2008"] = { roughness = 2654856319, metalness = 85855853900157, pack = 95646118046269 },
+		["2010"] = { roughness = 126140643051088, pack = 89429291833702 },
 	}
+	local ERA_AVG_ROUGHNESS, ERA_AVG_METALNESS = 127, 0 -- (FWM's materials' own)
 	local SMOOTH = Enum.Material.SmoothPlastic
 	local PLASTIC = Enum.Material.Plastic
 
@@ -2011,6 +2014,15 @@ task.spawn(function()
 		if ok and now ~= value and sethiddenproperty then
 			pcall(sethiddenproperty, MaterialService, "Use2022Materials", value)
 		end
+	end
+
+	-- a property, also a hidden one (with the executor's sethiddenproperty); true when it took
+	local function setProperty(inst, prop, value)
+		if pcall(function() inst[prop] = value end) then return true end
+		if sethiddenproperty then
+			return (pcall(sethiddenproperty, inst, prop, value))
+		end
+		return false
 	end
 
 	local function eraPart(part)
@@ -2118,6 +2130,21 @@ task.spawn(function()
 			eraPlastic.active = nil
 			warn("[Bloxy Paradox] " .. year .. " Materials: the material couldn't be made here.")
 			return
+		end
+
+		-- FWM's baked texture pack (what Roblox actually draws in a live game) and its averages
+		local packUrl = "rbxassetid://" .. tostring(maps.pack)
+		local packed = setProperty(variant, "TexturePack", packUrl)
+		pcall(function()
+			local content = Content.fromUri(packUrl)
+			if not setProperty(variant, "TexturePackContent", content) then return end
+			packed = true
+		end)
+		setProperty(variant, "AvgRoughness", ERA_AVG_ROUGHNESS)
+		setProperty(variant, "AvgMetalness", ERA_AVG_METALNESS)
+		if not packed then
+			warn("[Bloxy Paradox] " .. year .. " Materials: this executor couldn't put on the material's texture pack"
+				.. " (a hidden property): the shine may not show.")
 		end
 
 		variant.Parent = MaterialService
