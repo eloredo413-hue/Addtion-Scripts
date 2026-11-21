@@ -801,8 +801,22 @@ end)
 --========================================================
 -- UNCONDITIONAL MAIN ADDONS (Always Load)
 --========================================================
+-- (Quick Texture load studs: with the setup's < > on, its 2008 / 2012 studs load after the last question too)
+local URL_QUICK_TEXTURES = "https://gist.githubusercontent.com/eloredo413-hue/ab9f65a116c2d16f989ec72cf254a72f/raw/d6cc1e5239b675e639556af59509192bfdeca1f3/Quick%2520Texture%2520load%2520studs"
+local function patchQuickTextures(src)
+    local total = 0
+    for _, which in ipairs({ "STUD_2008", "STUD_2012" }) do
+        local n
+        src, n = replacePlain(src, "pcall(function() runStud(" .. which .. ") end)",
+            "pcall(function() local w = getgenv().BPWizard; if not (type(w) == \"table\" and type(w.later) == \"function\" "
+            .. "and w.later(\"textures\", function() runStud(" .. which .. ") end)) then runStud(" .. which .. ") end end)")
+        total = total + n
+    end
+    if total < 2 then warn("[Loader] Quick Texture load studs: its picks weren't found, so with < > on they load as soon as they are picked") end
+    return src
+end
 for i, url in ipairs(mainAddons) do
-    local _, why = loadUrl(url, "addon" .. i)
+    local _, why = loadUrl(url, "addon" .. i, url == URL_QUICK_TEXTURES and patchQuickTextures or nil)
     if why == "download" and url == URL_WIZARD_SMOOTH then
         -- (not v9 any more: it hooks __namecall, which gets in the way of a lot of games)
         warn("[Loader] Wizard smooth couldn't be downloaded: the setup works as Bloxy's own, without it")
