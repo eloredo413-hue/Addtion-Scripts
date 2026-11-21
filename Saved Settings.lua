@@ -1009,7 +1009,7 @@ local function loadFiles(sourceFiles, name, remember)
 		end
 	end
 
-	local ok = pcall(function()
+	local function applyHammer()
 		-- 1. Bloxy's own boxes (each press writes Bloxy's whole file, so first)
 		for boxName, key in pairs(BLOXY_BOXES) do
 			local box = findIn(hammerPanel, boxName)
@@ -1043,7 +1043,25 @@ local function loadFiles(sourceFiles, name, remember)
 		-- 5. the files once more, exactly as loaded (the presses wrote their own copies on the way)
 		task.wait(0.3)
 		putFilesBack(files)
-	end)
+	end
+	-- With the setup's < > on (Setup Back Forward.lua) it's like shopping: nothing loads until "check out" after the
+	-- last question, the hammer's options included. The files are put in place now; the boxes are pressed then.
+	local wizard = Env.BPWizard
+	local held = false
+	if hammerPanel and type(wizard) == "table" and type(wizard.deferring) == "function" and wizard.deferring()
+		and type(wizard.later) == "function" then
+		putFilesBack(files)
+		held = wizard.later("saved settings: the hammer's options", function()
+			applying = true
+			local done = pcall(applyHammer)
+			applying = false
+			if not done then putFilesBack(files) end
+			print(string.format("[Saved Settings] \"%s\" checked out: turned on: %s; turned off: %s", name,
+				#turnedOn > 0 and table.concat(turnedOn, ", ") or "none", #turnedOff > 0 and table.concat(turnedOff, ", ") or "none"))
+		end, true)
+	end
+	local ok = true
+	if not held then ok = pcall(applyHammer) end
 	applying = false
 
 	if remember then
@@ -1055,7 +1073,9 @@ local function loadFiles(sourceFiles, name, remember)
 		putFilesBack(files)
 	end
 	-- the report
-	if not hammerPanel then
+	if held then
+		print("[Saved Settings] loaded \"" .. name .. "\": its hammer options wait in the cart with the setup's answers: they load at \"check out\"")
+	elseif not hammerPanel then
 		print("[Saved Settings] loaded \"" .. name .. "\": Bloxy's hammer panel isn't there, so its options are used at the next start")
 	elseif #turnedOn + #turnedOff + #failed == 0 then
 		print("[Saved Settings] loaded \"" .. name .. "\": the hammer's options were already like that")
