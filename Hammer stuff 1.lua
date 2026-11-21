@@ -166,6 +166,13 @@ task.spawn(function()
 	for _, year in ipairs(ERA_PLASTIC_YEARS) do
 		eraPlasticEnabled[year] = config["is" .. year .. "MaterialsEnabled"] == true
 	end
+	-- the year whose plastic is on (nil when none is)
+	local function anyEraPlasticOn()
+		for _, year in ipairs(ERA_PLASTIC_YEARS) do
+			if eraPlasticEnabled[year] then return year end
+		end
+		return nil
+	end
 
 	local isNoShadowsEnabled =
 		config.isNoShadowsEnabled == true
@@ -1991,7 +1998,9 @@ task.spawn(function()
 	local ERA_PLASTICS = {
 		["2005"] = { roughness = 13470288211, pack = 116398152354922 },
 		["2006"] = { roughness = 96693714170014, metalness = 85855853900157, pack = 87646664622482 },
-		["2008"] = { roughness = 2654856319, metalness = 85855853900157, pack = 95646118046269 },
+		-- (2008's roughness picture is a radial gradient, light in the middle and black round the edge: at Roblox's
+		-- 10 studs a tile it made big shiny rings over everything, so it is a stud wide, one ring round each stud)
+		["2008"] = { roughness = 2654856319, metalness = 85855853900157, pack = 95646118046269, studs = 1 },
 		["2010"] = { roughness = 126140643051088, pack = 89429291833702 },
 	}
 	local ERA_AVG_ROUGHNESS, ERA_AVG_METALNESS = 127, 0 -- (FWM's materials' own)
@@ -2123,6 +2132,9 @@ task.spawn(function()
 				variant.MetalnessMap = maps.metalness
 					and ("rbxassetid://" .. tostring(maps.metalness))
 					or ""
+				if maps.studs then
+					variant.StudsPerTile = maps.studs
+				end
 			end)
 
 		if not made then
@@ -2710,7 +2722,7 @@ task.spawn(function()
 		eraCB[year], eraHelp[year] =
 			makeToggle(
 				"Materials" .. year,
-				year .. " materials",
+				year .. " plastic",
 				y,
 				eraPlasticEnabled[year],
 				materialsOptions
@@ -3128,6 +3140,18 @@ task.spawn(function()
 
 			playClick()
 
+			-- (Addtion-Scripts) not while a year's plastic is on: that already made every part SmoothPlastic and keeps
+			-- each part's own material to put back, which this would muddle
+			local yearOn = anyEraPlasticOn()
+			if yearOn and not isSmoothPlasticEnabled then
+				spCB.Text = "✗"
+				task.delay(0.6, function()
+					if spCB.Text == "✗" then spCB.Text = "" end
+				end)
+				print("[Bloxy Paradox] smooth plastic can't be ticked while the " .. yearOn .. " plastic is on: untick it first.")
+				return
+			end
+
 			if not isSmoothPlasticEnabled then
 
 				isSmoothPlasticEnabled = true
@@ -3173,6 +3197,18 @@ task.spawn(function()
 		function()
 
 			playClick()
+
+			-- (Addtion-Scripts) not while a year's plastic is on: that already made every part SmoothPlastic and keeps
+			-- each part's own material to put back, which this would muddle
+			local yearOn = anyEraPlasticOn()
+			if yearOn and not isPlasticEnabled then
+				plCB.Text = "✗"
+				task.delay(0.6, function()
+					if plCB.Text == "✗" then plCB.Text = "" end
+				end)
+				print("[Bloxy Paradox] plastic can't be ticked while the " .. yearOn .. " plastic is on: untick it first.")
+				return
+			end
 
 			if not isPlasticEnabled then
 
@@ -3306,6 +3342,8 @@ task.spawn(function()
 
 				playClick()
 
+				local restoreFirst = nil
+
 				if not eraPlasticEnabled[year] then
 
 					for _, other in ipairs(ERA_PLASTIC_YEARS) do
@@ -3325,6 +3363,25 @@ task.spawn(function()
 						config.is2009MaterialsEnabled = false
 					end
 
+					-- (smooth plastic / plastic off first, their parts back, so the real materials are kept)
+					local wasSmooth, wasPlastic = isSmoothPlasticEnabled, isPlasticEnabled
+					if wasSmooth then
+						isSmoothPlasticEnabled = false
+						spCB.Text = ""
+						config.isSmoothPlasticEnabled = false
+					end
+					if wasPlastic then
+						isPlasticEnabled = false
+						plCB.Text = ""
+						config.isPlasticEnabled = false
+					end
+					if wasSmooth or wasPlastic then
+						restoreFirst = function()
+							if wasSmooth then pcall(restoreSmooth) end
+							if wasPlastic then pcall(restorePlastic) end
+						end
+					end
+
 					-- (legacy materials turns the 2022 material system off, which custom materials need)
 					if isLegacyMaterialsEnabled then
 						isLegacyMaterialsEnabled = false
@@ -3339,7 +3396,10 @@ task.spawn(function()
 					eraCB[year].Text = ""
 				end
 
-				task.spawn(rebuildPlastics)
+				task.spawn(function()
+					if restoreFirst then restoreFirst() end
+					rebuildPlastics()
+				end)
 
 				config["is" .. year .. "MaterialsEnabled"] =
 					eraPlasticEnabled[year]
@@ -3727,7 +3787,7 @@ task.spawn(function()
 		function()
 			playClick()
 			showHelp(
-				"Press the arrow to open the material options: smooth plastic, plastic, 2005, 2006, 2008, 2009, 2010 and 2016 materials, and legacy materials."
+				"Press the arrow to open the material options: smooth plastic, plastic, the 2005 / 2006 / 2008 / 2010 plastic (one at a time), 2009 and 2016 materials, and legacy materials."
 			)
 		end
 	)
@@ -3770,6 +3830,7 @@ task.spawn(function()
 						.. " pictures), new parts too. One year at a time; "
 						.. (year == "2010" and "works together with 2009 materials (then only the plastic parts change)."
 							or "turns off 2009 materials (it came before them).")
+						.. " Smooth plastic and plastic can't be ticked while it is on."
 						.. " Untick to put every part's own material back."
 				)
 			end
@@ -3818,6 +3879,14 @@ task.spawn(function()
 
 		if isRemoveLightingEnabled then
 			pcall(applyRemoveLighting)
+		end
+
+		-- (a saved year's plastic: smooth plastic / plastic stay off, they can't be on with it)
+		if anyEraPlasticOn() and (isSmoothPlasticEnabled or isPlasticEnabled) then
+			isSmoothPlasticEnabled, isPlasticEnabled = false, false
+			spCB.Text, plCB.Text = "", ""
+			config.isSmoothPlasticEnabled, config.isPlasticEnabled = false, false
+			saveConfig()
 		end
 
 		if isSmoothPlasticEnabled then
