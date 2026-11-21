@@ -980,7 +980,17 @@ local function loadFiles(sourceFiles, name, remember)
 		warn("[Saved Settings] this executor can't write files, so nothing can be loaded")
 		return false, "no files"
 	end
+	-- one load at a time: a second one while the first is still putting its files in place or answering the setup
+	-- mixed the two files (its files written over the first's while the first's answers were still being given)
+	if applying or replaying then
+		print("[Saved Settings] \"" .. tostring(name) .. "\" not loaded: another load is still going; try again when it's done")
+		return false, "busy"
+	end
 	applying = true
+	-- a GUI of More guis' picked before (waiting for its Confirm) mustn't come back instead of this file's
+	local genvLoad = (getgenv and getgenv()) or _G
+	genvLoad.BP_PendingTopbar = nil
+	genvLoad.BP_2023Variant = nil
 	local files = {}
 	for file, text in pairs(sourceFiles) do files[file] = text end
 	local answers = savedAnswers(files) -- (nil for a file saved before answers were kept: its settings answer)
