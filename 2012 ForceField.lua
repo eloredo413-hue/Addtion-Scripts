@@ -12,8 +12,9 @@
 -- core, a soft halo and thin rays, white going lavender at the edges, see-through round it), in its own colours. It is
 -- downloaded once into the executor's folder and shown with getcustomasset; Roblox's own sparkle until then (or if
 -- the executor can't).
--- With them, the sphere of Bloxy's original 2012 forcefield: two navy neon spheres round the torso (6.3 and 6.93
--- studs), taking turns to show (the original's pulse). Roblox's own forcefield is hidden while it shows.
+-- With them, the sphere of Bloxy's original 2012 forcefield, coloured as in the user's old clips: a blue neon bubble
+-- round the torso (6.93 studs) with a smaller one inside it (6.3), both see-through, the inside one more so. They stay
+-- as they are (the original's pulse made them flicker). Roblox's own forcefield is hidden while it shows.
 --
 -- Picking "2012" on Bloxy's forcefield step (or having it saved) starts it: the FF Fix Hook hands Bloxy's 2012
 -- forcefield code over to this (getgenv().Forcefield2012.Start), and if Bloxy's own blue bubble shows anyway
@@ -28,7 +29,6 @@ do
 	local HttpService = game:GetService("HttpService")
 	local RunService = game:GetService("RunService")
 	local CoreGui = game:GetService("CoreGui")
-	local TweenService = game:GetService("TweenService")
 
 	local Env = (getgenv and getgenv()) or _G
 	if Env.Forcefield2012Cleanup then pcall(Env.Forcefield2012Cleanup) end
@@ -45,7 +45,11 @@ do
 	local STAR_FILE = "AddtionAssets/forcefield2012_v3.png"
 	local STAR_FALLBACK = "rbxasset://textures/particles/sparkles_main.dds"
 	local SPHERE_HOLDER = "Forcefield2012Spheres"
-	local SPHERE_COLOR = Color3.fromRGB(0, 0, 128)   -- (the original's navy neon)
+	-- the bubble in the user's clips: a strong mid blue (measured over three backgrounds: about 0, 29, 163 at 43% seen),
+	-- a little darker here as neon shows brighter than its colour
+	local SPHERE_COLOR = Color3.fromRGB(0, 30, 150)
+	local OUTER_SEE_THROUGH = 0.62 -- (the bubble)
+	local INNER_SEE_THROUGH = 0.8  -- (the little one inside: lighter, so you see yourself through it)
 
 	-- the particle files' numbers
 	local BEAM = {
@@ -241,9 +245,9 @@ do
 		table.insert(entry.parts, middle)
 		table.insert(entry.emitters, radial)
 
-		-- the original's sphere: inner 0.9 x 7 = 6.3 studs at 0.6, outer 0.9 x 7.7 = 6.93 at 0.95, on the torso
-		local inner = newSphere("MainCircle", 6.3, 0.6)
-		local outer = newSphere("OuterCircle", 6.93, 0.95)
+		-- the original's sphere: inner 0.9 x 7 = 6.3 studs, outer 0.9 x 7.7 = 6.93, on the torso; steady (no pulse)
+		local inner = newSphere("MainCircle", 6.3, INNER_SEE_THROUGH)
+		local outer = newSphere("OuterCircle", 6.93, OUTER_SEE_THROUGH)
 		table.insert(entry.parts, inner)
 		table.insert(entry.parts, outer)
 		local function follow()
@@ -259,18 +263,6 @@ do
 			connect(entry.conns, RunService.PreRender, follow)
 		end)
 		if not okPre then connect(entry.conns, RunService.RenderStepped, follow) end
-		-- the original's pulse: the inner one fades as the outer one shows, and back
-		task.spawn(function()
-			while effects[character] == entry and inner.Parent do
-				TweenService:Create(inner, TweenInfo.new(0.55, Enum.EasingStyle.Sine), { Transparency = 0.95 }):Play()
-				TweenService:Create(outer, TweenInfo.new(0.7, Enum.EasingStyle.Sine), { Transparency = 0.6 }):Play()
-				task.wait(0.55)
-				if not (effects[character] == entry and inner.Parent) then break end
-				TweenService:Create(outer, TweenInfo.new(0.5, Enum.EasingStyle.Sine), { Transparency = 0.95 }):Play()
-				TweenService:Create(inner, TweenInfo.new(0.5, Enum.EasingStyle.Sine), { Transparency = 0.6 }):Play()
-				task.wait(0.35)
-			end
-		end)
 
 		connect(entry.conns, RunService.Heartbeat, function()
 			-- (the forcefield gone, however it went: this one goes too)

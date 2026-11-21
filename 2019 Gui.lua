@@ -3172,7 +3172,10 @@ end)
 	if not TopBarContainer then
 		warn("[2019 GUI] the top bar (TopBarContainer) wasn't found: its icons can't be moved")
 	end
-	if TopBarContainer then
+	-- (Addtion-Scripts) now off: like the 2017 GUI, the bar and the escape menu stay in the phone's safe area
+	-- (the room at the sides is kept): out to the screen edges, the GUI looked wrong (the user's video)
+	local EDGE_TO_EDGE = false
+	if TopBarContainer and EDGE_TO_EDGE then
 		local TopGui = TopBarContainer:FindFirstAncestorWhichIsA("ScreenGui")
 		print("[2019 GUI] top bar found in " .. TopBarContainer:GetFullName())
 		if TopGui then
