@@ -5,8 +5,7 @@
 --   >  gives the question on screen the answer you gave it last time, so you go forward again without answering
 --      every question again. (Hidden on a question you haven't answered yet.)
 -- While the setup is on, your answers are only remembered: nothing loads yet, so going back and changing an answer
--- never leaves the old one running. After the last question a checkout box lists everything picked (like a shopping
--- cart): "check out" loads it all together, the same way
+-- never leaves the old one running. Right after the last question everything you picked loads together, the same way
 -- it does when "skip setup" is ticked: Bloxy's own picks, and the picks of the addons' questions (explosion,
 -- terrain, old particles, old physics / camera, the 2007 and modern R6 animations) and the loader's follow-up of
 -- the GUI you picked (bubbles, loading screen, escape menu ...).
@@ -222,7 +221,6 @@ local function restingFrame()
 	return nil
 end
 
-local headerImageSeen = nil -- (Bloxy's "SETUP" picture, for the checkout box)
 local frameInfo = setmetatable({}, { __mode = "k" }) -- question frame -> { show, nextShow, pages, picks, bloxy }
 local lastFrame = nil -- the last of Bloxy's questions made
 local navShow = nil   -- the show function Back just called (the next question made is its)
@@ -560,10 +558,8 @@ local function finish(why)
 		W.bloxyConfigure and " (Bloxy's \"configure\": its own picks are saved for next time, as always)" or ""))
 end
 
-local closeCheckoutLater -- (the checkout, below)
 local function cancel(why)
 	if not W.session then return end
-	if closeCheckoutLater then pcall(closeCheckoutLater) end
 	W.session = false
 	busy = false
 	replaying = false
@@ -590,10 +586,6 @@ local function hookFrame(frame)
 		info.show = frameInfo[lastFrame].nextShow
 	end
 	lastFrame = frame
-	pcall(function()
-		local h = frame:FindFirstChild("HeaderImage")
-		if h and h.Image ~= "" then headerImageSeen = h.Image end
-	end)
 	pcall(scanHandlers, frame, info)
 	if not info.show then
 		local title = questionTitle(frame)
@@ -615,6 +607,27 @@ local function pickSeesFlag(info, value)
 	return true
 end
 
+-- Bloxy's own pick scripts (its MyScripts: the topbar GUIs, safe chat, sounds ...), found through the topbar answer's
+-- function. While the setup is on, More guis' loadstring hook holds any of them that something tries to run (a GUI
+-- came up right after the topbar pick in a recording): they load at the end, from the final answers.
+local bloxyCodes = {}
+local function learnBloxyCodes(info)
+	local ups = info.pickFn and upvaluesOf(info.pickFn)
+	for _, v in pairs(ups or {}) do
+		if type(v) == "table" then
+			local n = 0
+			for key, code in pairs(v) do
+				if type(key) == "string" and string.find(key, "^Topbar_") and type(code) == "string" then n = n + 1 end
+			end
+			if n > 0 then
+				for _, code in pairs(v) do
+					if type(code) == "string" and #code > 20 then bloxyCodes[code] = true end
+				end
+			end
+		end
+	end
+end
+
 -- the setup starts at the topbar question: Bloxy is put in its "configure" mode (answers only saved) for it
 local function startSession(frame, info)
 	if not (info.picks and W.flag) then return false end
@@ -631,6 +644,7 @@ local function startSession(frame, info)
 		end
 	end
 	W.session = true
+	pcall(learnBloxyCodes, info)
 	history, index, answers = {}, 0, {}
 	table.clear(queue)
 	table.clear(queueOrder)
@@ -821,7 +835,7 @@ goForward = function()
 	refreshButtons()
 end
 
--- shows question number targetIndex of the setup again (Back, and "<" on the checkout)
+-- shows question number targetIndex of the setup again
 local function navigateTo(targetIndex)
 	local target = history[targetIndex]
 	if not (target and target.show) then return end
@@ -869,157 +883,6 @@ goBack = function()
 end
 
 ------------------------------------------------------------
--- THE CHECKOUT: after the last question, a box lists everything picked; "check out" loads it all, "<" goes back
-------------------------------------------------------------
-local checkoutFrame = nil
-local headerImage = "rbxthumb://type=Asset&id=131822012703327&w=420&h=420" -- (Bloxy's "SETUP" picture, else the one seen)
-
-local function lastAnswerOf(title)
-	local taps = answers[title]
-	if not taps then return nil end
-	for i = #taps, 1, -1 do
-		local t = taps[i].text
-		if isAnswerText(t) and string.lower(t) ~= "confirm" then return t end
-	end
-	return nil
-end
-
-local function closeCheckout()
-	if checkoutFrame then
-		local f = checkoutFrame
-		checkoutFrame = nil
-		pcall(function() f:Destroy() end)
-	end
-end
-
-local function standardButton(text, position, width, parent)
-	local btn = Instance.new("TextButton")
-	btn.Name = "BPCheckout_" .. text
-	btn.Size = UDim2.new(0, width, 0, 32)
-	btn.Position = position
-	btn.Text = text
-	btn.Font = Enum.Font.Legacy
-	btn.TextScaled = true
-	btn.AutoButtonColor = false
-	btn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	btn.BorderColor3 = Color3.fromRGB(0, 0, 0)
-	btn.TextColor3 = Color3.fromRGB(0, 0, 0)
-	btn.ZIndex = 5
-	btn.Parent = parent
-	local limit = Instance.new("UITextSizeConstraint")
-	limit.MaxTextSize = 16
-	limit.MinTextSize = 8
-	limit.Parent = btn
-	btn.MouseEnter:Connect(function()
-		btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-		btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-		btn.BorderColor3 = Color3.fromRGB(255, 0, 0)
-	end)
-	btn.MouseLeave:Connect(function()
-		btn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-		btn.TextColor3 = Color3.fromRGB(0, 0, 0)
-		btn.BorderColor3 = Color3.fromRGB(0, 0, 0)
-	end)
-	return btn
-end
-
-local function showCheckout()
-	if checkoutFrame or not (W.sg and W.sg.Parent) then return end
-	current = nil
-	local rows = {}
-	for i = 1, index do
-		local page = history[i]
-		local a = page and lastAnswerOf(page.title)
-		if a then table.insert(rows, { q = page.title, a = a }) end
-	end
-	local W_, ROW, LIST_H = 400, 18, 150
-	local f = Instance.new("Frame")
-	f.Name = "BPCheckout"
-	f.Size = UDim2.new(0, W_, 0, 40 + LIST_H + 48)
-	f.Position = UDim2.new(0.5, -W_ / 2, 0, -400)
-	f.BackgroundColor3 = Color3.new(1, 1, 1)
-	f.ClipsDescendants = false
-	checkoutFrame = f
-	local img = Instance.new("ImageLabel")
-	img.Name = "CheckoutHeader" -- (not "HeaderImage": this box isn't one of the setup's questions)
-	img.BackgroundTransparency = 1
-	img.Image = headerImageSeen or headerImage
-	img.Size = UDim2.new(0, 260, 0, 160)
-	img.Position = UDim2.new(0.5, -130, 0, -111)
-	img.BorderSizePixel = 0
-	img.ZIndex = 10
-	img.Parent = f
-	local title = Instance.new("TextLabel")
-	title.Name = "CheckoutTitle"
-	title.Size = UDim2.new(1, 0, 0, 35)
-	title.BackgroundTransparency = 1
-	title.Text = "Your picks"
-	title.Font = Enum.Font.Legacy
-	title.TextSize = 14
-	title.Parent = f
-	local list = Instance.new("ScrollingFrame")
-	list.Name = "Picks"
-	list.Size = UDim2.new(1, -20, 0, LIST_H)
-	list.Position = UDim2.new(0, 10, 0, 35)
-	list.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	list.BorderColor3 = Color3.fromRGB(0, 0, 0)
-	list.ScrollBarThickness = 6
-	list.CanvasSize = UDim2.new(0, 0, 0, math.max(LIST_H, #rows * ROW + 6))
-	list.Parent = f
-	for i, r in ipairs(rows) do
-		local q = Instance.new("TextLabel")
-		q.Name = "Q" .. i
-		q.Size = UDim2.new(0.62, -6, 0, ROW)
-		q.Position = UDim2.new(0, 6, 0, 3 + (i - 1) * ROW)
-		q.BackgroundTransparency = 1
-		q.Text = (string.gsub(r.q, "[%?:]%s*$", ""))
-		q.Font = Enum.Font.Legacy
-		q.TextSize = 12
-		q.TextXAlignment = Enum.TextXAlignment.Left
-		q.TextColor3 = Color3.fromRGB(90, 90, 90)
-		q.TextTruncate = Enum.TextTruncate.AtEnd
-		q.Parent = list
-		local a = Instance.new("TextLabel")
-		a.Name = "A" .. i
-		a.Size = UDim2.new(0.38, -10, 0, ROW)
-		a.Position = UDim2.new(0.62, 0, 0, 3 + (i - 1) * ROW)
-		a.BackgroundTransparency = 1
-		a.Text = r.a
-		a.Font = Enum.Font.Legacy
-		a.TextSize = 14
-		a.TextXAlignment = Enum.TextXAlignment.Right
-		a.TextColor3 = Color3.fromRGB(0, 0, 0)
-		a.TextTruncate = Enum.TextTruncate.AtEnd
-		a.Parent = list
-	end
-	local checkout = standardButton("check out", UDim2.new(0.5, -75, 0, 40 + LIST_H + 8), 150, f)
-	local back = makeTab(f, BACK_NAME, "<", UDim2.new(0, 0, 1, 3), function()
-		-- back to the last question: Bloxy only remembers answers again
-		if not checkoutFrame then return end
-		writeFlag(true)
-		closeCheckout()
-		navigateTo(index)
-	end)
-	back:SetAttribute("Enabled", history[index] ~= nil and history[index].show ~= nil)
-	local going = false
-	checkout.MouseButton1Click:Connect(function()
-		if going or checkoutFrame ~= f then return end
-		going = true
-		playClick()
-		local out = TweenService:Create(f, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In),
-			{ Position = UDim2.new(0.5, -W_ / 2, 0, -400) })
-		out.Completed:Connect(function() closeCheckout() end)
-		out:Play()
-		finish("checked out")
-	end)
-	f.Parent = W.sg
-	TweenService:Create(f, TweenInfo.new(0.4), { Position = UDim2.new(0.5, -W_ / 2, 0.5, -(40 + LIST_H + 48) / 2) }):Play()
-	print("[Setup Back/Forward] setup answered: your picks are listed; \"check out\" loads them all, \"<\" goes back")
-end
-
-closeCheckoutLater = closeCheckout
-
-------------------------------------------------------------
 -- WATCHING BLOXY'S GUI
 ------------------------------------------------------------
 local candidate = { frame = nil, title = nil, since = 0 }
@@ -1040,7 +903,7 @@ local function step(dt)
 		if endCheck >= 0.2 then
 			endCheck = 0
 			-- the last question was answered: Bloxy turns its "configure" mode off itself
-			if readFlag() == false and not checkoutFrame then showCheckout() end
+			if readFlag() == false then finish("setup done") end
 		end
 	end
 end
@@ -1124,6 +987,10 @@ Env.BPWizard = {
 		end
 		queue[key] = { fn = fn, page = (not wholeSetup) and pageTitleNow() or nil }
 		return true
+	end,
+	-- true while the setup is on, for one of Bloxy's own pick scripts: it must not run yet (More guis' hook asks)
+	holdCode = function(code)
+		return W.session and type(code) == "string" and bloxyCodes[code] == true
 	end,
 	-- a press a script made on a question (Saved Settings giving saved answers): remembered as its answer
 	noteTap = function(btn)

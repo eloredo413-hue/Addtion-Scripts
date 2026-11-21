@@ -1044,8 +1044,8 @@ local function loadFiles(sourceFiles, name, remember)
 		task.wait(0.3)
 		putFilesBack(files)
 	end
-	-- With the setup's < > on (Setup Back Forward.lua) it's like shopping: nothing loads until "check out" after the
-	-- last question, the hammer's options included. The files are put in place now; the boxes are pressed then.
+	-- With the setup's < > on (Setup Back Forward.lua) nothing loads until right after the last question, the hammer's
+	-- options included. The files are put in place now; the boxes are pressed then.
 	local wizard = Env.BPWizard
 	local held = false
 	if hammerPanel and type(wizard) == "table" and type(wizard.deferring) == "function" and wizard.deferring()
@@ -1056,7 +1056,7 @@ local function loadFiles(sourceFiles, name, remember)
 			local done = pcall(applyHammer)
 			applying = false
 			if not done then putFilesBack(files) end
-			print(string.format("[Saved Settings] \"%s\" checked out: turned on: %s; turned off: %s", name,
+			print(string.format("[Saved Settings] \"%s\" after the setup: turned on: %s; turned off: %s", name,
 				#turnedOn > 0 and table.concat(turnedOn, ", ") or "none", #turnedOff > 0 and table.concat(turnedOff, ", ") or "none"))
 		end, true)
 	end
@@ -1074,7 +1074,7 @@ local function loadFiles(sourceFiles, name, remember)
 	end
 	-- the report
 	if held then
-		print("[Saved Settings] loaded \"" .. name .. "\": its hammer options wait in the cart with the setup's answers: they load at \"check out\"")
+		print("[Saved Settings] loaded \"" .. name .. "\": its hammer options wait with the setup's answers: they load right after the last question")
 	elseif not hammerPanel then
 		print("[Saved Settings] loaded \"" .. name .. "\": Bloxy's hammer panel isn't there, so its options are used at the next start")
 	elseif #turnedOn + #turnedOff + #failed == 0 then

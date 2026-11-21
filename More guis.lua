@@ -177,9 +177,21 @@ do
 		return code
 	end
 
+	local heldSaid = false
 	local function patched(code, name)
 		if type(code) ~= "string" then
 			return _ORIG_LS(code, name)
+		end
+		-- (Addtion-Scripts) With the setup's < > on (Setup Back Forward.lua), nothing loads until the last question:
+		-- one of Bloxy's own picks (a topbar GUI, safe chat ...) run before then is held, and it loads at the end from
+		-- the final answers. The topbar waiting here (BP_PendingTopbar) is left as it is for then.
+		local wizard = getgenv().BPWizard
+		if type(wizard) == "table" and type(wizard.holdCode) == "function" and wizard.holdCode(code) then
+			if not heldSaid then
+				heldSaid = true
+				print("[Hooks] one of Bloxy's picks tried to load during the setup: it loads after the last question")
+			end
+			return function() end
 		end
 		code = ownLegacy(code)
 
