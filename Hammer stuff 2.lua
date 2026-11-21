@@ -1025,7 +1025,10 @@ task.spawn(function()
 			table.insert(conns, hum.Died:Connect(function() pose = "Dead" end))
 			table.insert(conns, RunService.Stepped:Connect(function()
 				if not char.Parent or hum.Health <= 0 or pose == "Dead" then return end
-				if pose == "Jumping" or pose == "FreeFall" then
+				-- (Addtion-Scripts) climbing with the 2006 physics: the jump pose, as climbing looked in 2007
+				local env2006 = (getgenv and getgenv()) or _G
+				local climbJump = pose == "Climbing" and type(env2006.__Physics2006Cleanup) == "function"
+				if pose == "Jumping" or pose == "FreeFall" or climbJump then
 					rS.MaxVelocity = 0.75; lS.MaxVelocity = 0.75
 					rS:SetDesiredAngle(3.14); lS:SetDesiredAngle(-3.14); rH:SetDesiredAngle(0); lH:SetDesiredAngle(0)
 				elseif pose == "Seated" then
@@ -1399,17 +1402,19 @@ task.spawn(function()
 			end
 
 			local function move(time)
+				-- (Addtion-Scripts) with the 2006 physics the arms come down slowly after a jump or a fall (about 0.4 s,
+				-- the time of its landing bounce), as the 2007 Animation does: on every character, also after a reset
+				local slow2006 = type(HammerEnv.__Physics2006Cleanup) == "function"
 				if (pose == "Jumping") then moveJump() return end
 				if (pose == "FreeFall") then moveFreeFall() return end
 				if (pose == "Seated") then moveSit() return end
+				-- (Addtion-Scripts) climbing with the 2006 physics: the jump pose, as climbing looked in 2007
+				if (pose == "Climbing" and slow2006) then moveJump() return end
 
 				local amplitude = 0.1
 				local frequency = 1
 				local climbFudge = 0
 
-				-- (Addtion-Scripts) with the 2006 physics the arms come down slowly after a jump or a fall (about 0.4 s,
-				-- the time of its landing bounce), as the 2007 Animation does: on every character, also after a reset
-				local slow2006 = type(HammerEnv.__Physics2006Cleanup) == "function"
 				local downSpeed = slow2006 and ARMS_DOWN_2006 or jumpMaxLimbVelocity
 				local top = slow2006 and ARMS_SWING_TOP or 1.5
 				if (pose == "Running") then
@@ -1595,8 +1600,11 @@ task.spawn(function()
 					if char.Parent and data.hum and data.hum.Health > 0 then
 						local pose = data.pose
 						local rS, lS, rH, lH = data.rS, data.lS, data.rH, data.lH
+						-- (climbing with the 2006 physics: the jump pose, as yours)
+						local climbJump = pose == "Climbing"
+							and type(((getgenv and getgenv()) or _G).__Physics2006Cleanup) == "function"
 
-						if pose == "Jumping" or pose == "FreeFall" then
+						if pose == "Jumping" or pose == "FreeFall" or climbJump then
 							rS.MaxVelocity = 0.75; lS.MaxVelocity = 0.75
 							rS:SetDesiredAngle(3.14); lS:SetDesiredAngle(-3.14); rH:SetDesiredAngle(0); lH:SetDesiredAngle(0)
 						elseif pose == "Seated" then

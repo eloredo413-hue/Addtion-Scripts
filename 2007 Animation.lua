@@ -255,17 +255,20 @@ do
 					local v = rp and rp.AssemblyLinearVelocity
 					if not v or Vector3.new(v.X, 0, v.Z).Magnitude < 1 then pose = "Standing" end
 				end
-				if (pose == "Jumping") then moveJump() return end
-				if (pose == "FreeFall") then moveFreeFall() return end
-				if (pose == "Seated") then moveSit() return end
-
-				local amplitude = 0.1
-				local frequency = 1
-				local climbFudge = 0
 				-- (Addtion-Scripts) with the 2006 physics the arms come down slowly after a jump or a fall, over about
 				-- the time of its landing bounce (ARMS_DOWN_2006); otherwise at the jump's speed
 				local slow2006 = type(Env.__Physics2006Cleanup) == "function"
 				local downSpeed = slow2006 and ARMS_DOWN_2006 or jumpMaxLimbVelocity
+				if (pose == "Jumping") then moveJump() return end
+				if (pose == "FreeFall") then moveFreeFall() return end
+				if (pose == "Seated") then moveSit() return end
+				-- (Addtion-Scripts) climbing with the 2006 physics: the jump pose, as climbing looked in 2007 (arms
+				-- straight up, legs straight). Without the 2006 physics: the climbing swing below.
+				if (pose == "Climbing" and slow2006) then moveJump() return end
+
+				local amplitude = 0.1
+				local frequency = 1
+				local climbFudge = 0
 
 				if (pose == "Running") then
 					-- (Addtion-Scripts) after a jump or a fall the arms come down at downSpeed all the way to the
@@ -404,8 +407,10 @@ do
 					local pose = data.pose
 					if data.hum:GetState() == Enum.HumanoidStateType.Climbing then pose = "Climbing" end
 					local rS, lS, rH, lH = data.rS, data.lS, data.rH, data.lH
+					-- (climbing with the 2006 physics: the jump pose, as yours)
+					local climbJump = pose == "Climbing" and type(Env.__Physics2006Cleanup) == "function"
 
-					if pose == "Jumping" or pose == "FreeFall" then
+					if pose == "Jumping" or pose == "FreeFall" or climbJump then
 						rS.MaxVelocity = 0.75; lS.MaxVelocity = 0.75
 						rS:SetDesiredAngle(3.14); lS:SetDesiredAngle(-3.14); rH:SetDesiredAngle(0); lH:SetDesiredAngle(0)
 					elseif pose == "Seated" then
