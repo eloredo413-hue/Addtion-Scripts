@@ -459,11 +459,18 @@ task.spawn(function()
 	-- 2B. 2006-07 LIGHTING (Addtion-Scripts)
 	-- The game's Atmosphere colour turned all the way up (white: the brightest of its colours), as the 2006-07 sky
 	-- looked. A game without an Atmosphere gets none (nothing is added); one the game adds later is turned up too,
-	-- and kept so if the game changes it. Unticking puts each Atmosphere's own colour back.
+	-- and kept so if the game changes it.
+	-- With the old Compatibility lighting (Remove Pro, legacy lighting...) Roblox doesn't draw an Atmosphere at all,
+	-- so then its white haze is drawn the classic way instead: the fog, white, as far out as the Atmosphere's
+	-- density puts it (the Atmosphere is set aside meanwhile, as it would keep the fog from showing). Looked at twice
+	-- a second, so it follows Remove Pro being ticked or unticked. Unticking puts everything back.
 	------------------------------------------------------------
 	do
 		local MAX_COLOR = Color3.fromRGB(255, 255, 255)
-		local lState = { active = false, saved = {}, conns = {} }
+		local lState = {
+			active = false, saved = {}, conns = {},
+			fogMode = false, stashed = {}, underFog = nil, ourFog = nil,
+		}
 
 		local function brighten(atmosphere)
 			if not lState.active or not atmosphere:IsA("Atmosphere") then return end
@@ -478,6 +485,80 @@ task.spawn(function()
 			pcall(function() atmosphere.Color = MAX_COLOR end)
 		end
 
+		-- the old Compatibility (or Legacy) lighting: no Atmosphere drawn
+		local function oldLighting()
+			local tech = nil
+			pcall(function() tech = Lighting.Technology end)
+			if tech == nil and gethiddenproperty then
+				pcall(function() tech = gethiddenproperty(Lighting, "Technology") end)
+			end
+			return tech == Enum.Technology.Compatibility or tech == Enum.Technology.Legacy
+		end
+
+		-- how far out the white fog goes for an Atmosphere (thicker / hazier: nearer)
+		local function fogFor(atmosphere)
+			local density, haze = 0.395, 0
+			pcall(function() density = atmosphere.Density haze = atmosphere.Haze end)
+			local fogEnd = math.clamp(500 / math.max(density, 0.05), 250, 10000) / (1 + haze / 2)
+			return { start = fogEnd * 0.15, finish = fogEnd }
+		end
+
+		local function readFog()
+			return { color = Lighting.FogColor, start = Lighting.FogStart, finish = Lighting.FogEnd }
+		end
+		local function writeFog(fog, color)
+			pcall(function()
+				Lighting.FogColor = color or fog.color
+				Lighting.FogStart = fog.start
+				Lighting.FogEnd = fog.finish
+			end)
+		end
+
+		local function leaveFogMode()
+			if not lState.fogMode then return end
+			lState.fogMode = false
+			if lState.underFog then writeFog(lState.underFog) end
+			lState.underFog, lState.ourFog = nil, nil
+			for _, atmosphere in ipairs(lState.stashed) do
+				pcall(function() atmosphere.Parent = Lighting end)
+			end
+			lState.stashed = {}
+		end
+
+		-- the white Atmosphere the classic way (fog) while the old lighting is on, the real one otherwise
+		local function refresh()
+			if not lState.active then return end
+			if oldLighting() then
+				-- the game's Atmospheres (now, and new ones) set aside: the first one tells how far the fog goes
+				for _, child in ipairs(Lighting:GetChildren()) do
+					if child:IsA("Atmosphere") then
+						pcall(brighten, child)
+						if not lState.ourFog then lState.ourFog = fogFor(child) end
+						table.insert(lState.stashed, child)
+						pcall(function() child.Parent = nil end)
+					end
+				end
+				if not lState.ourFog then return end -- (no Atmosphere in this game: nothing to draw)
+				if not lState.fogMode then
+					lState.fogMode = true
+					lState.underFog = readFog()
+				end
+				local now = readFog()
+				local ours = lState.ourFog
+				if now.color ~= MAX_COLOR or now.start ~= ours.start or now.finish ~= ours.finish then
+					-- (something else set the fog meanwhile, Remove Pro's own for one: that is what comes back after)
+					if not (now.color == MAX_COLOR and math.abs(now.finish - ours.finish) < 0.01) then
+						lState.underFog = now
+					end
+					writeFog(ours, MAX_COLOR)
+				end
+			else
+				leaveFogMode()
+			end
+		end
+		-- (Remove Pro asks for this as soon as it is ticked or unticked)
+		actions.refresh2006Lighting = function() pcall(refresh) end
+
 		function actions.apply2006Lighting()
 			if lState.active then return end
 			lState.active = true
@@ -490,10 +571,21 @@ task.spawn(function()
 			end
 			table.insert(lState.conns, Lighting.ChildAdded:Connect(function(child)
 				task.defer(function()
-					if child.Parent == Lighting then pcall(brighten, child) end
+					if child.Parent == Lighting then
+						pcall(brighten, child)
+						pcall(refresh)
+					end
 				end)
 			end))
-			print("[2006-07 Lighting] " .. (found > 0 and "The Atmosphere's colour turned all the way up."
+			pcall(refresh)
+			task.spawn(function()
+				while lState.active do
+					task.wait(0.5)
+					pcall(refresh)
+				end
+			end)
+			print("[2006-07 Lighting] " .. (found > 0 and ("The Atmosphere's colour turned all the way up"
+				.. (lState.fogMode and " (drawn as white fog: the old lighting doesn't draw Atmospheres)." or "."))
 				or "This game has no Atmosphere: nothing to change."))
 		end
 
@@ -502,6 +594,7 @@ task.spawn(function()
 			lState.active = false
 			for _, c in ipairs(lState.conns) do pcall(function() c:Disconnect() end) end
 			lState.conns = {}
+			leaveFogMode()
 			for atmosphere, color in pairs(lState.saved) do
 				pcall(function() atmosphere.Color = color end)
 			end
@@ -667,6 +760,8 @@ task.spawn(function()
 			for _, plr in ipairs(Players:GetPlayers()) do setupPlayer(plr) end
 			table.insert(rpState.connections, Players.PlayerAdded:Connect(setupPlayer))
 			print("[Remove Pro] Classic lighting + parts applied.")
+			-- (2006-07 lighting: its white Atmosphere drawn as fog now, the old lighting doesn't draw Atmospheres)
+			if actions.refresh2006Lighting then actions.refresh2006Lighting() end
 		end
 
 		function actions.restoreRemovePro()
@@ -686,6 +781,7 @@ task.spawn(function()
 			restoreLighting(rpState.savedLighting)
 			rpState.savedLighting = nil
 			print("[Remove Pro] Lighting restored.")
+			if actions.refresh2006Lighting then actions.refresh2006Lighting() end
 		end
 	end
 
@@ -5250,7 +5346,7 @@ task.spawn(function()
 		stateKey      = "is2006LightingEnabled",
 		onEnable      = actions.apply2006Lighting,
 		onDisable     = actions.restore2006Lighting,
-		helpText      = "The 2006-07 look of the sky: the game's Atmosphere colour turned all the way up (white). A game with no Atmosphere gets none. Untick to put its own colour back."
+		helpText      = "The 2006-07 look of the sky: the game's Atmosphere colour turned all the way up (white). Works with remove pro too: its old lighting doesn't draw Atmospheres, so then the white haze is drawn as white fog. A game with no Atmosphere gets none. Untick to put everything back."
 	})
 
 	createAddonRow({
