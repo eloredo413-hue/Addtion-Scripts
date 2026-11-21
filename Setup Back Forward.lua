@@ -11,10 +11,12 @@
 -- the GUI you picked (bubbles, loading screen, escape menu ...).
 -- With Bloxy's own "configure" button (its answers are only saved for next time there) the buttons work the same,
 -- and at the end only the addons' picks run, as they always did there.
--- How: Bloxy keeps a switch (its "configure" mode) that makes each answer only saved. It is turned on through the
--- functions Bloxy's buttons run (getconnections, debug.getupvalues / setupvalue), and each answer is remembered on
--- the way through. On an executor without those, or if anything about Bloxy's setup isn't as expected, there are
--- no buttons and the setup works exactly as before.
+-- How: in the functions Bloxy's answer buttons run (getconnections, debug.getupvalues / setupvalue), each of its
+-- "On...Selected" functions is swapped for one that only remembers the answer during the setup; after the last
+-- question Bloxy's own functions get every answer, so they save and load exactly as Bloxy does (safe chat, the GUI,
+-- everything). Bloxy's "configure" switch isn't relied on: some copies of Bloxy run their picks even then. On an
+-- executor without those functions, or if anything about Bloxy's setup isn't as expected, there are no buttons and
+-- the setup works exactly as before.
 -- Other scripts: getgenv().BPWizard.later(key, fn) holds fn until the end of the setup (returns false when no setup
 -- with these buttons is on: then run it yourself); getgenv().BPWizard.noteTap(button) remembers a press made by a
 -- script (Saved Settings' answers) as an answer.
@@ -98,26 +100,8 @@ end
 local W = {
 	sg = nil,
 	session = false,        -- a setup with the buttons on (answers only remembered)
-	bloxyConfigure = false, -- started from Bloxy's "configure" (its answers are only saved for next time)
-	flag = nil,             -- where Bloxy's "configure" switch is: { fn = a function using it, index = its place }
 	startShow = nil,        -- Bloxy's function that shows the topbar question
 }
-
-local function readFlag()
-	local f = W.flag
-	if not f then return nil end
-	local ups = upvaluesOf(f.fn)
-	local v = ups and ups[f.index]
-	if type(v) == "boolean" then return v end
-	return nil
-end
-
-local function writeFlag(value)
-	local f = W.flag
-	if not (f and setUpvalue) then return false end
-	if not pcall(setUpvalue, f.fn, f.index, value) then return false end
-	return readFlag() == value
-end
 
 -- what a function Bloxy's answer button uses is:
 --   "pick": one of its "On...Selected" functions (it saves the answer and runs it unless "configure" is on: it
@@ -159,13 +143,15 @@ local function learnShow(fn)
 	end
 end
 
--- Each "On...Selected" Bloxy's buttons call is swapped (in that button's function only) for one that remembers
--- what it was given, so it can be given again at the end.
-local wrappers, originalOf = {}, setmetatable({}, { __mode = "k" })
+-- Each "On...Selected" Bloxy's buttons call is swapped (in that button's function only) for one that, while the setup
+-- is on, only remembers what it was given and does NOT run it: Bloxy gets every pick, the last way it was given,
+-- right after the last question. (Bloxy's own "configure" switch isn't relied on: a copy of Bloxy that runs its
+-- picks even in "configure" mode, unless "skip setup" is ticked too, loaded safe chat and the GUI straight away.)
+local finishLater = nil -- (the end of the setup: set below)
+local originalOf = setmetatable({}, { __mode = "k" })
 local pickOrder, lastArgs = {}, {}
-local function wrapPick(orig)
+local function wrapPick(orig, info)
 	if isWrapper[orig] then return orig end
-	if wrappers[orig] then return wrappers[orig] end
 	local w = function(...)
 		if W.session then
 			lastArgs[orig] = table.pack(...)
@@ -174,10 +160,12 @@ local function wrapPick(orig)
 				if f == orig then seen = true break end
 			end
 			if not seen then table.insert(pickOrder, orig) end
+			-- the last question (its answer goes to no next question): everything loads now
+			if info and info.bloxy and info.nextShow == nil and finishLater then task.defer(finishLater) end
+			return nil
 		end
 		return orig(...)
 	end
-	wrappers[orig] = w
 	isWrapper[w] = true
 	originalOf[w] = orig
 	return w
@@ -245,7 +233,7 @@ local function scanHandlers(frame, info)
 								if isWrapper[up] then
 									info.picks = true
 								elseif type(i) == "number" and setUpvalue then
-									local w = wrapPick(up)
+									local w = wrapPick(up, info)
 									if pcall(setUpvalue, fn, i, w) then
 										local now = upvaluesOf(fn)
 										if now and now[i] == w then
@@ -527,14 +515,13 @@ local function finish(why)
 	navTarget = nil
 	removeButtons()
 	local given = 0
-	if not W.bloxyConfigure then
-		-- Bloxy's own picks, in the order they were first given (the topbar first), each the last way it was given
-		for _, orig in ipairs(pickOrder) do
-			local args = lastArgs[orig]
-			if args then
-				local ok, err = pcall(orig, table.unpack(args, 1, args.n))
-				if ok then given = given + 1 else warn("[Setup Back/Forward] a pick didn't load: " .. tostring(err)) end
-			end
+	-- Bloxy's own picks, in the order they were first given (the topbar first), each the last way it was given
+	-- (in Bloxy's "configure" its own rules decide, as when answering without < >)
+	for _, orig in ipairs(pickOrder) do
+		local args = lastArgs[orig]
+		if args then
+			local ok, err = pcall(orig, table.unpack(args, 1, args.n))
+			if ok then given = given + 1 else warn("[Setup Back/Forward] a pick didn't load: " .. tostring(err)) end
 		end
 	end
 	-- the addons' picks and the loader's follow-up of the GUI, in the order they were first given
@@ -554,8 +541,11 @@ local function finish(why)
 	table.clear(lastArgs)
 	table.clear(pickOrder)
 	saveAnswers()
-	print(string.format("[Setup Back/Forward] %s: %d of Bloxy's picks and %d of the addons' load now%s", why, given, ran,
-		W.bloxyConfigure and " (Bloxy's \"configure\": its own picks are saved for next time, as always)" or ""))
+	print(string.format("[Setup Back/Forward] %s: %d of Bloxy's picks and %d of the addons' load now", why, given, ran))
+end
+
+finishLater = function()
+	if W.session then finish("setup done") end
 end
 
 local function cancel(why)
@@ -597,16 +587,6 @@ local function hookFrame(frame)
 	return info
 end
 
--- the same switch, read through the topbar answer's own function (it must be the one Bloxy's answers use)
-local function pickSeesFlag(info, value)
-	local ups = info.pickFn and upvaluesOf(info.pickFn)
-	if not ups then return true end -- (nothing more to check with)
-	for _, v in pairs(ups) do
-		if type(v) == "boolean" then return v == value end
-	end
-	return true
-end
-
 -- Bloxy's own pick scripts (its MyScripts: the topbar GUIs, safe chat, sounds ...), found through the topbar answer's
 -- function. While the setup is on, More guis' loadstring hook holds any of them that something tries to run (a GUI
 -- came up right after the topbar pick in a recording): they load at the end, from the final answers.
@@ -628,21 +608,9 @@ local function learnBloxyCodes(info)
 	end
 end
 
--- the setup starts at the topbar question: Bloxy is put in its "configure" mode (answers only saved) for it
+-- the setup starts at the topbar question (its answer's function could be reached: picks are held from now on)
 local function startSession(frame, info)
-	if not (info.picks and W.flag) then return false end
-	local was = readFlag()
-	if was == nil then return false end
-	if was == true then
-		W.bloxyConfigure = true
-	else
-		W.bloxyConfigure = false
-		if not writeFlag(true) then return false end
-		if not pickSeesFlag(info, true) then
-			writeFlag(false)
-			return false
-		end
-	end
+	if not info.picks then return false end
 	W.session = true
 	pcall(learnBloxyCodes, info)
 	history, index, answers = {}, 0, {}
@@ -651,47 +619,23 @@ local function startSession(frame, info)
 	table.clear(lastArgs)
 	table.clear(pickOrder)
 	topbarShown = 0
-	print("[Setup Back/Forward] on: your answers are only remembered until the last question, then everything loads"
-		.. (W.bloxyConfigure and " (Bloxy's \"configure\")" or ""))
+	print("[Setup Back/Forward] on: your answers are only remembered until the last question, then everything loads")
 	return true
 end
 
--- the switch Bloxy's topbar answer uses ("configure" mode), and the function that shows the topbar question:
--- from Bloxy's "configure" button, else from the topbar question's own button
+-- the function that shows the topbar question (for "<" back to it): from Bloxy's "configure" button
 local function findSwitch(frame, info)
 	local cfg = W.sg and W.sg:FindFirstChild("ConfigureButton", true)
 	if cfg and cfg:IsA("TextButton") then
 		for _, fn in ipairs(handlersOf(cfg)) do
-			local ups = upvaluesOf(fn)
-			if ups then
-				local bools, flagIndex = 0, nil
-				for i, v in pairs(ups) do
-					if type(v) == "boolean" then
-						bools = bools + 1
-						flagIndex = i
-					elseif type(v) == "function" and classify(v) == "show" then
-						W.startShow = W.startShow or v
-					end
-				end
-				if bools == 1 and type(flagIndex) == "number" then W.flag = W.flag or { fn = fn, index = flagIndex } end
+			for _, v in pairs(upvaluesOf(fn) or {}) do
+				if type(v) == "function" and classify(v) == "show" then W.startShow = W.startShow or v end
 			end
 		end
-	end
-	if not W.flag and info.pickFn then
-		local ups = upvaluesOf(info.pickFn)
-		local bools, flagIndex = 0, nil
-		for i, v in pairs(ups or {}) do
-			if type(v) == "boolean" then
-				bools = bools + 1
-				flagIndex = i
-			end
-		end
-		if bools == 1 and type(flagIndex) == "number" then W.flag = { fn = info.pickFn, index = flagIndex } end
 	end
 	if W.startShow and not info.show then info.show = W.startShow end
 end
 
--- a question of Bloxy's is made: hooked at once (before it can be answered); the topbar question starts the setup
 -- THE TOPBAR QUESTION WITHOUT "confirm": picking a GUI in the list goes straight to the next question (its
 -- "confirm" is hidden and pressed for you a moment later, so the loader and More guis still see their Confirm).
 -- Nothing loads until the end of the setup, like every other answer.
@@ -808,7 +752,6 @@ local function onPage(frame, title)
 	if not (info.bloxy and info.picks) then
 		warn("[Setup Back/Forward] couldn't reach the answers of \"" .. tostring(title) .. "\": everything "
 			.. "picked so far loads now, and the rest loads as you answer (no < > from here)")
-		if not W.bloxyConfigure then writeFlag(false) end
 		finish("the setup goes on without < >")
 		return
 	end
@@ -886,7 +829,6 @@ end
 -- WATCHING BLOXY'S GUI
 ------------------------------------------------------------
 local candidate = { frame = nil, title = nil, since = 0 }
-local endCheck = 0
 
 local function step(dt)
 	if not alive or not (W.sg and W.sg.Parent) then return end
@@ -897,14 +839,6 @@ local function step(dt)
 	end
 	if f and t and os.clock() - candidate.since >= STABLE then
 		if not current or current.frame ~= f or current.title ~= t then onPage(f, t) end
-	end
-	if W.session then
-		endCheck = endCheck + (dt or 0)
-		if endCheck >= 0.2 then
-			endCheck = 0
-			-- the last question was answered: Bloxy turns its "configure" mode off itself
-			if readFlag() == false then finish("setup done") end
-		end
 	end
 end
 
@@ -934,7 +868,7 @@ watchGui = function(sg)
 			-- Bloxy's GUI destroyed ("destroy GUI") in the middle of the setup: the setup is called off, nothing of it
 			-- loads (before, everything remembered so far loaded: the 2008 GUI rides on Bloxy's 2013, so 2013 came up)
 			cancel("Bloxy's GUI was closed during the setup: nothing of it loads")
-			W.sg, W.flag, W.startShow = nil, nil, nil
+			W.sg, W.startShow = nil, nil
 			lastFrame, current = nil, nil
 			-- (Bloxy run again: its new GUI may already be there)
 			lookForGui()
@@ -1006,10 +940,7 @@ Env.BPWizard = {
 
 Env.BPWizardCleanup = function()
 	alive = false
-	if W.session then
-		writeFlag(false)
-		finish("replaced")
-	end
+	if W.session then finish("replaced") end
 	removeButtons()
 	for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
 	table.clear(conns)
