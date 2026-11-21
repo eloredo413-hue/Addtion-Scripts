@@ -1187,6 +1187,10 @@ print("[Retro Master] Full script loaded successfully.")
 					handled[frame] = true
 					busy = true
 					print("[Physics/Camera Step] Detected, converting.")
+					-- (the question taken away before it was answered, by the setup's "<": the next one is converted)
+					frame.AncestryChanged:Connect(function()
+						if not frame.Parent then busy = false end
+					end)
 
 					titleLabel.Text = "Old physics or old camera?"
 					yesBtn.Visible = false
@@ -1309,14 +1313,22 @@ print("[Retro Master] Full script loaded successfully.")
 							print("[Physics/Camera] Picked " .. opt.choice .. " (physics: " .. variant .. ", camera: " .. camera .. ")")
 							saveChoice(opt.choice, variant, camera)
 
-							if opt.choice == "physics" or opt.choice == "both" then
-								task.spawn(function() runPhysics(variant) end)
+							local function runPicked()
+								if opt.choice == "physics" or opt.choice == "both" then
+									task.spawn(function() runPhysics(variant) end)
+								end
+								if opt.choice == "camera" or opt.choice == "both" then
+									task.spawn(function()
+										local src = fetchCameraScript(camera)
+										if src then runScript((cameraVariant(camera).prefix or "") .. src, camera .. " camera") end
+									end)
+								end
 							end
-							if opt.choice == "camera" or opt.choice == "both" then
-								task.spawn(function()
-									local src = fetchCameraScript(camera)
-									if src then runScript((cameraVariant(camera).prefix or "") .. src, camera .. " camera") end
-								end)
+							-- with the setup's < > on (Setup Back Forward.lua), it loads after the last question
+							local wizard = ((getgenv and getgenv()) or _G).BPWizard
+							if not (type(wizard) == "table" and type(wizard.later) == "function"
+								and wizard.later("physics / camera", runPicked)) then
+								runPicked()
 							end
 
 							local upTween = TweenService:Create(

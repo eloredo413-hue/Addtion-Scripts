@@ -626,8 +626,18 @@ end)
     end
 
     local handled = setmetatable({}, {__mode = "k"})
-    local processing = false
     local done = false
+
+    -- with the setup's < > on (Setup Back Forward.lua), the particles picked load after the last question
+    local function wizard()
+        local w = ((getgenv and getgenv()) or _G).BPWizard
+        return type(w) == "table" and w or nil
+    end
+    local function runPicked(source)
+        local w = wizard()
+        if w and type(w.later) == "function" and w.later("old particles", function() runScript(source) end) then return end
+        task.spawn(function() runScript(source) end)
+    end
 
     local function look()
         if not sg or not sg.Parent then return end
@@ -646,6 +656,8 @@ end)
                 end
                 if title and yesBtn and noBtn then
                     handled[frame] = true
+                    -- (one pick per question: the setup's "<" can show it again, as a new question)
+                    local processing = false
                     print("[Particles Addon] Customizing particle step.")
 
                     title.Text = "Which old particles?"
@@ -716,7 +728,7 @@ end)
                         if processing then return end
                         processing = true
                         print("[Particles Addon] Running 2008 particles (no fire or smoke, old sparkles).")
-                        task.spawn(function() runScript(SCRIPT_2008) end)
+                        runPicked(SCRIPT_2008)
                         task.wait(0.1)
                         fireBtn(noBtn)
                     end)
@@ -725,7 +737,7 @@ end)
                         if processing then return end
                         processing = true
                         print("[Particles Addon] Running 2010 particles.")
-                        task.spawn(function() runScript(SCRIPT_2010) end)
+                        runPicked(SCRIPT_2010)
                         task.wait(0.1)
                         fireBtn(noBtn)
                     end)
@@ -734,7 +746,7 @@ end)
                         if processing then return end
                         processing = true
                         print("[Particles Addon] Running 2013 particles.")
-                        task.spawn(function() runScript(SCRIPT_2013) end)
+                        runPicked(SCRIPT_2013)
                         task.wait(0.1)
                         fireBtn(noBtn)
                     end)
@@ -747,10 +759,14 @@ end)
         end
     end
 
-    -- (a few times a second is plenty for a step that slides in; it stops once the step is ready)
+    -- (a few times a second is plenty for a step that slides in; it stops once the step is ready, unless the setup's
+    -- < > are on: then "<" can bring the question back, so it keeps looking until the setup is over)
     task.spawn(function()
-        while not done and sg and sg.Parent do
+        while sg and sg.Parent do
             pcall(look)
+            local w = wizard()
+            local wizardOn = w and type(w.deferring) == "function" and w.deferring() == true
+            if done and not wizardOn then break end
             task.wait(0.2)
         end
     end)

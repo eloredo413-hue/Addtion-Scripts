@@ -671,7 +671,14 @@ do
 
 			saveChoice(true)
 			-- Bloxy only saves (doesn't run) when you re-configure with "skip" ticked
-			if not bloxySkipOn() then engine.Start() end
+			-- (with the setup's < > on, Setup Back Forward.lua, it starts after the last question)
+			if not bloxySkipOn() then
+				local wizard = ((getgenv and getgenv()) or _G).BPWizard
+				if not (type(wizard) == "table" and type(wizard.later) == "function"
+					and wizard.later("animation", function() engine.Start() end)) then
+					engine.Start()
+				end
+			end
 
 			-- Moves the wizard on the way "Normal" does (no Bloxy animation script)
 			pressing = true

@@ -790,6 +790,7 @@ task.spawn(function()
 	-- 3. CLASSIC OUTLINE LOGIC
 	------------------------------------------------------------
 	do
+		local HammerOutlineEnv    = (getgenv and getgenv()) or _G
 		local OUTLINE_COLOR       = Color3.fromRGB(50, 50, 50)
 		local LINE_THICKNESS      = 0.001
 		local TRANSPARENCY        = 0.95
@@ -845,7 +846,16 @@ task.spawn(function()
 			if olState.tracked[p] then return end
 			olState.tracked[p] = true
 
-			local h, s, v = p.Color:ToHSV()
+			-- (Addtion-Scripts) the jitter starts from the part's real colour. With iw legacy lighting on, Color is
+			-- its darkened copy, and the lighting darkens any colour written to a part again (it takes it as the
+			-- game's new colour): jittering the darkened one darkened every part twice, close to black.
+			local base = p.Color
+			local original = HammerOutlineEnv.LegacyLightingOriginal
+			if type(original) == "function" then
+				local ok, real = pcall(original, p, "Color")
+				if ok and typeof(real) == "Color3" then base = real end
+			end
+			local h, s, v = base:ToHSV()
 			local roll = math.random(-JITTER_AMPLITUDE, JITTER_AMPLITUDE) * 0.0002
 			p.Color = Color3.fromHSV(h, s, math.clamp(v + roll, 0, 1))
 

@@ -459,6 +459,10 @@ print("[Explosion] 2013 style LOADED and HOOKED.")
 				handled[frame] = true
 				busy = true
 				print("[Explosion Step] Frame detected: " .. titleLabel.Text)
+				-- (the question taken away before it was answered, by the setup's "<": the next one is converted)
+				frame.AncestryChanged:Connect(function()
+					if not frame.Parent then busy = false end
+				end)
 
 				local originalTitle = titleLabel.Text
 
@@ -485,8 +489,12 @@ print("[Explosion] 2013 style LOADED and HOOKED.")
 						print("[Explosion] Picked " .. opt.style)
 						saveStyle(opt.style)
 
-						-- Run the script
-						runExplosionScript(opt.style)
+						-- Run the script (with the setup's < > on, after the last question)
+						local wizard = ((getgenv and getgenv()) or _G).BPWizard
+						if not (type(wizard) == "table" and type(wizard.later) == "function"
+							and wizard.later("explosion", function() runExplosionScript(opt.style) end)) then
+							runExplosionScript(opt.style)
+						end
 
 						-- Slide the frame up and out
 						local upTween = TweenService:Create(

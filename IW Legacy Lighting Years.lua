@@ -1032,6 +1032,11 @@ local function handle(v)
 	elseif Settings.RetroStudsWith2016Textures and isBloxyStud(v) then
 		noteRetroStuds()
 		hideBloxyStud(v)
+	elseif isBloxyStud(v) then
+		-- (Addtion-Scripts) Bloxy's 2016 stud textures are left as they are: Bloxy colours each one from its part
+		-- (twice the part's colour) every time the part's colour changes, so they follow the part's darkened colour
+		-- by themselves. Darkening them here as well made the studs much darker than their parts.
+		return
 	elseif v:IsA("Decal") then -- Texture is a Decal too
 		SetProp(v, "Color3")
 	elseif v:IsA("Shirt") or v:IsA("Pants") or v:IsA("ShirtGraphic") then -- ShirtGraphic = the t-shirt picture
