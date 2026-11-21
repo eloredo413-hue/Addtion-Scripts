@@ -7,8 +7,10 @@
 --     tall, standing upright; it fades in over its first second and out over its second (2 s each).
 --   * forceFieldRadial: big soft flares at the middle of the body. 2 a second, 5 studs and growing 6 a second, turned
 --     any way and spinning (4 to 100 degrees a second), fading out over their 2 seconds.
--- Both glow (added light). The particle is the sparkle the user gave (this repo's assets/sparkle_1.png); Roblox's
--- sparkle texture if it can't be had. Roblox's own forcefield is hidden while it shows.
+-- Both glow (added light). The beams are rbxassetid://5101923607 and the sparkles rbxassetid://398330155 (the user's
+-- picks; that one is a decal, so its picture, 398330154, is what's used).
+-- With them, the sphere of Bloxy's original 2012 forcefield: two navy neon spheres round the torso (6.3 and 6.93
+-- studs), taking turns to show (the original's pulse). Roblox's own forcefield is hidden while it shows.
 --
 -- Picking "2012" on Bloxy's forcefield step (or having it saved) starts it: the FF Fix Hook hands Bloxy's 2012
 -- forcefield code over to this (getgenv().Forcefield2012.Start), and if Bloxy's own blue bubble shows anyway
@@ -23,6 +25,7 @@ do
 	local HttpService = game:GetService("HttpService")
 	local RunService = game:GetService("RunService")
 	local CoreGui = game:GetService("CoreGui")
+	local TweenService = game:GetService("TweenService")
 
 	local Env = (getgenv and getgenv()) or _G
 	if Env.Forcefield2012Cleanup then pcall(Env.Forcefield2012Cleanup) end
@@ -34,10 +37,11 @@ do
 	local STEP_TEXT = "choose your forcefield"
 	local EFFECT_NAME = "Forcefield2012Particles"
 	local BLOXY_HOLDER = "FFCloneHolder" -- (Bloxy's 2012 forcefield, the blue bubble, puts its model in this)
-	local GLOW_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/assets/sparkle_1.png"
-	local GLOW_FILE = "AddtionAssets/sparkle_1.png"
-	local GLOW_FALLBACK = "rbxasset://textures/particles/sparkles_main.dds"
-	local COLOR = Color3.fromRGB(200, 225, 255) -- (a slight blue: the sparkle itself is white)
+	local BEAM_TEXTURE = "rbxassetid://5101923607"   -- (the user's beam: blue and purple)
+	local SPARKLE_TEXTURE = "rbxassetid://398330154" -- (the picture of the user's sparkle decal, 398330155)
+	local SPARKLE_COLOR = Color3.fromRGB(200, 225, 255) -- (a slight blue: the sparkle itself is grey)
+	local SPHERE_HOLDER = "Forcefield2012Spheres"
+	local SPHERE_COLOR = Color3.fromRGB(0, 0, 128)   -- (the original's navy neon)
 
 	-- the particle files' numbers
 	local BEAM = {
@@ -54,7 +58,7 @@ do
 	local hidden = setmetatable({}, { __mode = "k" }) -- forcefields this hid
 	local watched = {}
 	local handled = setmetatable({}, { __mode = "k" })
-	local glowImage = GLOW_FALLBACK
+	local sphereHolder = nil
 
 	local function disconnectAll(list)
 		for _, c in ipairs(list) do pcall(function() c:Disconnect() end) end
@@ -67,38 +71,44 @@ do
 	end
 
 	------------------------------------------------------------
-	-- the sparkle picture (this repo's, cached on the executor's disk)
-	------------------------------------------------------------
-	task.spawn(function()
-		local getAsset = (type(getcustomasset) == "function" and getcustomasset)
-			or (type(getsynasset) == "function" and getsynasset) or nil
-		if not (getAsset and type(writefile) == "function" and type(isfile) == "function") then return end
-		pcall(function()
-			if type(isfolder) == "function" and type(makefolder) == "function" and not isfolder("AddtionAssets") then
-				makefolder("AddtionAssets")
-			end
-			if not isfile(GLOW_FILE) then
-				local data = game:HttpGet(GLOW_URL)
-				if type(data) == "string" and #data > 64 and string.sub(data, 2, 4) == "PNG" then writefile(GLOW_FILE, data) end
-			end
-			if isfile(GLOW_FILE) then
-				local id = getAsset(GLOW_FILE)
-				if type(id) == "string" and id ~= "" then
-					glowImage = id
-					for _, entry in pairs(effects) do
-						for _, e in ipairs(entry.emitters) do e.Texture = id end
-					end
-				end
-			end
-		end)
-	end)
-
-	------------------------------------------------------------
 	-- THE EFFECT
 	------------------------------------------------------------
 	local function bodyOf(character)
 		return character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso")
 			or character:FindFirstChild("UpperTorso")
+	end
+	-- (the sphere sits on the torso, as in the original)
+	local function torsoOf(character)
+		return character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
+			or character:FindFirstChild("HumanoidRootPart")
+	end
+
+	-- one of the original's spheres: a navy neon ball, only a look (no collision, touching or ray hits). (A ball
+	-- part, not a sphere mesh, so nothing that takes meshes off parts takes it off this.)
+	local function newSphere(name, diameter, transparency)
+		if not (sphereHolder and sphereHolder.Parent) then
+			sphereHolder = Instance.new("Folder")
+			sphereHolder.Name = SPHERE_HOLDER
+			sphereHolder.Parent = workspace
+		end
+		local p = Instance.new("Part")
+		p.Name = name
+		p.Shape = Enum.PartType.Ball
+		p.Size = Vector3.new(diameter, diameter, diameter)
+		p.Anchored = true
+		p.CanCollide = false
+		p.CanTouch = false
+		p.CanQuery = false
+		p.CastShadow = false
+		p.Massless = true
+		p.Color = SPHERE_COLOR
+		p.Material = Enum.Material.Neon
+		p.Transparency = transparency
+		for _, side in ipairs({ "Top", "Bottom", "Left", "Right", "Front", "Back" }) do
+			p[side .. "Surface"] = Enum.SurfaceType.Smooth
+		end
+		p.Parent = sphereHolder
+		return p
 	end
 
 	local function removeEffect(character)
@@ -137,8 +147,8 @@ do
 		ring.Position = Vector3.new(0, -BEAM.below, 0)
 		local beams = Instance.new("ParticleEmitter")
 		beams.Name = "Beam"
-		beams.Texture = glowImage
-		beams.Color = ColorSequence.new(COLOR)
+		beams.Texture = BEAM_TEXTURE
+		beams.Color = ColorSequence.new(Color3.new(1, 1, 1)) -- (its own colours)
 		beams.LightEmission = 1
 		beams.LightInfluence = 0
 		beams.Rate = BEAM.rate
@@ -167,8 +177,8 @@ do
 		middle.Name = EFFECT_NAME .. "Middle"
 		local radial = Instance.new("ParticleEmitter")
 		radial.Name = "Radial"
-		radial.Texture = glowImage
-		radial.Color = ColorSequence.new(COLOR)
+		radial.Texture = SPARKLE_TEXTURE
+		radial.Color = ColorSequence.new(SPARKLE_COLOR)
 		radial.LightEmission = 1
 		radial.LightInfluence = 0
 		radial.Rate = RADIAL.rate
@@ -190,6 +200,37 @@ do
 		middle.Parent = body
 		table.insert(entry.parts, middle)
 		table.insert(entry.emitters, radial)
+
+		-- the original's sphere: inner 0.9 x 7 = 6.3 studs at 0.6, outer 0.9 x 7.7 = 6.93 at 0.95, on the torso
+		local inner = newSphere("MainCircle", 6.3, 0.6)
+		local outer = newSphere("OuterCircle", 6.93, 0.95)
+		table.insert(entry.parts, inner)
+		table.insert(entry.parts, outer)
+		local function follow()
+			local torso = torsoOf(character)
+			if torso and inner.Parent then
+				local at = torso.CFrame
+				inner.CFrame = at
+				outer.CFrame = at
+			end
+		end
+		follow()
+		local okPre = pcall(function()
+			connect(entry.conns, RunService.PreRender, follow)
+		end)
+		if not okPre then connect(entry.conns, RunService.RenderStepped, follow) end
+		-- the original's pulse: the inner one fades as the outer one shows, and back
+		task.spawn(function()
+			while effects[character] == entry and inner.Parent do
+				TweenService:Create(inner, TweenInfo.new(0.55, Enum.EasingStyle.Sine), { Transparency = 0.95 }):Play()
+				TweenService:Create(outer, TweenInfo.new(0.7, Enum.EasingStyle.Sine), { Transparency = 0.6 }):Play()
+				task.wait(0.55)
+				if not (effects[character] == entry and inner.Parent) then break end
+				TweenService:Create(outer, TweenInfo.new(0.5, Enum.EasingStyle.Sine), { Transparency = 0.95 }):Play()
+				TweenService:Create(inner, TweenInfo.new(0.5, Enum.EasingStyle.Sine), { Transparency = 0.6 }):Play()
+				task.wait(0.35)
+			end
+		end)
 
 		connect(entry.conns, RunService.Heartbeat, function()
 			-- (the forcefield gone, however it went: this one goes too)
@@ -240,7 +281,7 @@ do
 		running = true
 		for _, player in ipairs(Players:GetPlayers()) do pcall(watchPlayer, player) end
 		connect(engineConns, Players.PlayerAdded, function(player) pcall(watchPlayer, player) end)
-		print("[2012 ForceField] On: the particle forcefield (beams and sparkles) on "
+		print("[2012 ForceField] On: the sphere, beams and sparkles on "
 			.. (everyone and "every character" or "your character") .. " with a forcefield.")
 	end
 	function engine.Stop()
@@ -278,6 +319,7 @@ do
 		disconnectAll(connections)
 		table.clear(watched)
 		engine.Stop()
+		if sphereHolder then pcall(function() sphereHolder:Destroy() end) sphereHolder = nil end
 		Env.Forcefield2012 = nil
 	end
 
