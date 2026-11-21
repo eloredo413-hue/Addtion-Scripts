@@ -48,8 +48,14 @@ do
 	-- the bubble in the user's clips: a strong mid blue (measured over three backgrounds: about 0, 29, 163 at 43% seen),
 	-- a little darker here as neon shows brighter than its colour
 	local SPHERE_COLOR = Color3.fromRGB(0, 30, 150)
-	local OUTER_SEE_THROUGH = 0.62 -- (the bubble)
+	local OUTER_SEE_THROUGH = 0.62 -- (the bubble, at its strongest)
 	local INNER_SEE_THROUGH = 0.8  -- (the little one inside: lighter, so you see yourself through it)
+	-- the bubble flares in and out, as in the user's 2012 clip: smoothly from strong to more see-through and back,
+	-- never gone. Measured there over two full rounds: one round about every 3.2 seconds, at its faintest about 40% as
+	-- strong as at its strongest.
+	local PULSE_PERIOD = 3.2
+	local OUTER_FAINT = 0.85
+	local INNER_FAINT = 0.92
 
 	-- the particle files' numbers
 	local BEAM = {
@@ -245,11 +251,13 @@ do
 		table.insert(entry.parts, middle)
 		table.insert(entry.emitters, radial)
 
-		-- the original's sphere: inner 0.9 x 7 = 6.3 studs, outer 0.9 x 7.7 = 6.93, on the torso; steady (no pulse)
+		-- the original's sphere: inner 0.9 x 7 = 6.3 studs, outer 0.9 x 7.7 = 6.93, on the torso; it flares in and out
+		-- (smooth, starting strong; see PULSE_PERIOD)
 		local inner = newSphere("MainCircle", 6.3, INNER_SEE_THROUGH)
 		local outer = newSphere("OuterCircle", 6.93, OUTER_SEE_THROUGH)
 		table.insert(entry.parts, inner)
 		table.insert(entry.parts, outer)
+		local born = os.clock()
 		local function follow()
 			local torso = torsoOf(character)
 			if torso and inner.Parent then
@@ -257,6 +265,9 @@ do
 				inner.CFrame = at
 				outer.CFrame = at
 			end
+			local fade = 0.5 - 0.5 * math.cos((os.clock() - born) / PULSE_PERIOD * 2 * math.pi)
+			outer.Transparency = OUTER_SEE_THROUGH + (OUTER_FAINT - OUTER_SEE_THROUGH) * fade
+			inner.Transparency = INNER_SEE_THROUGH + (INNER_FAINT - INNER_SEE_THROUGH) * fade
 		end
 		follow()
 		local okPre = pcall(function()
