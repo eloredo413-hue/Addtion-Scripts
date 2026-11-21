@@ -1,8 +1,9 @@
--- [[ SETUP BACK / FORWARD — round "<" and ">" buttons on Bloxy's setup questions ]]
--- Each question of the setup gets a round "<" at its bottom-left corner and a round ">" at its bottom-right one.
+-- [[ SETUP BACK / FORWARD — "<" and ">" buttons on Bloxy's setup questions ]]
+-- Each question of the setup gets a small "<" under its bottom-left corner and ">" under its bottom-right one (in Bloxy's
+-- own button style, only shown when they can be used). The topbar question has no "confirm": picking a GUI goes on.
 --   <  goes back to the question before (as many times as you like, up to the topbar question).
 --   >  gives the question on screen the answer you gave it last time, so you go forward again without answering
---      every question again. (Greyed out on a question you haven't answered yet.)
+--      every question again. (Hidden on a question you haven't answered yet.)
 -- While the setup is on, your answers are only remembered: nothing loads yet, so going back and changing an answer
 -- never leaves the old one running. After the last question everything you picked loads together, the same way
 -- it does when "skip setup" is ticked: Bloxy's own picks, and the picks of the addons' questions (explosion,
@@ -313,56 +314,53 @@ end
 local buttonsOf = setmetatable({}, { __mode = "k" }) -- frame -> { back, forward }
 local refreshButtons -- (below)
 
-local function makeRound(frame, name, glyph, position, onPress)
+-- Small buttons in Bloxy's own style (white, thin black edge, its Legacy font; black with a red edge under the finger),
+-- tucked right under the question's bottom corners. Only shown when they can be used.
+local TAB_W, TAB_H = 34, 22
+local function makeTab(frame, name, glyph, position, onPress)
 	local b = Instance.new("ImageButton")
 	b.Name = name
-	b.Size = UDim2.new(0, 26, 0, 26)
-	b.AnchorPoint = Vector2.new(0.5, 0.5)
+	b.Size = UDim2.new(0, TAB_W, 0, TAB_H)
 	b.Position = position
 	b.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	b.BorderSizePixel = 0
+	b.BorderColor3 = Color3.fromRGB(0, 0, 0)
+	b.BorderSizePixel = 1
 	b.AutoButtonColor = false
 	b.Image = ""
 	b.ZIndex = 60
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(1, 0)
-	corner.Parent = b
-	local stroke = Instance.new("UIStroke")
-	stroke.Color = Color3.fromRGB(0, 0, 0)
-	stroke.Thickness = 1
-	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	stroke.Parent = b
+	b.Visible = false
 	local label = Instance.new("TextLabel")
 	label.Name = "Glyph"
 	label.Size = UDim2.new(1, 0, 1, 0)
 	label.BackgroundTransparency = 1
 	label.Text = glyph
-	label.Font = Enum.Font.SourceSansBold
-	label.TextSize = 20
+	label.Font = Enum.Font.Legacy
+	label.TextScaled = true
 	label.TextColor3 = Color3.fromRGB(0, 0, 0)
 	label.ZIndex = 61
 	label.Parent = b
-	local hovering = false
-	local function look()
-		local on = b:GetAttribute("Enabled") == true
-		b.BackgroundTransparency = on and 0 or 0.45
-		label.TextTransparency = on and 0 or 0.6
-		stroke.Transparency = on and 0 or 0.5
-		local dark = on and hovering
+	local limit = Instance.new("UITextSizeConstraint")
+	limit.MaxTextSize = 16
+	limit.MinTextSize = 8
+	limit.Parent = label
+	local function look(dark)
 		b.BackgroundColor3 = dark and Color3.fromRGB(0, 0, 0) or Color3.fromRGB(255, 255, 255)
+		b.BorderColor3 = dark and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 0, 0)
 		label.TextColor3 = dark and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(0, 0, 0)
-		stroke.Color = dark and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 0, 0)
 	end
-	b:GetAttributeChangedSignal("Enabled"):Connect(look)
-	b.MouseEnter:Connect(function() hovering = true look() end)
-	b.MouseLeave:Connect(function() hovering = false look() end)
+	b:GetAttributeChangedSignal("Enabled"):Connect(function()
+		b.Visible = b:GetAttribute("Enabled") == true
+		if not b.Visible then look(false) end
+	end)
+	b.MouseEnter:Connect(function() look(true) end)
+	b.MouseLeave:Connect(function() look(false) end)
 	b.MouseButton1Click:Connect(function()
 		if b:GetAttribute("Enabled") ~= true or busy or not W.session then return end
+		look(false)
 		playClick()
 		task.spawn(onPress)
 	end)
 	b:SetAttribute("Enabled", false)
-	look()
 	b.Parent = frame
 	return b
 end
@@ -373,8 +371,8 @@ local function attachButtons(frame)
 	local own = buttonsOf[frame]
 	if own and own.back.Parent and own.forward.Parent then return end
 	own = {
-		back = makeRound(frame, BACK_NAME, "<", UDim2.new(0, -4, 1, 8), function() goBack() end),
-		forward = makeRound(frame, FORWARD_NAME, ">", UDim2.new(1, 4, 1, 8), function() goForward() end),
+		back = makeTab(frame, BACK_NAME, "<", UDim2.new(0, 0, 1, 3), function() goBack() end),
+		forward = makeTab(frame, FORWARD_NAME, ">", UDim2.new(1, -TAB_W, 1, 3), function() goForward() end),
 	}
 	buttonsOf[frame] = own
 end
@@ -559,6 +557,20 @@ local function finish(why)
 		W.bloxyConfigure and " (Bloxy's \"configure\": its own picks are saved for next time, as always)" or ""))
 end
 
+local function cancel(why)
+	if not W.session then return end
+	W.session = false
+	busy = false
+	replaying = false
+	navTarget = nil
+	removeButtons()
+	table.clear(queue)
+	table.clear(queueOrder)
+	table.clear(lastArgs)
+	table.clear(pickOrder)
+	print("[Setup Back/Forward] " .. why)
+end
+
 ------------------------------------------------------------
 -- A QUESTION SHOWS
 ------------------------------------------------------------
@@ -657,15 +669,78 @@ local function findSwitch(frame, info)
 end
 
 -- a question of Bloxy's is made: hooked at once (before it can be answered); the topbar question starts the setup
+-- THE TOPBAR QUESTION WITHOUT "confirm": picking a GUI in the list goes straight to the next question (its
+-- "confirm" is hidden and pressed for you a moment later, so the loader and More guis still see their Confirm).
+-- Nothing loads until the end of the setup, like every other answer.
+local topbarDone = setmetatable({}, { __mode = "k" })
+local function confirmOf(frame)
+	for _, d in ipairs(frame:GetDescendants()) do
+		if d:IsA("TextButton") and string.lower(d.Text or "") == "confirm" then return d end
+	end
+	return nil
+end
+local function setupTopbar(frame)
+	if topbarDone[frame] then return end
+	topbarDone[frame] = true
+	local confirm = confirmOf(frame)
+	if not confirm then return end
+	confirm.Visible = false
+	-- (the box is as tall as it is without the confirm button: title and list only)
+	pcall(function()
+		local below = confirm.Position.Y.Offset
+		if frame.Size.Y.Offset > below + 4 then frame.Size = UDim2.new(frame.Size.X.Scale, frame.Size.X.Offset, 0, below + 4) end
+	end)
+	-- A GUI picked: the list's label shows it ("2019  ▼"). More guis presses Bloxy's own button and then marks its year,
+	-- so the hidden confirm is pressed a moment later. (No click hook is put on the list's buttons: More guis presses
+	-- Bloxy's by calling the first function connected to it.)
+	local going = false
+	local function goOn()
+		if going or not W.session then return end
+		going = true
+		task.delay(0.2, function()
+			if confirm.Parent and frame.Parent then press(confirm) else going = false end
+		end)
+	end
+	local toggle = nil
+	for _, c in ipairs(frame:GetChildren()) do
+		if c:IsA("TextButton") and (string.find(c.Text or "", "▼", 1, true) or string.find(c.Text or "", "▲", 1, true)) then
+			toggle = c
+			break
+		end
+	end
+	local function base(text)
+		return (string.gsub(string.gsub(text or "", "▼", ""), "▲", ""):gsub("^%s+", ""):gsub("%s+$", ""))
+	end
+	if toggle then
+		local shown = base(toggle.Text)
+		toggle:GetPropertyChangedSignal("Text"):Connect(function()
+			local now = base(toggle.Text)
+			if now ~= shown then
+				shown = now
+				goOn()
+			end
+		end)
+	end
+	-- a tap on the one already shown (or on "none") changes nothing on the label: the tap itself goes on
+	local function hookOption(d)
+		if not d:IsA("TextButton") or d == confirm or not d:FindFirstAncestorWhichIsA("ScrollingFrame") then return end
+		d.Activated:Connect(goOn)
+	end
+	for _, d in ipairs(frame:GetDescendants()) do hookOption(d) end
+	frame.DescendantAdded:Connect(function(d) task.defer(hookOption, d) end)
+end
+
 local triedStart = setmetatable({}, { __mode = "k" })
 local function questionMade(frame)
 	local info = hookFrame(frame)
-	if W.session or triedStart[frame] then return end
 	local title = questionTitle(frame)
 	if not isTopbar(title) then return end
-	triedStart[frame] = true
-	findSwitch(frame, info)
-	startSession(frame, info)
+	if not W.session and not triedStart[frame] then
+		triedStart[frame] = true
+		findSwitch(frame, info)
+		startSession(frame, info)
+	end
+	if W.session then setupTopbar(frame) end
 end
 
 local function onPage(frame, title)
@@ -727,7 +802,12 @@ goForward = function()
 	if not taps or #taps == 0 then return end
 	busy = true
 	refreshButtons()
-	replay(current.frame, taps)
+	local frame = current.frame
+	local went = replay(frame, taps)
+	if not went and isTopbar(current and current.title) then
+		local confirm = confirmOf(frame)
+		if confirm then press(confirm) end
+	end
 	busy = false
 	refreshButtons()
 end
@@ -824,7 +904,9 @@ watchGui = function(sg)
 	end
 	connect(sg.AncestryChanged, function()
 		if not sg.Parent and W.sg == sg then
-			finish("Bloxy's GUI went")
+			-- Bloxy's GUI destroyed ("destroy GUI") in the middle of the setup: the setup is called off, nothing of it
+			-- loads (before, everything remembered so far loaded: the 2008 GUI rides on Bloxy's 2013, so 2013 came up)
+			cancel("Bloxy's GUI was closed during the setup: nothing of it loads")
 			W.sg, W.flag, W.startShow = nil, nil, nil
 			lastFrame, current = nil, nil
 			-- (Bloxy run again: its new GUI may already be there)
