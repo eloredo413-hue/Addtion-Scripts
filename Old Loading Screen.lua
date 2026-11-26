@@ -637,12 +637,14 @@ local function build2016(screenGui)
 		ZIndex = 1,
 		Parent = blackFrame,
 	}
+	-- (sizes as measured on the user's screenshot of it on a phone: the circle 64 across, 5 from the right and 6 from
+	-- the bottom, the name in 32 and the creator in 24, no outline on the words, all of it near the corners)
 	local graphicsFrame = create "Frame" {
 		Name = "GraphicsFrame",
 		BorderSizePixel = 0,
 		BackgroundTransparency = 1,
-		Position = UDim2.new(1, -225, 1, -165),
-		Size = UDim2.new(0, 120, 0, 120),
+		Position = UDim2.new(1, -69, 1, -70),
+		Size = UDim2.new(0, 64, 0, 64),
 		ZIndex = 2,
 		Parent = blackFrame,
 	}
@@ -659,10 +661,10 @@ local function build2016(screenGui)
 	local loadingText = create "TextLabel" {
 		Name = "LoadingText",
 		BackgroundTransparency = 1,
-		Size = UDim2.new(1, -56, 1, 0),
-		Position = UDim2.new(0, 28, 0, 0),
+		Size = UDim2.new(1, -10, 1, 0),
+		Position = UDim2.new(0, 7, 0, 0),
 		Font = Enum.Font.SourceSans,
-		TextSize = 18,
+		TextSize = 11,
 		TextWrapped = true,
 		TextColor3 = COLORS.WHITE,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -673,21 +675,25 @@ local function build2016(screenGui)
 	local infoFrame = create "Frame" {
 		Name = "InfoFrame",
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 100, 1, -150),
-		Size = UDim2.new(0.4, 0, 0, 110),
+		Position = UDim2.new(0, 23, 1, -156),
+		Size = UDim2.new(0.4, 0, 0, 150),
 		ZIndex = 2,
 		Parent = blackFrame,
 	}
 	local placeLabel = textLabel {
-		Name = "PlaceLabel", Size = UDim2.new(1, 0, 0, 80), Font = Enum.Font.SourceSans, TextWrapped = true,
+		Name = "PlaceLabel", Size = UDim2.new(1, 0, 0, 120), Font = Enum.Font.SourceSans, TextWrapped = true,
 		Text = "", TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Bottom,
-		Parent = infoFrame,
+		TextStrokeTransparency = 1, Parent = infoFrame,
 	}
+	placeLabel.TextScaled = false
+	placeLabel.TextSize = 32
 	local creatorLabel = textLabel {
-		Name = "CreatorLabel", Size = UDim2.new(1, 0, 0, 30), Position = UDim2.new(0, 0, 0, 80),
+		Name = "CreatorLabel", Size = UDim2.new(1, 0, 0, 30), Position = UDim2.new(0, 0, 0, 120),
 		Font = Enum.Font.SourceSans, TextWrapped = true, Text = "", TextXAlignment = Enum.TextXAlignment.Left,
-		TextYAlignment = Enum.TextYAlignment.Top, Parent = infoFrame,
+		TextYAlignment = Enum.TextYAlignment.Top, TextStrokeTransparency = 1, Parent = infoFrame,
 	}
+	creatorLabel.TextScaled = false
+	creatorLabel.TextSize = 24
 
 	local lastSize, dots, lastDot = nil, "...", os.clock()
 	local textureTransparency = 0
@@ -718,7 +724,6 @@ local function build2016(screenGui)
 			textureTransparency = transparency
 			for _, child in ipairs(infoFrame:GetChildren()) do
 				child.TextTransparency = transparency
-				child.TextStrokeTransparency = transparency
 			end
 			loadingImage.ImageTransparency = transparency
 			loadingText.TextTransparency = transparency
