@@ -1,9 +1,9 @@
 -- [[ SETUP BACK / FORWARD — "<" and ">" buttons on Bloxy's setup questions ]]
 -- Each question of the setup gets a small "<" under its bottom-left corner and ">" under its bottom-right one (in Bloxy's
--- own button style, only shown when they can be used). The topbar question has no "confirm": picking a GUI goes on.
+-- own button style, always shown). The topbar question has no "confirm": picking a GUI goes on.
 --   <  goes back to the question before (as many times as you like, up to the topbar question).
 --   >  gives the question on screen the answer you gave it last time, so you go forward again without answering
---      every question again. (Hidden on a question you haven't answered yet.)
+--      every question again. (It does nothing on a question you haven't answered yet.)
 -- While the setup is on, your answers are only remembered: nothing loads yet, so going back and changing an answer
 -- never leaves the old one running. Right after the last question everything you picked loads together, the same way
 -- it does when "skip setup" is ticked: Bloxy's own picks, and the picks of the addons' questions (explosion,
@@ -307,7 +307,8 @@ local buttonsOf = setmetatable({}, { __mode = "k" }) -- frame -> { back, forward
 local refreshButtons -- (below)
 
 -- Small buttons in Bloxy's own style (white, thin black edge, its Legacy font; black with a red edge under the finger),
--- tucked right under the question's bottom corners. Only shown when they can be used.
+-- tucked right under the question's bottom corners. Always shown; "<" does nothing on the first question and ">" on a
+-- question with no answer to give again.
 local TAB_W, TAB_H = 34, 22
 local function makeTab(frame, name, glyph, position, onPress)
 	local b = Instance.new("ImageButton")
@@ -320,7 +321,7 @@ local function makeTab(frame, name, glyph, position, onPress)
 	b.AutoButtonColor = false
 	b.Image = ""
 	b.ZIndex = 60
-	b.Visible = false
+	b.Visible = true -- (always shown, as the user asked; one that can't be used just does nothing)
 	local label = Instance.new("TextLabel")
 	label.Name = "Glyph"
 	label.Size = UDim2.new(1, 0, 1, 0)
@@ -341,10 +342,9 @@ local function makeTab(frame, name, glyph, position, onPress)
 		label.TextColor3 = dark and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(0, 0, 0)
 	end
 	b:GetAttributeChangedSignal("Enabled"):Connect(function()
-		b.Visible = b:GetAttribute("Enabled") == true
-		if not b.Visible then look(false) end
+		if b:GetAttribute("Enabled") ~= true then look(false) end
 	end)
-	b.MouseEnter:Connect(function() look(true) end)
+	b.MouseEnter:Connect(function() if b:GetAttribute("Enabled") == true then look(true) end end)
 	b.MouseLeave:Connect(function() look(false) end)
 	b.MouseButton1Click:Connect(function()
 		if b:GetAttribute("Enabled") ~= true or busy or not W.session then return end

@@ -1104,6 +1104,24 @@ local function setupCharacterPhysics(character)
         end
 
         spinGuard(dt) -- (see SPIN GUARD above)
+        -- (Addtion-Scripts) INSTANT TURN, as in the user's clip of how it should be: on the ground you face the way you
+        -- walk at once. The spin was the body slowly turning to catch up with that way (and overshooting); now it is
+        -- set straight there each frame, with no turning speed left over.
+        do
+            local body = rootPart or torso
+            local md = humanoid.MoveDirection * xzVector
+            local st = humanoid:GetState()
+            if body and body.Parent and md.Magnitude > 0.1 and GROUND_STATES[st] and not climbFWM.isClimbing()
+                and not humanoid.Sit and not humanoid.PlatformStand and not checkIfTrippedState() and humanoid.Health > 0 then
+                humanoid.AutoRotate = false
+                pcall(function()
+                    local w = body.AssemblyAngularVelocity
+                    body.AssemblyAngularVelocity = Vector3.new(w.X, 0, w.Z)
+                end)
+                local pos = body.Position
+                body.CFrame = CFrame.lookAt(pos, pos + md.Unit)
+            end
+        end
 
         -- (Addtion-Scripts) THE AIR LOCK, as the 2008 physics': from a jump until you land you keep facing the way you
         -- jumped. The jump glide turns Roblox's turning off for the jump, but the body still had the turn it was making
@@ -1111,10 +1129,12 @@ local function setupCharacterPhysics(character)
         -- user's video). That turn is stopped here.
         if glideVelocity.Parent ~= nil and not humanoid.AutoRotate then
             local body = rootPart or torso
-            local w = body.AssemblyAngularVelocity
-            if math.abs(w.Y) > 0.01 then
-                body.AssemblyAngularVelocity = Vector3.new(w.X, 0, w.Z)
-            end
+            pcall(function()
+                local w = body.AssemblyAngularVelocity
+                if math.abs(w.Y) > 0.01 then
+                    body.AssemblyAngularVelocity = Vector3.new(w.X, 0, w.Z)
+                end
+            end)
         end
 
         if tick() - lastJumpTick > 0.05

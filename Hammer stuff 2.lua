@@ -458,8 +458,9 @@ task.spawn(function()
 
 	------------------------------------------------------------
 	-- 2B. 2006-07 LIGHTING (Addtion-Scripts)
-	-- The game's Atmosphere colour turned all the way up (white: the brightest of its colours), as the 2006-07 sky
-	-- looked. A game without an Atmosphere gets none (nothing is added); one the game adds later is turned up too,
+	-- The game's lighting colours turned all the way up, keeping their colour (a dark red becomes pure red, not white),
+	-- for the strong colours of old Roblox: the Atmosphere's colour and the top and bottom light (ColorShift_Top /
+	-- _Bottom). (It used to make the Atmosphere white.) A game without an Atmosphere gets none (nothing is added); one the game adds later is turned up too,
 	-- and kept so if the game changes it.
 	-- With the old Compatibility lighting (Remove Pro, legacy lighting...) Roblox doesn't draw an Atmosphere at all,
 	-- so then its white haze is drawn the classic way instead: the fog, white, as far out as the Atmosphere's
@@ -467,23 +468,46 @@ task.spawn(function()
 	-- a second, so it follows Remove Pro being ticked or unticked. Unticking puts everything back.
 	------------------------------------------------------------
 	do
-		local MAX_COLOR = Color3.fromRGB(255, 255, 255)
+		-- a colour at full strength, its own colour kept: its brightest part goes all the way up (dark red -> pure
+		-- red, grey -> white); black stays black (it has no colour to turn up)
+		local function maxOut(c)
+			local m = math.max(c.R, c.G, c.B)
+			if m <= 0.002 then return c end
+			return Color3.new(math.min(c.R / m, 1), math.min(c.G / m, 1), math.min(c.B / m, 1))
+		end
+		local function same(a, b)
+			return math.abs(a.R - b.R) < 0.002 and math.abs(a.G - b.G) < 0.002 and math.abs(a.B - b.B) < 0.002
+		end
+		local MAX_COLOR = Color3.fromRGB(255, 255, 255) -- (the fog's colour when there is no Atmosphere colour yet)
 		local lState = {
 			active = false, saved = {}, conns = {},
-			fogMode = false, stashed = {}, underFog = nil, ourFog = nil,
+			fogMode = false, stashed = {}, underFog = nil, ourFog = nil, fogColor = nil,
+			savedShift = nil,
 		}
+
+		-- a property kept at full strength while this is on (the game changing it gets its new colour turned up)
+		local function turnUp(obj, prop, saveTo)
+			local ok, now = pcall(function() return obj[prop] end)
+			if not ok or typeof(now) ~= "Color3" then return end
+			if saveTo[prop] == nil then saveTo[prop] = now end
+			local want = maxOut(now)
+			if not same(now, want) then pcall(function() obj[prop] = want end) end
+			table.insert(lState.conns, obj:GetPropertyChangedSignal(prop):Connect(function()
+				if not lState.active then return end
+				local c = obj[prop]
+				local w = maxOut(c)
+				if not same(c, w) then pcall(function() obj[prop] = w end) end
+			end))
+		end
 
 		local function brighten(atmosphere)
 			if not lState.active or not atmosphere:IsA("Atmosphere") then return end
 			if lState.saved[atmosphere] == nil then
-				lState.saved[atmosphere] = atmosphere.Color
-				table.insert(lState.conns, atmosphere:GetPropertyChangedSignal("Color"):Connect(function()
-					if lState.active and atmosphere.Color ~= MAX_COLOR then
-						pcall(function() atmosphere.Color = MAX_COLOR end)
-					end
-				end))
+				lState.saved[atmosphere] = {}
+				turnUp(atmosphere, "Color", lState.saved[atmosphere])
+				turnUp(atmosphere, "Decay", lState.saved[atmosphere])
 			end
-			pcall(function() atmosphere.Color = MAX_COLOR end)
+			if not lState.fogColor then lState.fogColor = maxOut(atmosphere.Color) end
 		end
 
 		-- the old Compatibility (or Legacy) lighting: no Atmosphere drawn
@@ -546,12 +570,13 @@ task.spawn(function()
 				end
 				local now = readFog()
 				local ours = lState.ourFog
-				if now.color ~= MAX_COLOR or now.start ~= ours.start or now.finish ~= ours.finish then
+				local fogColor = lState.fogColor or MAX_COLOR
+				if not same(now.color, fogColor) or now.start ~= ours.start or now.finish ~= ours.finish then
 					-- (something else set the fog meanwhile, Remove Pro's own for one: that is what comes back after)
-					if not (now.color == MAX_COLOR and math.abs(now.finish - ours.finish) < 0.01) then
+					if not (same(now.color, fogColor) and math.abs(now.finish - ours.finish) < 0.01) then
 						lState.underFog = now
 					end
-					writeFog(ours, MAX_COLOR)
+					writeFog(ours, fogColor)
 				end
 			else
 				leaveFogMode()
@@ -563,6 +588,10 @@ task.spawn(function()
 		function actions.apply2006Lighting()
 			if lState.active then return end
 			lState.active = true
+			-- the top and bottom light at full strength too
+			lState.savedShift = {}
+			turnUp(Lighting, "ColorShift_Top", lState.savedShift)
+			turnUp(Lighting, "ColorShift_Bottom", lState.savedShift)
 			local found = 0
 			for _, child in ipairs(Lighting:GetChildren()) do
 				if child:IsA("Atmosphere") then
@@ -585,9 +614,9 @@ task.spawn(function()
 					pcall(refresh)
 				end
 			end)
-			print("[2006-07 Lighting] " .. (found > 0 and ("The Atmosphere's colour turned all the way up"
-				.. (lState.fogMode and " (drawn as white fog: the old lighting doesn't draw Atmospheres)." or "."))
-				or "This game has no Atmosphere: nothing to change."))
+			print("[2006-07 Lighting] The top and bottom light at full colour; " .. (found > 0 and ("the Atmosphere's colour at full strength"
+				.. (lState.fogMode and " (drawn as fog: the old lighting doesn't draw Atmospheres)." or "."))
+				or "this game has no Atmosphere."))
 		end
 
 		function actions.restore2006Lighting()
@@ -596,11 +625,14 @@ task.spawn(function()
 			for _, c in ipairs(lState.conns) do pcall(function() c:Disconnect() end) end
 			lState.conns = {}
 			leaveFogMode()
-			for atmosphere, color in pairs(lState.saved) do
-				pcall(function() atmosphere.Color = color end)
+			for atmosphere, props in pairs(lState.saved) do
+				for prop, value in pairs(props) do pcall(function() atmosphere[prop] = value end) end
 			end
 			lState.saved = {}
-			print("[2006-07 Lighting] The Atmosphere's own colour put back.")
+			for prop, value in pairs(lState.savedShift or {}) do pcall(function() Lighting[prop] = value end) end
+			lState.savedShift = nil
+			lState.fogColor = nil
+			print("[2006-07 Lighting] The game's own lighting colours put back.")
 		end
 	end
 
@@ -5404,7 +5436,7 @@ task.spawn(function()
 		stateKey      = "is2006LightingEnabled",
 		onEnable      = actions.apply2006Lighting,
 		onDisable     = actions.restore2006Lighting,
-		helpText      = "The 2006-07 look of the sky: the game's Atmosphere colour turned all the way up (white). Works with remove pro too: its old lighting doesn't draw Atmospheres, so then the white haze is drawn as white fog. A game with no Atmosphere gets none. Untick to put everything back."
+		helpText      = "The 2006-07 look: the game's lighting colours at full strength, keeping their colour (a dark red becomes pure red): the Atmosphere and the top and bottom light. Works with remove pro too: its old lighting doesn't draw Atmospheres, so then the haze is drawn as fog in that colour. Untick to put everything back."
 	})
 
 	createAddonRow({

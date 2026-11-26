@@ -1,4 +1,4 @@
--- [[ LEGACY DISCONNECT MESSAGE (2015 - 2019) ]]
+-- [[ LEGACY DISCONNECT MESSAGE (2015 - 2017) ]]
 -- The old error / disconnect message, from the DISCONNECT SCREEN of the "legacy" CoreGui changer
 -- (github.com/yeku/legacy, Roblox2016_Remaster's look): a red bar at the top centre of the screen, right under the
 -- top bar, showing the engine's message ("You have lost connection...", kicks, teleport errors). That is how Roblox
