@@ -5747,7 +5747,7 @@ task.spawn(function()
 		stateKey      = "isUGCRemoverEnabled",
 		onEnable      = actions.applyUGCRemover,
 		onDisable     = actions.restoreUGCRemover,
-		helpText      = "Every player's UGC items (hats, hair and the rest made by players, not by Roblox) swapped for the closest item Roblox made itself, on your screen only: the same kind of item (hair for hair, a hat for a hat), found in the catalog by the words of its name, its colour counting most for hair. Roblox's own items stay. If nothing close is found, the UGC item is just taken off. New players, respawns and outfit changes are done as they come. Untick to put every item back."
+		helpText      = "Everything UGC (made by players, not by Roblox) swapped for the closest thing Roblox made itself, on everyone, on your screen only. Hats, hair, layered clothes and the rest: the same kind of Roblox item, found by the words of its name (colour counts most for hair). UGC bodies (packages): each part gets the closest Roblox body part's shape, or the classic blocky one; on R6 the package comes off. UGC heads: the classic head and smile. UGC animations: Roblox's own walk, run, idle, jump, fall, climb and swim; UGC emotes stopped. Roblox's own items stay. Untick to put everything back."
 	})
 
 	createCategory("BPCategorySounds", "sounds")

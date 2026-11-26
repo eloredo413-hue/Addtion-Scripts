@@ -925,9 +925,12 @@ local function setupCharacterPhysics(character)
         if character:FindFirstChildWhichIsA("Tool") then table.insert(found, "a tool in hand") end
         return table.concat(found, ", ")
     end
-    -- how quickly you turn to face the way you walk: a steady 800 degrees a second, stopping right on it (a quarter
-    -- turn in about 0.11 s, a half turn in about 0.23 s), as measured in the user's reference recordings
-    local TURN_RATE = math.rad(800)
+    -- how you turn to face the way you walk: a spring that is just stiff enough never to go past it (critically
+    -- damped), so a turn starts and ends softly, like Roblox's own turning, never snapping; a big turn goes at most
+    -- 800 degrees a second (the user's reference recordings: a quarter turn in about 0.14 s, a half turn in 0.25 s)
+    local TURN_W = 28
+    local TURN_MAX = math.rad(800)
+    local turnRate = 0
     local smoothTurning = false
     local function spinGuard(dt)
         local body = rootPart or torso
@@ -1020,24 +1023,96 @@ local function setupCharacterPhysics(character)
         sinkFloorY = level
     end
 
-    -- R15: the body moved down on its root joint (LowerTorso.Root), from whatever it is set to by anything else
+    -- (Addtion-Scripts) THE OLD BALANCE: 2006 characters weren't held bolt upright the way Roblox holds them now; the
+    -- body leaned. Off the ground it leans forward the way you are going (more the faster), as you speed up or slow
+    -- down on the ground it sways against it, and coming down it rocks back and settles, a little past upright and
+    -- back (a soft spring). It is only a look: the body is turned on its root joint, about the feet, so what you
+    -- collide with and how you move stay Roblox's own (no spinning, no tripping from it).
+    local LEAN_AIR = 12        -- degrees forward in the air at walking speed (16)
+    local LEAN_SWAY = 0.5      -- degrees per stud/s of a change in speed on the ground (the body catching up with it)
+    local SWAY_CATCH = 8       -- how quickly the body catches up (a change in speed fades over about 1/8 s)
+    local LEAN_MAX = 18        -- degrees at most
+    local LEAN_W = 13          -- how quickly it leans and comes back (the spring)
+    local LEAN_DAMP = 0.42     -- how soon it settles (under 1: it rocks a little past upright and back)
+    local leanX, leanZ, leanVX, leanVZ = 0, 0, 0, 0 -- (degrees, in the world: toward +X / +Z)
+    local slowVel = nil -- (the speed the body has caught up with)
+    local function updateLean(dt)
+        local body = rootPart or torso
+        if not body or not body.Parent or dt <= 0 then return end
+        local v = body.AssemblyLinearVelocity * xzVector
+        slowVel = slowVel and (slowVel + (v - slowVel) * (1 - math.exp(-SWAY_CATCH * dt))) or v
+        local state = humanoid:GetState()
+        local targetX, targetZ = 0, 0
+        -- (FWM's "tripped" test counts jumping too; the lean leaves out only the real ones)
+        local tripped = state == Enum.HumanoidStateType.Ragdoll or state == Enum.HumanoidStateType.FallingDown
+        if humanoid.Health <= 0 or humanoid.Sit or humanoid.PlatformStand or tripped
+            or state == Enum.HumanoidStateType.Climbing or state == Enum.HumanoidStateType.Swimming
+            or climbFWM.isClimbing() then
+            targetX, targetZ = 0, 0
+        elseif humanoid.FloorMaterial == Enum.Material.Air
+            or state == Enum.HumanoidStateType.Freefall or state == Enum.HumanoidStateType.Jumping then
+            local k = LEAN_AIR / 16
+            targetX, targetZ = v.X * k, v.Z * k
+        else
+            -- speeding up: it leans back until the body has caught up; slowing down: forward
+            local d = v - slowVel
+            targetX, targetZ = -d.X * LEAN_SWAY, -d.Z * LEAN_SWAY
+        end
+        local m = math.sqrt(targetX * targetX + targetZ * targetZ)
+        if m > LEAN_MAX then targetX, targetZ = targetX / m * LEAN_MAX, targetZ / m * LEAN_MAX end
+        -- the spring, in small steps so a slow frame can't make it jump
+        local steps = math.max(1, math.ceil(dt / (1 / 120)))
+        local h = dt / steps
+        for _ = 1, steps do
+            local ax = LEAN_W * LEAN_W * (targetX - leanX) - 2 * LEAN_DAMP * LEAN_W * leanVX
+            local az = LEAN_W * LEAN_W * (targetZ - leanZ) - 2 * LEAN_DAMP * LEAN_W * leanVZ
+            leanVX, leanVZ = leanVX + ax * h, leanVZ + az * h
+            leanX, leanZ = leanX + leanVX * h, leanZ + leanVZ * h
+        end
+        m = math.sqrt(leanX * leanX + leanZ * leanZ)
+        if m > LEAN_MAX then leanX, leanZ = leanX / m * LEAN_MAX, leanZ / m * LEAN_MAX end
+    end
+    local function leanCFrame()
+        local body = rootPart or torso
+        local m = math.sqrt(leanX * leanX + leanZ * leanZ)
+        if m < 0.05 or not body then return nil end
+        -- (the way the head goes, in the body's own space; turned about the feet)
+        local dir = body.CFrame:VectorToObjectSpace(Vector3.new(leanX / m, 0, leanZ / m))
+        local axis = Vector3.new(0, 1, 0):Cross(Vector3.new(dir.X, 0, dir.Z))
+        if axis.Magnitude < 1e-4 then return nil end
+        local feet = (body.Size and body.Size.Y / 2 or 1) + (isR15 and r15HipHeight or 2)
+        local pivot = Vector3.new(0, -feet, 0)
+        return CFrame.new(pivot) * CFrame.fromAxisAngle(axis.Unit, math.rad(m)) * CFrame.new(-pivot)
+    end
+
+    -- the body's root joint (R6: HumanoidRootPart.RootJoint; R15: LowerTorso.Root), set from whatever anything else
+    -- sets it to: R15 moved down for the sink, and both turned for the lean
     local rootJoint, rootBase, rootWritten = nil, nil, nil
-    local function applyR15Sink()
-        if not (rootJoint and rootJoint.Parent) then
+    local function findRootJoint()
+        if isR15 then
             local lowerTorso = character:FindFirstChild("LowerTorso")
-            rootJoint = lowerTorso and lowerTorso:FindFirstChild("Root")
+            return lowerTorso and lowerTorso:FindFirstChild("Root")
+        end
+        return rootPart and rootPart:FindFirstChild("RootJoint")
+    end
+    local function applyRootPose()
+        if not (rootJoint and rootJoint.Parent) then
+            rootJoint = findRootJoint()
             rootBase, rootWritten = nil, nil
             if not (rootJoint and rootJoint:IsA("Motor6D")) then rootJoint = nil return end
         end
         local current = rootJoint.C0
         if rootWritten == nil or current ~= rootWritten then rootBase = current end
-        local want = rootBase + Vector3.new(0, sinkOffset, 0)
+        local want = rootBase
+        if isR15 and sinkOffset ~= 0 then want = want + Vector3.new(0, sinkOffset, 0) end
+        local lean = leanCFrame()
+        if lean then want = lean * want end
         if current ~= want then
             rootJoint.C0 = want
         end
         rootWritten = rootJoint.C0
     end
-    if isR15 then
+    do
         -- put back when this stops (run again, or the character dies)
         table.insert(activeConnections, {
             Connected = true,
@@ -1055,7 +1130,8 @@ local function setupCharacterPhysics(character)
         torso:GetConnectedParts()
 
         updateSink(math.min(dt, 0.1))
-        if isR15 then applyR15Sink() end
+        updateLean(math.min(dt, 0.1))
+        applyRootPose()
 
         if timePeriod > 14 then
             humanoid.AutoRotate = autoRotateTime < os.clock()
@@ -1112,12 +1188,10 @@ local function setupCharacterPhysics(character)
         end
 
         spinGuard(dt) -- (see SPIN GUARD above)
-        -- (Addtion-Scripts) THE TURN: on the ground you turn to face the way you walk at a steady speed (TURN_RATE) and
-        -- stop right on it, never going past it, with no turning speed left over. The spin was the body turning to
-        -- catch up with that way and overshooting (in some games it never settled: the user's clips). Snapping straight
-        -- there each frame stopped it but felt wrong, and easing in left a slow tail at the end of each turn; the
-        -- user's reference recordings turn at one steady speed and stop dead, and a slowly turned stick is followed
-        -- exactly.
+        -- (Addtion-Scripts) THE TURN: on the ground you turn to face the way you walk on a spring (TURN_W, TURN_MAX)
+        -- that starts and stops softly and never goes past it. The spin was the body turning to catch up with that
+        -- way and overshooting (in some games it never settled: the user's clips). Snapping straight there each frame
+        -- stopped it but felt wrong; a steady speed that stopped dead was too sudden ("too instant at points").
         do
             local body = rootPart or torso
             local md = humanoid.MoveDirection * xzVector
@@ -1136,14 +1210,26 @@ local function setupCharacterPhysics(character)
                     local cur = math.atan2(-look.X, -look.Z)
                     local target = math.atan2(-want.X, -want.Z)
                     local delta = (target - cur + math.pi) % (2 * math.pi) - math.pi
-                    local maxStep = TURN_RATE * math.min(dt or 0.016, 0.1)
-                    local turn = math.clamp(delta, -maxStep, maxStep)
-                    local yaw = cur + turn
+                    -- (the spring, worked out exactly over the frame: x = how far from the way you walk, turnRate the
+                    -- turning speed)
+                    local t = math.min(dt or 0.016, 0.1)
+                    local x = -delta
+                    local e = math.exp(-TURN_W * t)
+                    local nx = (x + (turnRate + TURN_W * x) * t) * e
+                    local nv = (turnRate - TURN_W * (turnRate + TURN_W * x) * t) * e
+                    if math.abs(nv) > TURN_MAX then
+                        nv = (nv > 0 and 1 or -1) * TURN_MAX
+                        nx = x + nv * t
+                    end
+                    if x ~= 0 and nx * x < 0 then nx, nv = 0, 0 end -- (never past it)
+                    turnRate = nv
+                    local yaw = cur + (nx - x)
                     local pos = body.Position
                     body.CFrame = CFrame.lookAt(pos, pos + Vector3.new(-math.sin(yaw), 0, -math.cos(yaw)))
                 end
             elseif smoothTurning then
                 smoothTurning = false
+                turnRate = 0
                 -- (Roblox's own turning back as the original script has it: on, except during a jump's glide)
                 humanoid.AutoRotate = glideVelocity.Parent == nil
             end
@@ -1295,5 +1381,5 @@ BPGenv.__Physics2006Cleanup = function()
 end
 
 -- (so it can be seen in the console which copy is running)
-print("[2006 Physics] On (time period " .. tostring(getTimePeriod()) .. "): Roblox's own controls, a steady quick turn"
-    .. " to the way you walk (no spin), spin guard on.")
+print("[2006 Physics] On (time period " .. tostring(getTimePeriod()) .. "): Roblox's own controls, a soft quick turn"
+    .. " to the way you walk (no spin), the old leaning balance, spin guard on.")
