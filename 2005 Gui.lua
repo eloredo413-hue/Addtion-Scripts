@@ -3853,11 +3853,29 @@ if Config.CONVERT_ALL_PLAYERS_TO_DYNABLOX_MAN then
 
 	-- Humanoids switch Torso/Head collision back on before every physics step, so the hidden avatars
 	-- have to be made non-solid on Stepped too. Without this your own avatar is an invisible wall.
+	-- (each avatar's parts are listed once, and again only when parts come or go, not every step)
+	local partLists = setmetatable({}, { __mode = "k" })
+	local function partsOf(char)
+		local entry = partLists[char]
+		if entry and not entry.dirty then return entry.list end
+		if not entry then
+			entry = { list = {}, dirty = true }
+			partLists[char] = entry
+			storeConnection(char.DescendantAdded:Connect(function() entry.dirty = true end))
+			storeConnection(char.DescendantRemoving:Connect(function() entry.dirty = true end))
+		end
+		local list = {}
+		for _, part in ipairs(char:GetDescendants()) do
+			if part:IsA("BasePart") then list[#list + 1] = part end
+		end
+		entry.list, entry.dirty = list, false
+		return list
+	end
 	storeConnection(RunService.Stepped:Connect(function()
 		for char in pairs(convertedCharacters) do
 			if char.Parent then
-				for _, part in ipairs(char:GetDescendants()) do
-					if part:IsA("BasePart") and part.CanCollide then
+				for _, part in ipairs(partsOf(char)) do
+					if part.CanCollide then
 						part.CanCollide = false
 					end
 				end
@@ -8243,20 +8261,19 @@ do
 						if hum.JumpPower ~= 0 then hum.JumpPower = 0 end
 						if not hum.PlatformStand then hum.PlatformStand = true end
 					end
+					-- (set only when not already so: setting them every frame for every player cost)
+					local function hidePart(part)
+						if part.LocalTransparencyModifier ~= 1 then part.LocalTransparencyModifier = 1 end
+						if part.Transparency ~= 1 then part.Transparency = 1 end
+						if part.CanCollide then part.CanCollide = false end
+						if part.CanQuery then part.CanQuery = false end
+					end
 					for _, ch in ipairs(char:GetChildren()) do
 						if ch:IsA("BasePart") then
-							ch.LocalTransparencyModifier = 1
-							ch.Transparency = 1
-							ch.CanCollide = false
-							ch.CanQuery = false
+							hidePart(ch)
 						elseif ch:IsA("Accessory") then
 							local handle = ch:FindFirstChild("Handle")
-							if handle and handle:IsA("BasePart") then
-								handle.LocalTransparencyModifier = 1
-								handle.Transparency = 1
-								handle.CanCollide = false
-								handle.CanQuery = false
-							end
+							if handle and handle:IsA("BasePart") then hidePart(handle) end
 						end
 					end
 				end
