@@ -988,6 +988,8 @@ print("[Retro Master] Full script loaded successfully.")
 		{id = "2018", label = "2018", urls = { "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Pre-2018%20Camera.lua" }},
 		{id = "2013", label = "2013", urls = { CAMERA_URL, CAMERA_GIST }},
 		{id = "2007", label = "2007", urls = { "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2007%20Camera.lua" }},
+		-- none: Roblox's own camera, nothing loaded
+		{id = "none", label = "None", item = "No Camera", urls = {}},
 	}
 	local selectedCamera = "2013"
 	local cameraSources = {}
@@ -1077,6 +1079,8 @@ print("[Retro Master] Full script loaded successfully.")
 		{id = "old",  label = "Old"},
 		{id = "2007", label = "2008"}, -- (was labelled 2007; the id stays for saved choices)
 		{id = "2006", label = "2006"},
+		-- none: no old physics (one already running is stopped)
+		{id = "none", label = "None", item = "No Physics"},
 	}
 	local selectedVariant = "old"
 
@@ -1088,6 +1092,16 @@ print("[Retro Master] Full script loaded successfully.")
 	end
 
 	local function runPhysics(variant)
+		if variant == "none" then
+			local genv = (getgenv and getgenv()) or _G
+			for _, env in ipairs({ genv, _G }) do
+				for _, hook in ipairs({ "__Physics2006Cleanup", "__Physics2007Cleanup", "__RetroMasterCleanup" }) do
+					if type(env[hook]) == "function" then pcall(env[hook]) end
+				end
+			end
+			print("[Physics/Camera] No old physics: Roblox's own.")
+			return
+		end
 		if variant == "2006" then
 			local src = fetchPhysics2006Script()
 			if src then runScript(src, "2006 physics") end
@@ -1260,7 +1274,7 @@ print("[Retro Master] Full script loaded successfully.")
 						return btn
 					end
 
-					-- Camera type dropdown (2018 / 2013 / 2007), between the Camera and Physics buttons
+					-- Camera type dropdown (2018 / 2013 / 2007 / none), between the Camera and Physics buttons
 					local cameraDropdown = makeDropdown("CameraDropdown", col(2))
 					-- Physics type dropdown, between the two buttons it affects (Physics and Both)
 					local dropdownBtn = makeDropdown("PhysicsDropdown", col(4))
@@ -1268,16 +1282,16 @@ print("[Retro Master] Full script loaded successfully.")
 					local function refreshVariantText()
 						local label = variantLabel(selectedVariant)
 						dropdownBtn.Text = label
-						if physicsBtn then physicsBtn.Text = label .. " Physics" end
-						local cam = cameraVariant(selectedCamera).label
-						cameraDropdown.Text = cam
-						if cameraBtn then cameraBtn.Text = cam .. " Camera" end
+						if physicsBtn then physicsBtn.Text = selectedVariant == "none" and "No Physics" or (label .. " Physics") end
+						local camV = cameraVariant(selectedCamera)
+						cameraDropdown.Text = camV.label
+						if cameraBtn then cameraBtn.Text = camV.item or (camV.label .. " Camera") end
 					end
 
 					-- (the list items are made before the answer buttons, so Saved Settings finds an item first)
 					lists.camera = {}
 					for i, v in ipairs(CAMERA_VARIANTS) do
-						local item = makeButton(v.label .. " Camera", UDim2.new(0, col(2), 0, 45 + 32 * i), W, frame)
+						local item = makeButton(v.item or (v.label .. " Camera"), UDim2.new(0, col(2), 0, 45 + 32 * i), W, frame)
 						item.ZIndex = 10
 						item.Visible = false
 						table.insert(lists.camera, item)
@@ -1292,7 +1306,7 @@ print("[Retro Master] Full script loaded successfully.")
 
 					lists.physics = {}
 					for i, v in ipairs(PHYSICS_VARIANTS) do
-						local item = makeButton(v.label .. " Physics", UDim2.new(0, col(4), 0, 45 + 32 * i), W, frame)
+						local item = makeButton(v.item or (v.label .. " Physics"), UDim2.new(0, col(4), 0, 45 + 32 * i), W, frame)
 						item.ZIndex = 10
 						item.Visible = false
 						table.insert(lists.physics, item)
@@ -1333,7 +1347,7 @@ print("[Retro Master] Full script loaded successfully.")
 								if opt.choice == "physics" or opt.choice == "both" then
 									task.spawn(function() runPhysics(variant) end)
 								end
-								if opt.choice == "camera" or opt.choice == "both" then
+								if (opt.choice == "camera" or opt.choice == "both") and camera ~= "none" then
 									task.spawn(function()
 										local src = fetchCameraScript(camera)
 										if src then runScript((cameraVariant(camera).prefix or "") .. src, camera .. " camera") end
