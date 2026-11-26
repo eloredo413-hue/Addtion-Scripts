@@ -14,6 +14,8 @@
 	    climb and swim shown with Roblox's own. UGC emotes are stopped.
 	  * classic shirts, pants and T-shirts stay (they are clothes, not UGC items).
 
+	HOW IT'S FAST: anything looked up before (in any game) is remembered in a file, so it's done at once; new players
+	are looked at 0.2 s after they come in; up to four searches / loads go at the same time.
 	HOW IT KEEPS FROM LAGGING: what everyone wears is looked up in batches (one catalog request for up to 50 items,
 	AvatarEditorService:GetBatchItemDetailsAsync), not one item at a time; each item is looked up only once. Nothing
 	runs every frame: one worker does the lookups, the catalog searches and the loading, one thing at a time with a
@@ -31,11 +33,12 @@ pcall(function() AvatarEditorService = game:GetService("AvatarEditorService") en
 
 local ROBLOX_ID = 1
 local MARK = "BPUGCReplacement"   -- (an attribute on what this puts on)
-local SETTLE = 0.6                 -- seconds a character's items are left to settle before they're looked at
+local SETTLE = 0.2                 -- seconds a character's items are left to settle before they're looked at
 local BATCH = 50                   -- items per catalog request
-local BUSY_PAUSE = 0.15            -- seconds between two pieces of work
-local IDLE_PAUSE = 0.5             -- seconds between looks when there's nothing to do
-local LOAD_PAUSE = 0.3             -- seconds after loading an item (loading is the heavy part)
+local BUSY_PAUSE = 0.03            -- seconds between two pieces of work
+local IDLE_PAUSE = 0.1             -- seconds between looks when there's nothing to do
+local JOBS_AT_ONCE = 4             -- searches / loads going at the same time
+local CACHE_FILE = "BPUGCRemoverCache.json" -- (what was looked up, kept for next time: known items are instant)
 
 local alive = true
 local conns = {}
@@ -52,6 +55,35 @@ local bodyTemplates = {} -- [asset id] = { [part name] = MeshPart } (or false)
 local animPackCache = {} -- [asset id] = { { id, slot } } (or false)
 local ugcAnims = {}      -- [character] = { [animation id] = slot or "emote" }
 local stats = { ugc = 0, swapped = 0, removedOnly = 0 }
+
+-- what was looked up before (any game): known items need no lookup, so they're done at once
+local HttpService = game:GetService("HttpService")
+local cacheDirty = false
+pcall(function()
+	if isfile and readfile and isfile(CACHE_FILE) then
+		local saved = HttpService:JSONDecode(readfile(CACHE_FILE))
+		for id, v in pairs(saved.info or {}) do
+			info[tonumber(id)] = { name = tostring(v[1] or ""), roblox = v[2] == true }
+		end
+		for id, v in pairs(saved.closest or {}) do
+			closestCache[tonumber(id)] = (type(v) == "table") and { id = tonumber(v[1]), name = tostring(v[2] or "") } or false
+		end
+	end
+end)
+local function saveCache()
+	if not (writefile and cacheDirty) then return end
+	cacheDirty = false
+	pcall(function()
+		local out = { info = {}, closest = {} }
+		for id, v in pairs(info) do
+			if not v.unknown then out.info[tostring(id)] = { v.name, v.roblox } end
+		end
+		for id, v in pairs(closestCache) do
+			out.closest[tostring(id)] = v and { v.id, v.name } or false
+		end
+		writefile(CACHE_FILE, HttpService:JSONEncode(out))
+	end)
+end
 
 local function connect(signal, fn)
 	local c = signal:Connect(fn)
@@ -103,6 +135,7 @@ local function lookupBatch(ids)
 		if id then
 			info[id] = { name = tostring(d.Name or ""), roblox = isRoblox(d.CreatorTargetId, d.CreatorName, d.CreatorType) }
 			wanted[id] = nil
+			cacheDirty = true
 		end
 	end
 	return true
@@ -115,6 +148,7 @@ local function lookupOne(id)
 		info[id] = { name = tostring(res.Name or ""),
 			roblox = isRoblox(c.CreatorTargetId or c.Id, c.Name, c.CreatorType) }
 		wanted[id] = nil
+		cacheDirty = true
 		return true
 	end
 	return false
@@ -252,6 +286,7 @@ local function closestRobloxItem(kind, ugcId, ugcName)
 	end
 	best = best or first
 	closestCache[ugcId] = best or false
+	cacheDirty = true
 	return best
 end
 
@@ -801,6 +836,7 @@ local function scan(character)
 	waiting[character] = items
 end
 
+local running, lastSave = 0, os.clock()
 local function worker()
 	while alive do
 		local busy = false
@@ -846,13 +882,20 @@ local function worker()
 				busy = true
 			end
 		end
-		-- 3. one search / load
-		local job = table.remove(jobs, 1)
-		if job then
+		-- 3. searches / loads, a few at the same time
+		while running < JOBS_AT_ONCE and #jobs > 0 do
 			busy = true
-			local ok, err = pcall(runJob, job)
-			if not ok then warn("[UGC Remover] " .. tostring(err)) end
-			task.wait(LOAD_PAUSE)
+			local job = table.remove(jobs, 1)
+			running = running + 1
+			task.spawn(function()
+				local ok, err = pcall(runJob, job)
+				if not ok then warn("[UGC Remover] " .. tostring(err)) end
+				running = running - 1
+			end)
+		end
+		if os.clock() - lastSave > 5 then
+			lastSave = os.clock()
+			saveCache()
 		end
 		task.wait(busy and BUSY_PAUSE or IDLE_PAUSE)
 	end
@@ -910,6 +953,7 @@ task.spawn(worker)
 ------------------------------------------------------------------------------------------------------------------------
 Env.__UGCRemoverCleanup = function()
 	alive = false
+	saveCache()
 	for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
 	table.clear(conns)
 	for character, r in pairs(records) do
