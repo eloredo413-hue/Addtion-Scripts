@@ -5558,11 +5558,12 @@ do
 		return st
 	end
 	-- a window frame, its title bar, title and close button drawn as XP's
-	-- (Addtion-Scripts) THE REAL XP PICTURES: the Luna theme sheet the user gave (assets/xp_theme.png: window title
+	-- (Addtion-Scripts) THE REAL XP PICTURES: from the Luna theme sheet the user gave, cut into one small picture
+	-- (assets/xp_parts.png: Roblox shrinks a picture over 1024 tall, so the whole sheet came out wrong) - window title
 	-- bars, buttons, the window's close button, with their hovered and pressed looks), downloaded once into the
 	-- executor's folder and shown with getcustomasset. The drawn look below stays if it can't be loaded.
-	local XP_SHEET_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/assets/xp_theme.png"
-	local XP_SHEET_FILE = "AddtionAssets/xp_theme_v1.png"
+	local XP_SHEET_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/assets/xp_parts.png"
+	local XP_SHEET_FILE = "AddtionAssets/xp_parts_v1.png"
 	local xpSheetId, xpSheetTried, xpSheetWaiting = nil, false, {}
 	local function withXpSheet(fn)
 		if xpSheetId then task.spawn(fn, xpSheetId) return end
@@ -5658,7 +5659,7 @@ do
 			for _, c in ipairs(bar:GetChildren()) do
 				if c:IsA("UIGradient") or c.Name == "XPSquareBottom" then c:Destroy() end
 			end
-			xpPiece(bar, id, 141, 31, 66, 29, Rect.new(8, 6, 58, 24), bar.ZIndex)
+			xpPiece(bar, id, 0, 0, 66, 29, Rect.new(8, 6, 58, 24), bar.ZIndex)
 			if close then
 				-- the red X: normal, under the finger / mouse, pressed
 				close.BackgroundTransparency = 1
@@ -5666,12 +5667,12 @@ do
 				for _, c in ipairs(close:GetChildren()) do
 					if c:IsA("UIGradient") or c:IsA("UIStroke") or c:IsA("UICorner") then c:Destroy() end
 				end
-				local x = xpPiece(close, id, 75, 323, 21, 21, Rect.new(0, 0, 0, 0), close.ZIndex)
+				local x = xpPiece(close, id, 0, 30, 21, 21, Rect.new(0, 0, 0, 0), close.ZIndex)
 				x.ScaleType = Enum.ScaleType.Stretch
-				close.MouseEnter:Connect(function() x.ImageRectOffset = Vector2.new(75, 344) end)
-				close.MouseLeave:Connect(function() x.ImageRectOffset = Vector2.new(75, 323) end)
-				close.MouseButton1Down:Connect(function() x.ImageRectOffset = Vector2.new(75, 365) end)
-				close.MouseButton1Up:Connect(function() x.ImageRectOffset = Vector2.new(75, 323) end)
+				close.MouseEnter:Connect(function() x.ImageRectOffset = Vector2.new(22, 30) end)
+				close.MouseLeave:Connect(function() x.ImageRectOffset = Vector2.new(0, 30) end)
+				close.MouseButton1Down:Connect(function() x.ImageRectOffset = Vector2.new(44, 30) end)
+				close.MouseButton1Up:Connect(function() x.ImageRectOffset = Vector2.new(0, 30) end)
 			end
 		end)
 	end
@@ -5705,7 +5706,7 @@ do
 			for _, c in ipairs(btn:GetChildren()) do
 				if c:IsA("UIGradient") or c:IsA("UIStroke") or c:IsA("UICorner") then c:Destroy() end
 			end
-			local face = xpPiece(btn, id, 3, 124, 20, 23, Rect.new(4, 4, 16, 19), btn.ZIndex)
+			local face = xpPiece(btn, id, 0, 52, 20, 23, Rect.new(4, 4, 16, 19), btn.ZIndex)
 			if label then
 				label.ZIndex = math.max(label.ZIndex, btn.ZIndex + 1)
 			elseif btn:IsA("TextButton") and btn.Text ~= "" then
@@ -5726,11 +5727,11 @@ do
 				end)
 				btn.Text = ""
 			end
-			local function at(y) face.ImageRectOffset = Vector2.new(3, y) end
-			btn.MouseEnter:Connect(function() at(147) end)
-			btn.MouseLeave:Connect(function() at(124) end)
-			btn.MouseButton1Down:Connect(function() at(170) end)
-			btn.MouseButton1Up:Connect(function() at(124) end)
+			local function at(x) face.ImageRectOffset = Vector2.new(x, 52) end
+			btn.MouseEnter:Connect(function() at(21) end)
+			btn.MouseLeave:Connect(function() at(0) end)
+			btn.MouseButton1Down:Connect(function() at(42) end)
+			btn.MouseButton1Up:Connect(function() at(0) end)
 		end)
 	end
 

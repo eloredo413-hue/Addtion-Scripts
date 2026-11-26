@@ -744,9 +744,10 @@ local function setupCharacterPhysics(character)
     end
 
     local landTilt, landDip = 0, 0 -- (the landing tip and dip: see applyRootPose)
-    local LAND_TILT = 16      -- degrees tipped forward landing at walking speed
-    local LAND_TILT_MAX = 22
-    local LAND_DIP = -0.6     -- studs into the ground on landing
+    local LAND_TILT = 6       -- degrees tipped forward landing at walking speed (the user's reference: a small tip)
+    local LAND_TILT_MAX = 9
+    local LAND_DIP = -0.4     -- studs into the ground on landing
+    local FALL_OVER_SPEED = 110 -- (a landing this fast, from a high place: you fall over, as in the reference)
     local function triggerTilt()
         if not isTilting then
             isTilting = true
@@ -872,6 +873,12 @@ local function setupCharacterPhysics(character)
                         task.spawn(triggerTilt) -- (FWM's: stops your sideways speed as you land)
                     end
                     landDip = LAND_DIP
+                    if velY <= -FALL_OVER_SPEED then
+                        pcall(function()
+                            humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+                            humanoid:ChangeState(Enum.HumanoidStateType.FallingDown)
+                        end)
+                    end
                 end
 
                 task.spawn(delayJump)
