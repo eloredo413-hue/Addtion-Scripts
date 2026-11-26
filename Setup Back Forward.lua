@@ -282,10 +282,24 @@ local function pageTitleNow()
 	return f and questionTitle(f) or (current and current.title) or nil
 end
 
+-- (the addons' picks of a question that is asked again: kept aside, so ">" can give them again without pressing its
+-- buttons)
+local stash = {}
 local function clearQueued(title)
+	local saved = {}
 	for key, item in pairs(queue) do
-		if item.page == title then queue[key] = nil end
+		if item.page == title then
+			table.insert(saved, { key = key, item = item })
+			queue[key] = nil
+		end
 	end
+	if #saved > 0 then stash[title] = saved end
+end
+local function restoreQueued(title)
+	for _, s in ipairs(stash[title] or {}) do
+		if queue[s.key] == nil then queue[s.key] = s.item end
+	end
+	stash[title] = nil
 end
 
 local function isAnswerText(text)
@@ -357,7 +371,7 @@ local function makeTab(frame, name, glyph, position, onPress)
 	return b
 end
 
-local goBack, goForward -- (below)
+local goBack, goForward, navigateTo -- (below)
 
 local function attachButtons(frame)
 	local own = buttonsOf[frame]
@@ -386,7 +400,10 @@ refreshButtons = function()
 	local prev = history[index - 1]
 	local canBack = W.session and not busy and prev ~= nil and prev.show ~= nil
 	local taps = answers[current.title]
-	local canForward = W.session and not busy and taps ~= nil and #taps > 0
+	-- (">" works when there is an answer to give again, or a next question you came back from: it never needs more)
+	local nextEntry = history[index + 1]
+	local canForward = W.session and not busy
+		and ((taps ~= nil and #taps > 0) or (nextEntry ~= nil and nextEntry.show ~= nil))
 	own.back:SetAttribute("Enabled", canBack == true)
 	own.forward:SetAttribute("Enabled", canForward == true)
 end
@@ -452,8 +469,13 @@ end
 local function findTapButton(frame, tap)
 	local best, bestScore = nil, -1
 	local byName, nameCount = nil, 0
+	local hidden = nil -- (a dropdown's list items are hidden until it is opened: pressing them works all the same)
 	local want = string.lower(tap.text or "")
 	for _, d in ipairs(frame:GetDescendants()) do
+		if d:IsA("TextButton") and not d.Visible and d.Name ~= BACK_NAME and d.Name ~= FORWARD_NAME
+			and string.lower(d.Text or "") == want and want ~= "" then
+			hidden = hidden or d
+		end
 		if d:IsA("TextButton") and d.Visible and d.Name ~= BACK_NAME and d.Name ~= FORWARD_NAME then
 			if string.lower(d.Text or "") == want then
 				local score = 0
@@ -469,7 +491,7 @@ local function findTapButton(frame, tap)
 	end
 	if best then return best end
 	if nameCount == 1 then return byName end
-	return nil
+	return hidden
 end
 
 -- Gives a question its remembered taps, one after the other, until the question goes (it starts moving away).
@@ -793,27 +815,47 @@ end
 ------------------------------------------------------------
 goForward = function()
 	if busy or not current then return end
-	local taps = answers[current.title]
-	if not taps or #taps == 0 then return end
+	local frame, title = current.frame, current.title
+	local taps = answers[title]
+	local hasTaps = taps ~= nil and #taps > 0
+	local nextEntry = history[index + 1]
+	local canJump = nextEntry ~= nil and nextEntry.show ~= nil
+	if not hasTaps and not canJump then return end
 	busy = true
 	refreshButtons()
-	local frame = current.frame
-	local went = replay(frame, taps)
-	-- (sometimes the first press is missed while the question is still sliding in: once more)
-	if not went and frame.Parent and current and current.frame == frame then
-		task.wait(0.25)
+	local went = false
+	if hasTaps then
+		-- the answer given again, button by button (a second time if the first press was missed while the question was
+		-- still sliding in)
 		went = replay(frame, taps)
+		if not went and frame.Parent and current and current.frame == frame then
+			task.wait(0.25)
+			went = replay(frame, taps)
+		end
+		if not went and frame.Parent and isTopbar(title) then
+			local confirm = confirmOf(frame)
+			if confirm then
+				local before = frame.Position
+				press(confirm)
+				task.wait(0.5)
+				went = (not frame.Parent) or frame.Position ~= before
+			end
+		end
 	end
-	if not went and isTopbar(current and current.title) then
-		local confirm = confirmOf(frame)
-		if confirm then press(confirm) end
+	-- the buttons didn't take it (or there was nothing to press): the next question you came back from is shown
+	-- again, with this question's picks as they were. ">" never does nothing on a question you have been past.
+	if not went and frame.Parent and canJump and current and current.frame == frame then
+		restoreQueued(title)
+		busy = false
+		navigateTo(index + 1)
+		return
 	end
 	busy = false
 	refreshButtons()
 end
 
 -- shows question number targetIndex of the setup again
-local function navigateTo(targetIndex)
+navigateTo = function(targetIndex)
 	local target = history[targetIndex]
 	if not (target and target.show) then return end
 	busy = true
