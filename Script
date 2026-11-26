@@ -3330,14 +3330,16 @@ end
         getgenv().BloxyEra = era
         getgenv().BloxyTopbarRaw = tostring(raw)
 
-        -- LEGACY DISCONNECT MESSAGE: with the 2015 early / 2015 / 2016 / 2017 GUIs a disconnect shows as the
+        -- LEGACY DISCONNECT MESSAGE: with the (later) 2015 / 2016 / 2017 GUIs a disconnect shows as the
         -- old red bar under the top bar (Legacy Disconnect.lua), no box or blur. The real pick is used (More guis'
         -- 2017 / 2019 save as "2023").
         do
             local pick = tostring(getgenv().BloxyTopbarPick or raw or "")
             local year = tonumber(string.match(pick, "20%d%d") or "")
-            -- (only 2015 early, 2015, 2016 and 2017: not 2019, nor any year before or after, as the user asked)
-            if year and year >= 2015 and year <= 2017 then
+            -- (only the later 2015 GUI, 2016 and 2017: not early 2015, not 2019, nor any year before or after, as the
+            -- user asked)
+            local early = string.find(string.lower(pick), "early", 1, true) ~= nil
+            if year and year >= 2015 and year <= 2017 and not early then
                 if not legacyDisconnectOn then
                     legacyDisconnectOn = true
                     task.spawn(function()

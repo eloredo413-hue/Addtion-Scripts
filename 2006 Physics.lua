@@ -677,15 +677,19 @@ local function setupCharacterPhysics(character)
         [Enum.HumanoidStateType.Physics] = true, [Enum.HumanoidStateType.GettingUp] = true,
         [Enum.HumanoidStateType.PlatformStanding] = true,
     }
-    local stopWalkLock = startWalkLock({
+    -- (off: with it the stick's way was kept in the world instead of following the camera, and the controls felt
+    -- wrong, the user said. The original FWM script leaves walking to Roblox's own controls; the spin is now stopped
+    -- by the SMOOTH TURN below instead.)
+    local USE_WALK_LOCK = false
+    local stopWalkLock = USE_WALK_LOCK and startWalkLock({
         humanoid = humanoid,
         isOff = function()
             if humanoid.Health <= 0 or humanoid.Sit or humanoid.SeatPart or humanoid.PlatformStand then return true end
             if climbFWM.isClimbing() or checkIfTrippedState() then return true end
             return noLockStates[humanoid:GetState()] == true
         end,
-    })
-    if walkLockOn == nil and not stopWalkLock then
+    }) or nil
+    if USE_WALK_LOCK and walkLockOn == nil and not stopWalkLock then
         print("[2006 Physics] the walking direction lock is off: this game has controls of its own (no stick to read)")
     end
     walkLockOn = stopWalkLock ~= nil
@@ -921,6 +925,8 @@ local function setupCharacterPhysics(character)
         if character:FindFirstChildWhichIsA("Tool") then table.insert(found, "a tool in hand") end
         return table.concat(found, ", ")
     end
+    local SMOOTH_TURN_SPEED = 14 -- how quickly you turn to face the way you walk (most of a half turn in 0.2 s)
+    local smoothTurning = false
     local function spinGuard(dt)
         local body = rootPart or torso
         if not body or not body.Parent or not dt or dt <= 0 then return end
@@ -1104,9 +1110,10 @@ local function setupCharacterPhysics(character)
         end
 
         spinGuard(dt) -- (see SPIN GUARD above)
-        -- (Addtion-Scripts) INSTANT TURN, as in the user's clip of how it should be: on the ground you face the way you
-        -- walk at once. The spin was the body slowly turning to catch up with that way (and overshooting); now it is
-        -- set straight there each frame, with no turning speed left over.
+        -- (Addtion-Scripts) SMOOTH TURN: on the ground you turn to face the way you walk quickly and smoothly, easing in
+        -- so it never goes past it, and with no turning speed left over. The spin was the body turning to catch up with
+        -- that way and overshooting (in some games it never settled: the user's clips). Snapping straight there each
+        -- frame stopped it but felt wrong; this turns like Roblox's own turning, without the spin.
         do
             local body = rootPart or torso
             local md = humanoid.MoveDirection * xzVector
@@ -1114,12 +1121,26 @@ local function setupCharacterPhysics(character)
             if body and body.Parent and md.Magnitude > 0.1 and GROUND_STATES[st] and not climbFWM.isClimbing()
                 and not humanoid.Sit and not humanoid.PlatformStand and not checkIfTrippedState() and humanoid.Health > 0 then
                 humanoid.AutoRotate = false
+                smoothTurning = true
                 pcall(function()
                     local w = body.AssemblyAngularVelocity
                     body.AssemblyAngularVelocity = Vector3.new(w.X, 0, w.Z)
                 end)
-                local pos = body.Position
-                body.CFrame = CFrame.lookAt(pos, pos + md.Unit)
+                local look = body.CFrame.LookVector * xzVector
+                if look.Magnitude > 1e-3 then
+                    local want = md.Unit
+                    local cur = math.atan2(-look.X, -look.Z)
+                    local target = math.atan2(-want.X, -want.Z)
+                    local delta = (target - cur + math.pi) % (2 * math.pi) - math.pi
+                    local turn = delta * (1 - math.exp(-SMOOTH_TURN_SPEED * math.min(dt or 0.016, 0.1)))
+                    local yaw = cur + turn
+                    local pos = body.Position
+                    body.CFrame = CFrame.lookAt(pos, pos + Vector3.new(-math.sin(yaw), 0, -math.cos(yaw)))
+                end
+            elseif smoothTurning then
+                smoothTurning = false
+                -- (Roblox's own turning back as the original script has it: on, except during a jump's glide)
+                humanoid.AutoRotate = glideVelocity.Parent == nil
             end
         end
 
@@ -1269,5 +1290,5 @@ BPGenv.__Physics2006Cleanup = function()
 end
 
 -- (so it can be seen in the console which copy is running)
-print("[2006 Physics] On (time period " .. tostring(getTimePeriod()) .. "): the walking direction lock (the way you"
-    .. " walk turns with the stick, not with the camera turning by itself), spin guard on.")
+print("[2006 Physics] On (time period " .. tostring(getTimePeriod()) .. "): Roblox's own controls, a smooth turn"
+    .. " to the way you walk (no spin), spin guard on.")
