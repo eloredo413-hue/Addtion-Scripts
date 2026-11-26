@@ -743,6 +743,10 @@ local function setupCharacterPhysics(character)
         })
     end
 
+    local landTilt, landDip = 0, 0 -- (the landing tip and dip: see applyRootPose)
+    local LAND_TILT = 16      -- degrees tipped forward landing at walking speed
+    local LAND_TILT_MAX = 22
+    local LAND_DIP = -0.6     -- studs into the ground on landing
     local function triggerTilt()
         if not isTilting then
             isTilting = true
@@ -760,7 +764,7 @@ local function setupCharacterPhysics(character)
                     tiltAngleTarget = 0
                     break
                 end
-                tiltAngleTarget = tiltAngleTarget * (0.88 - task.wait(0))
+                tiltAngleTarget = tiltAngleTarget * (0.88 - (task.wait(0) or 0.016))
             end
             isTilting = false
         end
@@ -857,14 +861,17 @@ local function setupCharacterPhysics(character)
                     glideVelocity.Parent = nil
                     return
                 end
-                if math.ceil(velY) <= -48 then
-                    if timePeriod >= 12 and timePeriod <= 14 then
-                        if math.random(1, 2) == 2 then
-                            task.spawn(triggerTilt)
-                        end
-                    elseif timePeriod <= 14 then
-                        task.spawn(triggerTilt)
+                -- (Addtion-Scripts) the landing as in the user's reference: walking and jumping, you land tipping forward
+                -- (the faster, the more), then stand up again; a jump on the spot doesn't tip. Every jump's landing goes
+                -- a little into the ground and comes back up. Both are a look (the root joint, about the feet), so they
+                -- always show and can't turn you.
+                if timePeriod <= 14 then
+                    local horiz = (torso.AssemblyLinearVelocity * xzVector).Magnitude
+                    if horiz > 4 then
+                        landTilt = math.min(LAND_TILT_MAX, horiz / 16 * LAND_TILT)
+                        task.spawn(triggerTilt) -- (FWM's: stops your sideways speed as you land)
                     end
+                    landDip = LAND_DIP
                 end
 
                 task.spawn(delayJump)
@@ -1072,6 +1079,13 @@ local function setupCharacterPhysics(character)
         end
         return rootPart and rootPart:FindFirstChild("RootJoint")
     end
+    local function landPose(dt)
+        -- (back up / upright again within about a third of a second)
+        landTilt = landTilt * math.exp(-7 * dt)
+        landDip = landDip * math.exp(-9 * dt)
+        if math.abs(landTilt) < 0.05 then landTilt = 0 end
+        if math.abs(landDip) < 0.005 then landDip = 0 end
+    end
     local function applyRootPose()
         if not (rootJoint and rootJoint.Parent) then
             rootJoint = findRootJoint()
@@ -1082,6 +1096,14 @@ local function setupCharacterPhysics(character)
         if rootWritten == nil or current ~= rootWritten then rootBase = current end
         local want = rootBase
         if isR15 and sinkOffset ~= 0 then want = want + Vector3.new(0, sinkOffset, 0) end
+        if landDip ~= 0 then want = want + Vector3.new(0, landDip, 0) end
+        if landTilt ~= 0 then
+            -- (tipped forward about the feet, in the body's own space: forward is its -Z)
+            local body = rootPart or torso
+            local feet = ((body and body.Size and body.Size.Y / 2) or 1) + (isR15 and r15HipHeight or 2)
+            local pivot = Vector3.new(0, -feet, 0)
+            want = CFrame.new(pivot) * CFrame.fromAxisAngle(Vector3.new(1, 0, 0), -math.rad(landTilt)) * CFrame.new(-pivot) * want
+        end
         if current ~= want then
             rootJoint.C0 = want
         end
@@ -1134,7 +1156,8 @@ local function setupCharacterPhysics(character)
         -- (FWM asked for the torso's connected parts here every frame and never used them: dropped, it costs)
 
         updateSink(math.min(dt, 0.1))
-        if isR15 then applyRootPose() end
+        landPose(math.min(dt, 0.1))
+        applyRootPose()
 
         if timePeriod > 14 then
             humanoid.AutoRotate = autoRotateTime < os.clock()
@@ -1168,12 +1191,9 @@ local function setupCharacterPhysics(character)
         -- CFrame holds what the walk animation does to the waist joint, so writing it back turned the whole body by that
         -- again every frame you walked, a spin (holding left, right or up: the user's recording). FWM's own animations
         -- don't turn that joint; other games' and Bloxy's can. (The 2008 physics already only leans when there is one.)
-        if not checkIfTrippedState() and (isTilting or math.abs(currentSway) > 0.0001) then
+        if not checkIfTrippedState() and math.abs(currentSway) > 0.0001 then
             local rollDivisor = torso.AssemblyAngularVelocity.Y < 0 and 2.5 or 5
-            local pitchAngle = -currentSway / 5
-            if isTilting then
-                pitchAngle = -math.rad(currentTilt) - currentSway / 5
-            end
+            local pitchAngle = -currentSway / 5 -- (the landing tip is the look above)
             local body = rootPart or torso
             body.CFrame = body.CFrame * cf.fromEulerAnglesXYZ(pitchAngle, 0, currentSway / rollDivisor)
         end

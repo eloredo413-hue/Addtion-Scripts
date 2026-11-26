@@ -733,12 +733,9 @@ local function fromSettings(title, files)
 		-- (the physics saved as "2007" is labelled "2008" now)
 		local label = ({ ["2006"] = "2006", ["2007"] = "2008", ["2008"] = "2008" })[config.physicsVariant] or "Old"
 		local cam = ({ ["2018"] = "2018", ["2007"] = "2007" })[config.cameraVariant] or "2013"
-		-- (none: the "No Physics" / "No Camera" items)
-		local physItem = config.physicsVariant == "none" and "No Physics" or (label .. " Physics")
-		local camItem = config.cameraVariant == "none" and "No Camera" or (cam .. " Camera")
-		if choice == "camera" then return { CAMERA_DROPDOWN, camItem, camItem } end
-		if choice == "physics" then return { DROPDOWN, physItem, physItem } end
-		if choice == "both" then return { DROPDOWN, physItem, CAMERA_DROPDOWN, camItem, "Both" } end
+		if choice == "camera" then return { CAMERA_DROPDOWN, cam .. " Camera", cam .. " Camera" } end
+		if choice == "physics" then return { DROPDOWN, label .. " Physics", label .. " Physics" } end
+		if choice == "both" then return { DROPDOWN, label .. " Physics", CAMERA_DROPDOWN, cam .. " Camera", "Both" } end
 		return nil
 	end
 	if has("safe chat") then return yesNo(choices.SafeChat) end

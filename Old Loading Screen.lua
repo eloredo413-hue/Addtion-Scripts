@@ -661,11 +661,13 @@ local function build2016(screenGui)
 	local loadingText = create "TextLabel" {
 		Name = "LoadingText",
 		BackgroundTransparency = 1,
-		Size = UDim2.new(1, -10, 1, 0),
-		Position = UDim2.new(0, 7, 0, 0),
+		-- (in the middle of the circle, a little bigger, as in the user's screenshot; the dots grow to the right of
+		-- "Loading" without moving it: the label is as wide as "Loading..." and starts where that one is centred)
+		Size = UDim2.new(0, 52, 1, 0),
+		Position = UDim2.new(0.5, -26, 0, 0),
 		Font = Enum.Font.SourceSans,
-		TextSize = 11,
-		TextWrapped = true,
+		TextSize = 14,
+		TextWrapped = false,
 		TextColor3 = COLORS.WHITE,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		Text = "Loading...",

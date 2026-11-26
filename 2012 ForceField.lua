@@ -470,5 +470,29 @@ do
 			saved = type(data) == "table" and type(data.Choices) == "table" and data.Choices.Forcefield or nil
 		end
 	end)
+	-- (Addtion-Scripts) on its own when Bloxy's saved forcefield is 2012: Bloxy's own forcefield code didn't always
+	-- reach the hook (with the setup loading everything at its end), and then it only showed with "all players" on.
+	-- Bloxy's saved choice is looked at now and every 2 seconds (it is written when the setup ends).
+	local lastChoice = nil
+	local function followSaved()
+		local choice = nil
+		pcall(function()
+			if readfile and isfile and isfile(BLOXY_CONFIG) then
+				local data = HttpService:JSONDecode(readfile(BLOXY_CONFIG))
+				choice = type(data) == "table" and type(data.Choices) == "table" and data.Choices.Forcefield or nil
+			end
+		end)
+		if choice ~= lastChoice then
+			lastChoice = choice
+			if tostring(choice) == "2012" then engine.Start() elseif choice ~= nil then engine.Stop() end
+		end
+	end
+	followSaved()
+	task.spawn(function()
+		while alive do
+			task.wait(2)
+			if alive then pcall(followSaved) end
+		end
+	end)
 	print("[2012 ForceField] Installed. Bloxy's saved forcefield: " .. tostring(saved or "none"))
 end

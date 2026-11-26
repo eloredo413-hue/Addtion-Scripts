@@ -502,7 +502,17 @@ do
             for _, d in ipairs(button:GetDescendants()) do
                 if d:IsA("TextLabel") or d:IsA("TextButton") then
                     pcall(function() d.TextSize = TEXT_SIZE end)
+                    -- (the words in the middle of the button, top to bottom: with the smaller size they sat low)
+                    pcall(function()
+                        d.AnchorPoint = Vector2.new(d.AnchorPoint.X, 0)
+                        d.Position = UDim2.new(d.Position.X.Scale, d.Position.X.Offset, 0, 0)
+                        d.Size = UDim2.new(d.Size.X.Scale, d.Size.X.Offset, 1, 0)
+                        d.TextYAlignment = Enum.TextYAlignment.Center
+                    end)
                 end
+            end
+            if button:IsA("TextButton") then
+                pcall(function() button.TextYAlignment = Enum.TextYAlignment.Center end)
             end
         end
 

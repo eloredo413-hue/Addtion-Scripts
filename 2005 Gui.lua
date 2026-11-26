@@ -5558,6 +5558,51 @@ do
 		return st
 	end
 	-- a window frame, its title bar, title and close button drawn as XP's
+	-- (Addtion-Scripts) THE REAL XP PICTURES: the Luna theme sheet the user gave (assets/xp_theme.png: window title
+	-- bars, buttons, the window's close button, with their hovered and pressed looks), downloaded once into the
+	-- executor's folder and shown with getcustomasset. The drawn look below stays if it can't be loaded.
+	local XP_SHEET_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/assets/xp_theme.png"
+	local XP_SHEET_FILE = "AddtionAssets/xp_theme_v1.png"
+	local xpSheetId, xpSheetTried, xpSheetWaiting = nil, false, {}
+	local function withXpSheet(fn)
+		if xpSheetId then task.spawn(fn, xpSheetId) return end
+		table.insert(xpSheetWaiting, fn)
+		if xpSheetTried then return end
+		xpSheetTried = true
+		task.spawn(function()
+			pcall(function()
+				if not (getcustomasset and writefile and isfile) then return end
+				if not isfile(XP_SHEET_FILE) then
+					pcall(function() if makefolder and not (isfolder and isfolder("AddtionAssets")) then makefolder("AddtionAssets") end end)
+					local data = game:HttpGet(XP_SHEET_URL)
+					if type(data) ~= "string" or #data < 1000 or data:sub(2, 4) ~= "PNG" then return end
+					writefile(XP_SHEET_FILE, data)
+				end
+				xpSheetId = getcustomasset(XP_SHEET_FILE)
+			end)
+			if xpSheetId then
+				for _, f in ipairs(xpSheetWaiting) do task.spawn(f, xpSheetId) end
+			end
+			xpSheetWaiting = {}
+		end)
+	end
+	-- a piece of the sheet over a frame: ScaleType Slice with the given middle (the edges keep their size)
+	local function xpPiece(parent, id, x, y, w, h, slice, z)
+		local img = Instance.new("ImageLabel")
+		img.Name = "XPPiece"
+		img.BackgroundTransparency = 1
+		img.Image = id
+		img.ImageRectOffset = Vector2.new(x, y)
+		img.ImageRectSize = Vector2.new(w, h)
+		img.ScaleType = Enum.ScaleType.Slice
+		img.SliceCenter = slice
+		img.Size = UDim2.new(1, 0, 1, 0)
+		img.ZIndex = z
+		img.Parent = parent
+		return img
+	end
+	S.withXpSheet, S.xpPiece = withXpSheet, xpPiece
+
 	function S.xpWindow(win, bar, title, close)
 		win.BackgroundColor3 = XP_FACE
 		win.BackgroundTransparency = 0
@@ -5606,6 +5651,29 @@ do
 			xpCorner(close, 3)
 			xpStroke(close, Color3.new(1, 1, 1), 1)
 		end
+		withXpSheet(function(id)
+			if not bar.Parent then return end
+			-- the title bar (the sheet's active one, rounded at the top)
+			bar.BackgroundTransparency = 1
+			for _, c in ipairs(bar:GetChildren()) do
+				if c:IsA("UIGradient") or c.Name == "XPSquareBottom" then c:Destroy() end
+			end
+			xpPiece(bar, id, 141, 31, 66, 29, Rect.new(8, 6, 58, 24), bar.ZIndex)
+			if close then
+				-- the red X: normal, under the finger / mouse, pressed
+				close.BackgroundTransparency = 1
+				close.Text = ""
+				for _, c in ipairs(close:GetChildren()) do
+					if c:IsA("UIGradient") or c:IsA("UIStroke") or c:IsA("UICorner") then c:Destroy() end
+				end
+				local x = xpPiece(close, id, 75, 323, 21, 21, Rect.new(0, 0, 0, 0), close.ZIndex)
+				x.ScaleType = Enum.ScaleType.Stretch
+				close.MouseEnter:Connect(function() x.ImageRectOffset = Vector2.new(75, 344) end)
+				close.MouseLeave:Connect(function() x.ImageRectOffset = Vector2.new(75, 323) end)
+				close.MouseButton1Down:Connect(function() x.ImageRectOffset = Vector2.new(75, 365) end)
+				close.MouseButton1Up:Connect(function() x.ImageRectOffset = Vector2.new(75, 323) end)
+			end
+		end)
 	end
 	-- a button drawn as XP's (its text label inside, if it has one)
 	function S.xpButton(btn, label)
@@ -5630,6 +5698,40 @@ do
 		btn.MouseLeave:Connect(function() lit(false) end)
 		btn.MouseButton1Down:Connect(function() lit(true) end)
 		btn.MouseButton1Up:Connect(function() lit(false) end)
+		withXpSheet(function(id)
+			if not btn.Parent then return end
+			-- the sheet's push button: normal, under the finger / mouse (orange edge), pressed
+			btn.BackgroundTransparency = 1
+			for _, c in ipairs(btn:GetChildren()) do
+				if c:IsA("UIGradient") or c:IsA("UIStroke") or c:IsA("UICorner") then c:Destroy() end
+			end
+			local face = xpPiece(btn, id, 3, 124, 20, 23, Rect.new(4, 4, 16, 19), btn.ZIndex)
+			if label then
+				label.ZIndex = math.max(label.ZIndex, btn.ZIndex + 1)
+			elseif btn:IsA("TextButton") and btn.Text ~= "" then
+				-- (the button's own words would be under the picture: they go into a label on top of it)
+				local words = Instance.new("TextLabel")
+				words.Name = "XPWords"
+				words:SetAttribute("No2006Font", true)
+				words.BackgroundTransparency = 1
+				words.Size = UDim2.new(1, 0, 1, 0)
+				words.Font = btn.Font
+				words.TextSize = btn.TextSize
+				words.TextColor3 = btn.TextColor3
+				words.Text = btn.Text
+				words.ZIndex = btn.ZIndex + 1
+				words.Parent = btn
+				btn:GetPropertyChangedSignal("Text"):Connect(function()
+					if btn.Text ~= "" then words.Text = btn.Text btn.Text = "" end
+				end)
+				btn.Text = ""
+			end
+			local function at(y) face.ImageRectOffset = Vector2.new(3, y) end
+			btn.MouseEnter:Connect(function() at(147) end)
+			btn.MouseLeave:Connect(function() at(124) end)
+			btn.MouseButton1Down:Connect(function() at(170) end)
+			btn.MouseButton1Up:Connect(function() at(124) end)
+		end)
 	end
 
 	-- 11A. Properties window (the 2005 client kept its property grid in a separate Windows tool window)
