@@ -744,8 +744,8 @@ local function setupCharacterPhysics(character)
     end
 
     local landTilt, landDip = 0, 0 -- (the landing tip and dip: see applyRootPose)
-    local LAND_TILT = 6       -- degrees tipped forward landing at walking speed (the user's reference: a small tip)
-    local LAND_TILT_MAX = 9
+    local LAND_TILT = 14      -- degrees tipped forward landing at walking speed (6 was too little to see: "you barely notice it")
+    local LAND_TILT_MAX = 20
     local LAND_DIP = -0.4     -- studs into the ground on landing
     local FALL_OVER_SPEED = 110 -- (a landing this fast, from a high place: you fall over, as in the reference)
     local function triggerTilt()
@@ -979,13 +979,15 @@ local function setupCharacterPhysics(character)
         if character:FindFirstChildWhichIsA("Tool") then table.insert(found, "a tool in hand") end
         return table.concat(found, ", ")
     end
-    -- how you turn to face the way you walk: the body is given a turning SPEED (AssemblyAngularVelocity, so the physics
-    -- turns it and nothing is teleported: writing its CFrame every frame held the character in place when walking in a
-    -- circle, the user's recording). The speed follows how far round you still have to go (TURN_GAIN, never above
-    -- TURN_MAX) and itself changes only so fast (TURN_ACCEL), so a turn starts and ends softly; it is never more than
-    -- what is left of the turn in a frame, so it never goes past the way you walk (no swinging back and forth)
+    -- how you turn to face the way you walk: the body is turned a little each frame (its CFrame turned about the up axis, its
+    -- position and tilt left as they are) by a turning speed that follows how far round you still have to go (TURN_GAIN,
+    -- never above TURN_MAX) and itself changes only so fast (TURN_ACCEL), so a turn starts and ends softly; it is never more
+    -- than what is left of the turn in a frame, so it never goes past the way you walk (no swinging back and forth).
+    -- (Giving the body a turning speed through AssemblyAngularVelocity instead did not work in the game: it could not turn
+    -- and leaned into the turn, the user's recording.) The fastest turn stays under the spin guard's limit, which held the
+    -- body still (so it seemed locked) when an earlier, quicker turn looked like a spin.
     -- (the user's FWM recordings: the body does not keep up with a stick, or a camera, that swings round fast - it trails
-    -- behind and shows its side - while 430 degrees a second kept up with everything and looked like shift lock)
+    -- behind and shows its side)
     local TURN_GAIN = 9             -- 1 / s: about a ninth of a second to close most of a turn
     local TURN_MAX = math.rad(300)  -- the fastest turn, degrees a second
     local TURN_ACCEL = 45           -- rad / s^2: how fast the turning speed itself may change
@@ -1092,8 +1094,8 @@ local function setupCharacterPhysics(character)
         return rootPart and rootPart:FindFirstChild("RootJoint")
     end
     local function landPose(dt)
-        -- (back up / upright again within about a third of a second)
-        landTilt = landTilt * math.exp(-7 * dt)
+        -- (back up / upright again within about three quarters of a second)
+        landTilt = landTilt * math.exp(-3.5 * dt)
         landDip = landDip * math.exp(-9 * dt)
         if math.abs(landTilt) < 0.05 then landTilt = 0 end
         if math.abs(landDip) < 0.005 then landDip = 0 end
@@ -1212,8 +1214,8 @@ local function setupCharacterPhysics(character)
 
         spinGuard(dt) -- (see SPIN GUARD above)
         -- (Addtion-Scripts) THE TURN: on the ground you turn to face the way you walk with a turning speed (see TURN_GAIN
-        -- above) instead of a CFrame written every frame (that held the body when walking in circles). Roblox's own
-        -- turning is off while this one runs (it swung the body back and forth with the classic camera).
+        -- above). Roblox's own turning is off while this one runs (it swung the body back and forth with the classic
+        -- camera).
         do
             local body = rootPart or torso
             local md = humanoid.MoveDirection * xzVector
@@ -1235,10 +1237,16 @@ local function setupCharacterPhysics(character)
                     turnRate = turnRate + math.clamp(wanted - turnRate, -step, step)
                     -- never further in a frame than there is left to go
                     if math.abs(turnRate * t) > math.abs(delta) then turnRate = delta / t end
+                    -- (the body's own turning, left over from the physics, goes: the turn is ours alone)
                     pcall(function()
                         local w = body.AssemblyAngularVelocity
-                        body.AssemblyAngularVelocity = Vector3.new(w.X, turnRate, w.Z)
+                        body.AssemblyAngularVelocity = Vector3.new(w.X, 0, w.Z)
                     end)
+                    -- turned about the up axis where it stands, its tilt and position as they are
+                    local turned = CFrame.fromAxisAngle(Vector3.new(0, 1, 0), turnRate * t)
+                    local cf0 = body.CFrame
+                    local pos = cf0.Position
+                    body.CFrame = CFrame.new(pos) * turned * (CFrame.new(-pos) * cf0)
                 end
             elseif smoothTurning then
                 smoothTurning = false
