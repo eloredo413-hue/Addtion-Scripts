@@ -74,6 +74,7 @@ task.spawn(function()
 		isOldHealthBarEnabled   = config.isOldHealthBarEnabled or false,
 		is2008NightSkyEnabled   = config.is2008NightSkyEnabled or false,
 		is2006ShapesEnabled     = config.is2006ShapesEnabled or false,
+		isUGCRemoverEnabled     = config.isUGCRemoverEnabled or false,
 		isAllPlayersEnabled     = config.isAllPlayersEnabled or false,
 		isFpsCapEnabled         = config.isFpsCapEnabled or false,
 		isHideMobileControlsEnabled = config.isHideMobileControlsEnabled or false,
@@ -4027,6 +4028,40 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
+	-- 17C. UGC REMOVER (UGC Remover.lua in this repo)
+	-- Every player's UGC items (made by players, not Roblox) swapped on your screen for the closest item Roblox
+	-- made itself (the same kind, found in the catalog by the words of its name). Unticking puts them back.
+	------------------------------------------------------------
+	do
+		local UGC_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/UGC%20Remover.lua"
+		local genv = (getgenv and getgenv()) or _G
+		local loading = false
+		local function cleanup()
+			local fn = genv.__UGCRemoverCleanup
+			if type(fn) == "function" then pcall(fn) end
+		end
+		function actions.applyUGCRemover()
+			if loading then return end
+			loading = true
+			task.spawn(function()
+				local ok, err = pcall(function()
+					loadstring(game:HttpGet(UGC_URL .. "?v=" .. tostring(os.time())))()
+				end)
+				loading = false
+				if not ok then
+					warn("[UGC Remover] couldn't load: " .. tostring(err))
+					return
+				end
+				-- unticked while it was downloading
+				if not state.isUGCRemoverEnabled then cleanup() end
+			end)
+		end
+		function actions.restoreUGCRemover()
+			cleanup()
+		end
+	end
+
+	------------------------------------------------------------
 	-- 18. ALL PLAYERS (All Players.lua in this repo)
 	-- Your setup choices for how a character looks (Bloxy's forcefield, animations and 2006 body) on
 	-- everyone else too, on your screen only. Not the physics, camera or GUIs. Unticking puts them back.
@@ -5703,6 +5738,18 @@ task.spawn(function()
 		helpText      = "Your setup choices for how a character looks go on everyone else too, on your screen only: the forcefield (2008 / 2012), the animations (each set on bodies of its own kind, R6 or R15) and the 2006 body. Not the physics, the camera or any GUI. (Classic face, the avatars and the 2007 animation already go on everyone.) Untick to put everyone back."
 	})
 
+	createAddonRow({
+		containerName = "UGCRemoverContainer",
+		checkboxName  = "UGCRemoverCheckbox",
+		helpName      = "UGCRemoverHelpButton",
+		label         = "ugc remover",
+		yPos          = startY + 5 * ROW_HEIGHT,
+		stateKey      = "isUGCRemoverEnabled",
+		onEnable      = actions.applyUGCRemover,
+		onDisable     = actions.restoreUGCRemover,
+		helpText      = "Every player's UGC items (hats, hair and the rest made by players, not by Roblox) swapped for the closest item Roblox made itself, on your screen only: the same kind of item (hair for hair, a hat for a hat), found in the catalog by the words of its name, its colour counting most for hair. Roblox's own items stay. If nothing close is found, the UGC item is just taken off. New players, respawns and outfit changes are done as they come. Untick to put every item back."
+	})
+
 	createCategory("BPCategorySounds", "sounds")
 
 	createAddonRow({
@@ -6118,6 +6165,7 @@ task.spawn(function()
 	if state.isOldHealthBarEnabled then task.spawn(actions.applyOldHealthBar) end
 	if state.is2008NightSkyEnabled then task.spawn(actions.apply2008NightSky) end
 	if state.is2006ShapesEnabled then task.spawn(actions.apply2006Shapes) end
+	if state.isUGCRemoverEnabled then task.spawn(actions.applyUGCRemover) end
 	if state.isAllPlayersEnabled then task.spawn(actions.applyAllPlayers) end
 	if state.isFpsCapEnabled then task.spawn(actions.applyFpsCap) end
 	if state.isHideMobileControlsEnabled then task.spawn(actions.applyHideMobileControls) end

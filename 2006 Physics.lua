@@ -679,7 +679,7 @@ local function setupCharacterPhysics(character)
     }
     -- (off: with it the stick's way was kept in the world instead of following the camera, and the controls felt
     -- wrong, the user said. The original FWM script leaves walking to Roblox's own controls; the spin is now stopped
-    -- by the SMOOTH TURN below instead.)
+    -- by THE TURN below instead.)
     local USE_WALK_LOCK = false
     local stopWalkLock = USE_WALK_LOCK and startWalkLock({
         humanoid = humanoid,
@@ -925,7 +925,9 @@ local function setupCharacterPhysics(character)
         if character:FindFirstChildWhichIsA("Tool") then table.insert(found, "a tool in hand") end
         return table.concat(found, ", ")
     end
-    local SMOOTH_TURN_SPEED = 14 -- how quickly you turn to face the way you walk (most of a half turn in 0.2 s)
+    -- how quickly you turn to face the way you walk: a steady 800 degrees a second, stopping right on it (a quarter
+    -- turn in about 0.11 s, a half turn in about 0.23 s), as measured in the user's reference recordings
+    local TURN_RATE = math.rad(800)
     local smoothTurning = false
     local function spinGuard(dt)
         local body = rootPart or torso
@@ -1110,10 +1112,12 @@ local function setupCharacterPhysics(character)
         end
 
         spinGuard(dt) -- (see SPIN GUARD above)
-        -- (Addtion-Scripts) SMOOTH TURN: on the ground you turn to face the way you walk quickly and smoothly, easing in
-        -- so it never goes past it, and with no turning speed left over. The spin was the body turning to catch up with
-        -- that way and overshooting (in some games it never settled: the user's clips). Snapping straight there each
-        -- frame stopped it but felt wrong; this turns like Roblox's own turning, without the spin.
+        -- (Addtion-Scripts) THE TURN: on the ground you turn to face the way you walk at a steady speed (TURN_RATE) and
+        -- stop right on it, never going past it, with no turning speed left over. The spin was the body turning to
+        -- catch up with that way and overshooting (in some games it never settled: the user's clips). Snapping straight
+        -- there each frame stopped it but felt wrong, and easing in left a slow tail at the end of each turn; the
+        -- user's reference recordings turn at one steady speed and stop dead, and a slowly turned stick is followed
+        -- exactly.
         do
             local body = rootPart or torso
             local md = humanoid.MoveDirection * xzVector
@@ -1132,7 +1136,8 @@ local function setupCharacterPhysics(character)
                     local cur = math.atan2(-look.X, -look.Z)
                     local target = math.atan2(-want.X, -want.Z)
                     local delta = (target - cur + math.pi) % (2 * math.pi) - math.pi
-                    local turn = delta * (1 - math.exp(-SMOOTH_TURN_SPEED * math.min(dt or 0.016, 0.1)))
+                    local maxStep = TURN_RATE * math.min(dt or 0.016, 0.1)
+                    local turn = math.clamp(delta, -maxStep, maxStep)
                     local yaw = cur + turn
                     local pos = body.Position
                     body.CFrame = CFrame.lookAt(pos, pos + Vector3.new(-math.sin(yaw), 0, -math.cos(yaw)))
@@ -1290,5 +1295,5 @@ BPGenv.__Physics2006Cleanup = function()
 end
 
 -- (so it can be seen in the console which copy is running)
-print("[2006 Physics] On (time period " .. tostring(getTimePeriod()) .. "): Roblox's own controls, a smooth turn"
+print("[2006 Physics] On (time period " .. tostring(getTimePeriod()) .. "): Roblox's own controls, a steady quick turn"
     .. " to the way you walk (no spin), spin guard on.")
