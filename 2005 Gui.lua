@@ -2512,10 +2512,16 @@ local function isPartInCharacterOrFigure(part)
 	return false
 end
 
+local PLASTIC_2005_NAME = "BP2005_SmoothPlastic" -- (Hammer stuff 1's 2005 plastic: SmoothPlastic with this variant)
 local function smoothPartSurfacesFor2005(part)
 	if not part or not part:IsA("BasePart") then return end
 	pcall(function()
 		part.Material = Enum.Material.SmoothPlastic
+		-- the 2005 plastic's own material on it (when that is on): not the plain smooth plastic of a default part
+		local MS = game:GetService("MaterialService")
+		if MS:FindFirstChild(PLASTIC_2005_NAME) and part.MaterialVariant ~= PLASTIC_2005_NAME then
+			part.MaterialVariant = PLASTIC_2005_NAME
+		end
 		for _, prop in ipairs({ "TopSurface", "BottomSurface", "LeftSurface", "RightSurface", "FrontSurface", "BackSurface" }) do
 			local cur = part[prop]
 			if cur == Enum.SurfaceType.Studs or cur == Enum.SurfaceType.Inlet or cur == Enum.SurfaceType.Universal then
@@ -5563,7 +5569,7 @@ do
 	-- bars, buttons, the window's close button, with their hovered and pressed looks), downloaded once into the
 	-- executor's folder and shown with getcustomasset. The drawn look below stays if it can't be loaded.
 	local XP_SHEET_URL = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/assets/xp_parts.png"
-	local XP_SHEET_FILE = "AddtionAssets/xp_parts_v1.png"
+	local XP_SHEET_FILE = "AddtionAssets/xp_parts_v2.png"
 	local xpSheetId, xpSheetTried, xpSheetWaiting = nil, false, {}
 	local function withXpSheet(fn)
 		if xpSheetId then task.spawn(fn, xpSheetId) return end
@@ -5605,23 +5611,39 @@ do
 	S.withXpSheet, S.xpPiece = withXpSheet, xpPiece
 
 	function S.xpWindow(win, bar, title, close)
-		win.BackgroundColor3 = XP_FACE
+		-- an XP window: the window itself is the blue frame (rounded, the title bar across its top, a 4 px border
+		-- down the sides and along the bottom), and the beige page sits inside it with square corners (no outline
+		-- round the whole window: that cut the title bar off from the frame)
+		win.BackgroundColor3 = Color3.fromRGB(0, 66, 214)
 		win.BackgroundTransparency = 0
 		win.BorderSizePixel = 0
-		xpCorner(win, 7)
-		xpStroke(win, XP_FRAME, 3)
+		xpCorner(win, 8)
+		xpGradient(win, ColorSequence.new({
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 98, 238)),
+			ColorSequenceKeypoint.new(0.15, Color3.fromRGB(0, 72, 222)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 52, 190)),
+		}))
+		local page = win:FindFirstChild("XPPage") or Instance.new("Frame")
+		page.Name = "XPPage"
+		page.BackgroundColor3 = XP_FACE
+		page.BackgroundTransparency = 0
+		page.BorderSizePixel = 0
+		page.Position = UDim2.new(0, 4, 0, 28)
+		page.Size = UDim2.new(1, -8, 1, -32)
+		page.ZIndex = win.ZIndex
+		page.Parent = win
 		bar.BackgroundColor3 = Color3.new(1, 1, 1)
 		bar.BackgroundTransparency = 0
-		bar.Size = UDim2.new(1, 0, 0, 26)
+		bar.Size = UDim2.new(1, 0, 0, 28)
 		xpGradient(bar, XP_TITLE)
-		xpCorner(bar, 7)
+		xpCorner(bar, 8)
 		-- (the title bar's lower corners square again: only its top is rounded)
 		local square = Instance.new("Frame")
 		square.Name = "XPSquareBottom"
 		square.BorderSizePixel = 0
 		square.BackgroundColor3 = Color3.fromRGB(0, 70, 208)
-		square.Position = UDim2.new(0, 0, 1, -8)
-		square.Size = UDim2.new(1, 0, 0, 8)
+		square.Position = UDim2.new(0, 0, 1, -9)
+		square.Size = UDim2.new(1, 0, 0, 9)
 		square.ZIndex = bar.ZIndex
 		square.Parent = bar
 		if title then
@@ -5642,7 +5664,7 @@ do
 			close.BackgroundColor3 = Color3.new(1, 1, 1)
 			close.BorderSizePixel = 0
 			close.Size = UDim2.new(0, 21, 0, 21)
-			close.Position = UDim2.new(1, -25, 0, 3)
+			close.Position = UDim2.new(1, -26, 0, 4)
 			close.Font = Enum.Font.ArialBold
 			close.Text = "X"
 			close.TextSize = 13
@@ -6119,7 +6141,15 @@ do
 	ResetOrgBtn.BackgroundTransparency = 1
 	ResetOrgBtn.ZIndex = 32
 	ResetOrgBtn.Parent = PopupMenuFrame
-	local ResetOrgFb = createMetallicOrbFallback(ResetOrgBtn, "RESET GAME", Color3.fromRGB(90, 60, 20), false, false, false)
+	local ResetOrgFb, ResetOrgLbl = createMetallicOrbFallback(ResetOrgBtn, "RESET GAME", Color3.fromRGB(90, 60, 20), false, false, false)
+	if ResetOrgLbl then
+		-- (the words in the middle of the button: Oswald scaled to its height sat low)
+		ResetOrgLbl.TextScaled = false
+		ResetOrgLbl.TextSize = 16
+		ResetOrgLbl.TextYAlignment = Enum.TextYAlignment.Center
+		ResetOrgLbl.Size = UDim2.new(1, 0, 1, -4)
+		ResetOrgLbl.Position = UDim2.new(0, 0, 0, 0)
+	end
 	bindButtonSprites(ResetOrgBtn, ResetOrgFb, "ResetOrg", "ResetOrg_ovr", "ResetOrg_dn", "ResetOrg_ds")
 	storeConnection(ResetOrgBtn.MouseButton1Click:Connect(function()
 		reset2005Game()
@@ -9204,5 +9234,40 @@ task.spawn(function()
 	while ScreenGui and ScreenGui.Parent do
 		disableDefaultBubblesAnd3Dots()
 		task.wait(0.25)
+	end
+end)
+
+--========================================================
+-- THE 2005 PLASTIC (Addtion-Scripts)
+-- The 2005 GUI made every part plain SmoothPlastic. Hammer stuff 1's "2005" plastic (SmoothPlastic with the 2005
+-- material on it) is ticked for you when this GUI comes up, so everything gets that material instead (the parts
+-- are given its variant as they are smoothed: see smoothPartSurfacesFor2005). Untick it there to go without.
+--========================================================
+task.spawn(function()
+	local env = (getgenv and getgenv()) or _G
+	local containers = {}
+	local pg = LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui")
+	if pg then table.insert(containers, pg) end
+	pcall(function() local hui = gethui and gethui() if hui then table.insert(containers, hui) end end)
+	pcall(function() table.insert(containers, game:GetService("CoreGui")) end)
+	for _ = 1, 60 do
+		if not (ScreenGui and ScreenGui.Parent) then return end
+		for _, container in ipairs(containers) do
+			local ok, box = pcall(function() return container:FindFirstChild("Materials2005Checkbox", true) end)
+			if ok and box and box:IsA("TextButton") then
+				if box.Text ~= "✓" then
+					local fired = false
+					if firesignal then fired = pcall(firesignal, box.MouseButton1Click) end
+					if not fired and getconnections then
+						for _, c in ipairs(getconnections(box.MouseButton1Click)) do
+							pcall(function() c:Fire() end)
+							fired = true
+						end
+					end
+				end
+				return
+			end
+		end
+		task.wait(2)
 	end
 end)
