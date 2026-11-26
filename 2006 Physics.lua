@@ -979,11 +979,14 @@ local function setupCharacterPhysics(character)
         if character:FindFirstChildWhichIsA("Tool") then table.insert(found, "a tool in hand") end
         return table.concat(found, ", ")
     end
-    -- how you turn to face the way you walk: a spring that is just stiff enough never to go past it (critically
-    -- damped), so a turn starts and ends softly, like Roblox's own turning, never snapping; a big turn goes at most
-    -- 800 degrees a second (the user's reference recordings: a quarter turn in about 0.14 s, a half turn in 0.25 s)
-    local TURN_W = 20
-    local TURN_MAX = math.rad(650)
+    -- how you turn to face the way you walk: the body is given a turning SPEED (AssemblyAngularVelocity, so the physics
+    -- turns it and nothing is teleported: writing its CFrame every frame held the character in place when walking in a
+    -- circle, the user's recording). The speed follows how far round you still have to go (TURN_GAIN, never above
+    -- TURN_MAX) and itself changes only so fast (TURN_ACCEL), so a turn starts and ends softly; it is never more than
+    -- what is left of the turn in a frame, so it never goes past the way you walk (no swinging back and forth)
+    local TURN_GAIN = 12            -- 1 / s: about a twelfth of a second to close most of a turn
+    local TURN_MAX = math.rad(430)  -- the fastest turn (under the spin guard's limit; the earlier one was too quick)
+    local TURN_ACCEL = 70           -- rad / s^2: how fast the turning speed itself may change
     local turnRate = 0
     local smoothTurning = false
     local function spinGuard(dt)
@@ -1206,11 +1209,9 @@ local function setupCharacterPhysics(character)
         end
 
         spinGuard(dt) -- (see SPIN GUARD above)
-        -- (Addtion-Scripts) THE TURN (back: Roblox's own turning still swung the body back and forth with the classic
-        -- camera too, the user's recording) on the ground you turn to face the way you walk on a spring (TURN_W, TURN_MAX)
-        -- that starts and stops softly and never goes past it. The spin was the body turning to catch up with that
-        -- way and overshooting (in some games it never settled: the user's clips). Snapping straight there each frame
-        -- stopped it but felt wrong; a steady speed that stopped dead was too sudden ("too instant at points").
+        -- (Addtion-Scripts) THE TURN: on the ground you turn to face the way you walk with a turning speed (see TURN_GAIN
+        -- above) instead of a CFrame written every frame (that held the body when walking in circles). Roblox's own
+        -- turning is off while this one runs (it swung the body back and forth with the classic camera).
         do
             local body = rootPart or torso
             local md = humanoid.MoveDirection * xzVector
@@ -1219,36 +1220,32 @@ local function setupCharacterPhysics(character)
                 and not humanoid.Sit and not humanoid.PlatformStand and not checkIfTrippedState() and humanoid.Health > 0 then
                 humanoid.AutoRotate = false
                 smoothTurning = true
-                pcall(function()
-                    local w = body.AssemblyAngularVelocity
-                    body.AssemblyAngularVelocity = Vector3.new(w.X, 0, w.Z)
-                end)
                 local look = body.CFrame.LookVector * xzVector
                 if look.Magnitude > 1e-3 then
                     local want = md.Unit
                     local cur = math.atan2(-look.X, -look.Z)
                     local target = math.atan2(-want.X, -want.Z)
                     local delta = (target - cur + math.pi) % (2 * math.pi) - math.pi
-                    -- (the spring, worked out exactly over the frame: x = how far from the way you walk, turnRate the
-                    -- turning speed)
-                    local t = math.min(dt or 0.016, 0.1)
-                    local x = -delta
-                    local e = math.exp(-TURN_W * t)
-                    local nx = (x + (turnRate + TURN_W * x) * t) * e
-                    local nv = (turnRate - TURN_W * (turnRate + TURN_W * x) * t) * e
-                    if math.abs(nv) > TURN_MAX then
-                        nv = (nv > 0 and 1 or -1) * TURN_MAX
-                        nx = x + nv * t
-                    end
-                    if x ~= 0 and nx * x < 0 then nx, nv = 0, 0 end -- (never past it)
-                    turnRate = nv
-                    local yaw = cur + (nx - x)
-                    local pos = body.Position
-                    body.CFrame = CFrame.lookAt(pos, pos + Vector3.new(-math.sin(yaw), 0, -math.cos(yaw)))
+                    local t = math.max(math.min(dt or 0.016, 0.1), 1e-3)
+                    local wanted = math.clamp(delta * TURN_GAIN, -TURN_MAX, TURN_MAX)
+                    -- the turning speed eases toward that: a soft start and a soft stop
+                    local step = TURN_ACCEL * t
+                    turnRate = turnRate + math.clamp(wanted - turnRate, -step, step)
+                    -- never further in a frame than there is left to go
+                    if math.abs(turnRate * t) > math.abs(delta) then turnRate = delta / t end
+                    pcall(function()
+                        local w = body.AssemblyAngularVelocity
+                        body.AssemblyAngularVelocity = Vector3.new(w.X, turnRate, w.Z)
+                    end)
                 end
             elseif smoothTurning then
                 smoothTurning = false
                 turnRate = 0
+                pcall(function()
+                    local body2 = rootPart or torso
+                    local w = body2.AssemblyAngularVelocity
+                    body2.AssemblyAngularVelocity = Vector3.new(w.X, 0, w.Z)
+                end)
                 -- (Roblox's own turning back as the original script has it: on, except during a jump's glide)
                 humanoid.AutoRotate = glideVelocity.Parent == nil
             end

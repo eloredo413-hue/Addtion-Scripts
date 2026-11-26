@@ -26,6 +26,8 @@ do
 	local URL_2008      = "https://gist.githubusercontent.com/eloredo413-hue/f60d1caf2307cefb517c11d84289ed1f/raw/1d45ddfb92fc749e5184f9a6cd05109fde9046c7/2008%2520gui"
 	local URL_2006      = "https://gist.githubusercontent.com/eloredo413-hue/a0101af36dd4a890607d7788a59382cf/raw/d0f911e883289cb7444cdf7dc2b562119c2355c0/2006-2007%2520Gui"
 	local URL_2005      = "https://gist.githubusercontent.com/eloredo413-hue/7eca661bd68389b3fb2ec5b762b3fb7a/raw/17af25bbea489d0e47334f0f72b183421522536e/2005%2520gui"
+	-- (Addtion-Scripts) 1989: the Interactive Physics window (1989 Gui.lua), an Easter egg option: see STEP 11
+	local URL_1989      = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/1989%20Gui.lua"
 	local SIG_2023      = "111872120766790"
 	local SIG_2013      = "Year = 2013"
 	local SIG_2014      = "h5AEhK7N" -- the 2014 topbar's pastebin
@@ -268,6 +270,13 @@ do
 				local src = fetchURL(URL_2005, "2005")
 				if src then return _ORIG_LS(src, name) end
 				return _ORIG_LS("-- [Hook] 2005 fetch failed", name)
+
+			elseif pending == "1989" and code:find(SIG_2013, 1, true) then
+				getgenv().BP_PendingTopbar = nil
+				getgenv().BP_2023Variant = nil
+				local src = fetchURL(URL_1989, "1989")
+				if src then return _ORIG_LS(src, name) end
+				return _ORIG_LS("-- [Hook] 1989 fetch failed", name)
 			end
 		end
 
@@ -893,6 +902,62 @@ task.spawn(function()
 
 					task.wait(0.1)
 
+					-- (Addtion-Scripts) EASTER EGG: tap the 2005 option 8 times, each tap within 1.5 s of the one before, and a
+					-- "1989" option (the Interactive Physics window) appears under it. It is kept in BloxyEasterEgg1989.json,
+					-- so once unlocked it is in the list every time and never goes away.
+					local EGG_FILE = "BloxyEasterEgg1989.json"
+					local function eggUnlocked()
+						local env = getgenv()
+						if env.BP_1989Unlocked then return true end
+						local ok, there = pcall(function() return isfile and isfile(EGG_FILE) end)
+						if ok and there then env.BP_1989Unlocked = true return true end
+						return false
+					end
+					local function insert1989()
+						if findButton(slider, "1989") then return end
+						local btn2013 = findButton(slider, "2013")
+						local anchor = findButton(slider, "2005")
+						if not (btn2013 and anchor) then return end
+						local clone = anchor:Clone()
+						clone.Name = "Topbar1989Button"
+						clone.Text = "1989"
+						clone.Position = UDim2.new(0, 0, 0, anchor.Position.Y.Offset + 35)
+						clone.Parent = slider
+
+						wipeHandlers(clone)
+						noTranslate(clone)
+						addHover(clone)
+
+						clone.MouseButton1Click:Connect(function()
+							playClick()
+							fireOriginal(btn2013)
+							getgenv().Force2008BubbleChat = false
+							getgenv().BP_PendingTopbar = "1989"
+							getgenv().BP_2023Variant = nil
+							print("[1989] Selected — will load on confirm.")
+							updateToggle(frame, "1989")
+						end)
+
+						shiftDown(slider, anchor.Position.Y.Offset, 35, clone)
+					end
+					local function eggTap()
+						if eggUnlocked() then return end
+						local env = getgenv()
+						local t = os.clock()
+						if env.BP_EggLast and t - env.BP_EggLast < 1.5 then
+							env.BP_EggTaps = (env.BP_EggTaps or 0) + 1
+						else
+							env.BP_EggTaps = 1
+						end
+						env.BP_EggLast = t
+						if env.BP_EggTaps >= 8 then
+							env.BP_1989Unlocked = true
+							pcall(function() if writefile then writefile(EGG_FILE, '{"unlocked":true}') end end)
+							print("[1989] Easter egg unlocked: the 1989 option is in the list now, for good.")
+							insert1989()
+						end
+					end
+
 					-- STEP 10: Insert 2005
 					if not findButton(slider, "2005") then
 						local btn2013 = findButton(slider, "2013")
@@ -916,11 +981,17 @@ task.spawn(function()
 								getgenv().BP_2023Variant = nil
 								print("[2005] Selected — will load on confirm.")
 								updateToggle(frame, "2005")
+								pcall(eggTap)
 							end)
 
 							shiftDown(slider, anchor.Position.Y.Offset, 35, clone)
 						end
 					end
+
+					task.wait(0.1)
+
+					-- STEP 11: the 1989 option, once the Easter egg has been unlocked
+					if eggUnlocked() then insert1989() end
 
 					print("[Topbar Addon] Done. Dropdown rebuilt.")
 				end

@@ -126,6 +126,7 @@ local MORE_GUIS_PICKS = {
     ["2008"] = { pending = "2008" },
     ["2006"] = { pending = "2006" },
     ["2005"] = { pending = "2005" },
+    ["1989"] = { pending = "1989" }, -- (the Easter egg option: the Interactive Physics window, 1989 Gui.lua)
     ["2023 new"] = { variant = "new" },
     ["2023 old"] = { variant = "old" },
 }
@@ -3072,6 +3073,7 @@ end
         ["2008"]       = "y2010", -- the 2010 GUI without chat bubbles: no bubbles of ours over it
         ["2006"]       = "y2006",
         ["2005"]       = "y2005",
+        ["1989"]       = "y2005", -- (the Interactive Physics window: like 2005, no bubbles or dialogs of ours)
     }
     local PENDING_VARIANTS = {
         ["2015early"] = "early2015",
@@ -3079,6 +3081,7 @@ end
         ["2008"]      = "y2010",
         ["2006"]      = "y2006",
         ["2005"]      = "y2005",
+        ["1989"]      = "y2005",
     }
     local confirmedVariant = nil     -- era of a More guis pick at the last Confirm, or nil
     local confirmedVariantName = nil
