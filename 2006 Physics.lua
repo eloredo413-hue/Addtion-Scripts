@@ -965,6 +965,13 @@ local function setupCharacterPhysics(character)
         if character:FindFirstChildWhichIsA("Tool") then table.insert(found, "a tool in hand") end
         return table.concat(found, ", ")
     end
+    -- how you turn to face the way you walk: a spring that is just stiff enough never to go past it (critically
+    -- damped), so a turn starts and ends softly, like Roblox's own turning, never snapping; a big turn goes at most
+    -- 800 degrees a second (the user's reference recordings: a quarter turn in about 0.14 s, a half turn in 0.25 s)
+    local TURN_W = 20
+    local TURN_MAX = math.rad(650)
+    local turnRate = 0
+    local smoothTurning = false
     local function spinGuard(dt)
         local body = rootPart or torso
         if not body or not body.Parent or not dt or dt <= 0 then return end
@@ -1172,8 +1179,53 @@ local function setupCharacterPhysics(character)
         end
 
         spinGuard(dt) -- (see SPIN GUARD above)
-        -- (Addtion-Scripts) turning: Roblox's own, exactly as FWM's script has it (on, except in a jump's glide). The
-        -- spin it had in some games was the camera: see CAMERA at the top.
+        -- (Addtion-Scripts) THE TURN (back: Roblox's own turning still swung the body back and forth with the classic
+        -- camera too, the user's recording) on the ground you turn to face the way you walk on a spring (TURN_W, TURN_MAX)
+        -- that starts and stops softly and never goes past it. The spin was the body turning to catch up with that
+        -- way and overshooting (in some games it never settled: the user's clips). Snapping straight there each frame
+        -- stopped it but felt wrong; a steady speed that stopped dead was too sudden ("too instant at points").
+        do
+            local body = rootPart or torso
+            local md = humanoid.MoveDirection * xzVector
+            local st = humanoid:GetState()
+            if body and body.Parent and md.Magnitude > 0.1 and GROUND_STATES[st] and not climbFWM.isClimbing()
+                and not humanoid.Sit and not humanoid.PlatformStand and not checkIfTrippedState() and humanoid.Health > 0 then
+                humanoid.AutoRotate = false
+                smoothTurning = true
+                pcall(function()
+                    local w = body.AssemblyAngularVelocity
+                    body.AssemblyAngularVelocity = Vector3.new(w.X, 0, w.Z)
+                end)
+                local look = body.CFrame.LookVector * xzVector
+                if look.Magnitude > 1e-3 then
+                    local want = md.Unit
+                    local cur = math.atan2(-look.X, -look.Z)
+                    local target = math.atan2(-want.X, -want.Z)
+                    local delta = (target - cur + math.pi) % (2 * math.pi) - math.pi
+                    -- (the spring, worked out exactly over the frame: x = how far from the way you walk, turnRate the
+                    -- turning speed)
+                    local t = math.min(dt or 0.016, 0.1)
+                    local x = -delta
+                    local e = math.exp(-TURN_W * t)
+                    local nx = (x + (turnRate + TURN_W * x) * t) * e
+                    local nv = (turnRate - TURN_W * (turnRate + TURN_W * x) * t) * e
+                    if math.abs(nv) > TURN_MAX then
+                        nv = (nv > 0 and 1 or -1) * TURN_MAX
+                        nx = x + nv * t
+                    end
+                    if x ~= 0 and nx * x < 0 then nx, nv = 0, 0 end -- (never past it)
+                    turnRate = nv
+                    local yaw = cur + (nx - x)
+                    local pos = body.Position
+                    body.CFrame = CFrame.lookAt(pos, pos + Vector3.new(-math.sin(yaw), 0, -math.cos(yaw)))
+                end
+            elseif smoothTurning then
+                smoothTurning = false
+                turnRate = 0
+                -- (Roblox's own turning back as the original script has it: on, except during a jump's glide)
+                humanoid.AutoRotate = glideVelocity.Parent == nil
+            end
+        end
 
         -- (Addtion-Scripts) THE AIR LOCK, as the 2008 physics': from a jump until you land you keep facing the way you
         -- jumped. The jump glide turns Roblox's turning off for the jump, but the body still had the turn it was making
@@ -1322,5 +1374,5 @@ BPGenv.__Physics2006Cleanup = function()
 end
 
 -- (so it can be seen in the console which copy is running)
-print("[2006 Physics] On (time period " .. tostring(getTimePeriod()) .. "): FWM's physics with Roblox's own controls and"
-    .. " turning, the classic camera (no spin), spin guard on.")
+print("[2006 Physics] On (time period " .. tostring(getTimePeriod()) .. "): FWM's physics with Roblox's own controls, a"
+    .. " soft turn that never swings past (no spin), the classic camera, spin guard on.")
