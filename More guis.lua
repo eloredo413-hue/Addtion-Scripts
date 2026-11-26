@@ -902,9 +902,10 @@ task.spawn(function()
 
 					task.wait(0.1)
 
-					-- (Addtion-Scripts) EASTER EGG: tap the 2005 option 8 times, each tap within 1.5 s of the one before, and a
-					-- "1989" option (the Interactive Physics window) appears under it. It is kept in BloxyEasterEgg1989.json,
-					-- so once unlocked it is in the list every time and never goes away.
+					-- (Addtion-Scripts) EASTER EGG: tap the list's own button (the box that shows the GUI picked and opens the
+					-- list) 8 times, each tap within 1.5 s of the one before, and a "1989" option (the Interactive Physics window)
+					-- appears at the bottom of the list. (Not an option: picking one moves the setup on to the next question.)
+					-- It is kept in BloxyEasterEgg1989.json, so once unlocked it is in the list every time and never goes away.
 					local EGG_FILE = "BloxyEasterEgg1989.json"
 					local function eggUnlocked()
 						local env = getgenv()
@@ -957,6 +958,13 @@ task.spawn(function()
 							insert1989()
 						end
 					end
+					do
+						local eggToggle = findToggle(frame)
+						if eggToggle and not eggToggle:GetAttribute("BP_EggWired") then
+							eggToggle:SetAttribute("BP_EggWired", true)
+							eggToggle.MouseButton1Click:Connect(function() pcall(eggTap) end)
+						end
+					end
 
 					-- STEP 10: Insert 2005
 					if not findButton(slider, "2005") then
@@ -981,7 +989,6 @@ task.spawn(function()
 								getgenv().BP_2023Variant = nil
 								print("[2005] Selected — will load on confirm.")
 								updateToggle(frame, "2005")
-								pcall(eggTap)
 							end)
 
 							shiftDown(slider, anchor.Position.Y.Offset, 35, clone)
