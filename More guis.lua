@@ -902,10 +902,10 @@ task.spawn(function()
 
 					task.wait(0.1)
 
-					-- (Addtion-Scripts) EASTER EGG: tap the list's own button (the box that shows the GUI picked and opens the
-					-- list) 8 times, each tap within 1.5 s of the one before, and a "1989" option (the Interactive Physics window)
-					-- appears at the bottom of the list. (Not an option: picking one moves the setup on to the next question.)
-					-- It is kept in BloxyEasterEgg1989.json, so once unlocked it is in the list every time and never goes away.
+					-- (Addtion-Scripts) EASTER EGG: the "1989" option (the Interactive Physics window, 1989 Gui.lua). It is unlocked
+					-- in the "saved settings" window (Saved Settings.lua: tap its title 8 times) - nothing on this page can do it,
+					-- as picking an option moves the setup on. The unlock is kept in BloxyEasterEgg1989.json, so once it is
+					-- there the option is in the list every time and never goes away.
 					local EGG_FILE = "BloxyEasterEgg1989.json"
 					local function eggUnlocked()
 						local env = getgenv()
@@ -940,30 +940,6 @@ task.spawn(function()
 						end)
 
 						shiftDown(slider, anchor.Position.Y.Offset, 35, clone)
-					end
-					local function eggTap()
-						if eggUnlocked() then return end
-						local env = getgenv()
-						local t = os.clock()
-						if env.BP_EggLast and t - env.BP_EggLast < 1.5 then
-							env.BP_EggTaps = (env.BP_EggTaps or 0) + 1
-						else
-							env.BP_EggTaps = 1
-						end
-						env.BP_EggLast = t
-						if env.BP_EggTaps >= 8 then
-							env.BP_1989Unlocked = true
-							pcall(function() if writefile then writefile(EGG_FILE, '{"unlocked":true}') end end)
-							print("[1989] Easter egg unlocked: the 1989 option is in the list now, for good.")
-							insert1989()
-						end
-					end
-					do
-						local eggToggle = findToggle(frame)
-						if eggToggle and not eggToggle:GetAttribute("BP_EggWired") then
-							eggToggle:SetAttribute("BP_EggWired", true)
-							eggToggle.MouseButton1Click:Connect(function() pcall(eggTap) end)
-						end
 					end
 
 					-- STEP 10: Insert 2005

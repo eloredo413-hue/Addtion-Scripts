@@ -1750,7 +1750,42 @@ local function buildGui()
 	panel.Parent = gui
 	outline(panel, WHITE, 1.5)
 
-	label(panel, "Title", "saved settings", UDim2.new(1, -30, 0, 22), UDim2.new(0, 15, 0, 44), 18)
+	local titleLabel = label(panel, "Title", "saved settings", UDim2.new(1, -30, 0, 22), UDim2.new(0, 15, 0, 44), 18)
+
+	-- (Addtion-Scripts) THE 1989 EASTER EGG: tap the words "saved settings" at the top of this window 8 times, each tap within
+	-- 1.5 s of the one before, and the title says "1989 unlocked". The 1989 GUI (the Interactive Physics window) is then
+	-- in the topbar list from then on (More guis.lua), and the unlock is kept in a file so it never goes away.
+	do
+		local EGG_FILE = "BloxyEasterEgg1989.json"
+		local taps, lastTap = 0, -math.huge
+		local hit = Instance.new("TextButton")
+		hit.Name = "TitleTap"
+		hit.BackgroundTransparency = 1
+		hit.Text = ""
+		hit.AutoButtonColor = false
+		hit.Size = titleLabel.Size
+		hit.Position = titleLabel.Position
+		hit.ZIndex = titleLabel.ZIndex + 1
+		hit.Parent = panel
+		hit.MouseButton1Click:Connect(function()
+			local env = (getgenv and getgenv()) or _G
+			if env.BP_1989Unlocked then return end
+			local okFile, there = pcall(function() return isfile and isfile(EGG_FILE) end)
+			if okFile and there then env.BP_1989Unlocked = true return end
+			local now = os.clock()
+			if now - lastTap < 1.5 then taps = taps + 1 else taps = 1 end
+			lastTap = now
+			if taps >= 8 then
+				env.BP_1989Unlocked = true
+				pcall(function() if writefile then writefile(EGG_FILE, '{"unlocked":true}') end end)
+				print("[1989] Easter egg unlocked: the 1989 option is in the GUI list from now on.")
+				titleLabel.Text = "1989 unlocked"
+				task.delay(2.5, function()
+					if titleLabel.Parent then titleLabel.Text = "saved settings" end
+				end)
+			end
+		end)
+	end
 
 	nameBox = textBox(panel, "NameBox", UDim2.new(1, -106, 0, 26), UDim2.new(0, 15, 0, 72), "name (optional)")
 	local paintSave
