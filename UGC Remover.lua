@@ -37,7 +37,7 @@ local SETTLE = 0.2                 -- seconds a character's items are left to se
 local BATCH = 50                   -- items per catalog request
 local BUSY_PAUSE = 0.03            -- seconds between two pieces of work
 local IDLE_PAUSE = 0.1             -- seconds between looks when there's nothing to do
-local JOBS_AT_ONCE = 4             -- searches / loads going at the same time
+local JOBS_AT_ONCE = 3             -- searches going at the same time (loads still go one at a time)
 local CACHE_FILE = "BPUGCRemoverCache.json" -- (what was looked up, kept for next time: known items are instant)
 
 local alive = true
@@ -290,12 +290,18 @@ local function closestRobloxItem(kind, ugcId, ugcName)
 	return best
 end
 
+local loadingNow = false
 local function loadModel(assetId)
+	-- (one load at a time, and a frame's rest after each: loading is what makes the game stutter)
+	while loadingNow and alive do task.wait() end
+	loadingNow = true
 	local model
 	pcall(function()
 		local objs = game:GetObjects("rbxassetid://" .. tostring(assetId))
 		model = objs and objs[1]
 	end)
+	task.wait()
+	loadingNow = false
 	return model
 end
 
@@ -382,7 +388,14 @@ local function closestRobloxBody(assetType, ugcId, ugcName)
 			if sc > bestScore then best, bestScore = item, sc end
 		end
 	end
+	-- (nothing like it: Roblox's own Robloxian 2.0, the plainest Roblox package)
+	if not best then
+		for _, item in ipairs(search(assetType, "robloxian 2.0")) do
+			if string.find(string.lower(item.name), "robloxian", 1, true) then best = item break end
+		end
+	end
 	closestCache[ugcId] = best or false
+	cacheDirty = true
 	return best
 end
 
@@ -441,6 +454,31 @@ local function swapBodyPart(part, roblox, width, humanoid, r)
 				return "roblox"
 			end
 			original:Destroy()
+		end
+		-- (the mesh can't be swapped here: the Roblox package's own part, sized to fit, over the hidden UGC one)
+		local okCopy2, copy = pcall(function() return roblox[part.Name]:Clone() end)
+		if okCopy2 and copy then
+			for _, c in ipairs(copy:GetChildren()) do
+				if not (c:IsA("SurfaceAppearance") or c:IsA("SpecialMesh")) then c:Destroy() end
+			end
+			copy.Name = "BPUGCPackagePart"
+			copy.Size = part.Size
+			copy.Color = part.Color
+			copy.CanCollide = false
+			pcall(function() copy.CanTouch = false copy.CanQuery = false end)
+			copy.Massless = true
+			copy.Anchored = false
+			copy.CFrame = part.CFrame
+			copy:SetAttribute(MARK, true)
+			local weld = Instance.new("Weld")
+			weld.Part0 = part
+			weld.Part1 = copy
+			weld.Parent = copy
+			if r.hidden[part] == nil then r.hidden[part] = part.Transparency end
+			part.Transparency = 1
+			copy.Parent = part
+			r.made[copy] = true
+			return "roblox"
 		end
 	end
 	blockOver(part, width, humanoid, r)
@@ -947,6 +985,17 @@ end
 for _, player in ipairs(Players:GetPlayers()) do watchPlayer(player) end
 connect(Players.PlayerAdded, watchPlayer)
 task.spawn(worker)
+-- (live: everyone looked at again every 10 s, for outfits changed without anything new being put on; what was
+-- looked up before costs nothing)
+task.spawn(function()
+	while alive do
+		task.wait(10)
+		if not alive then break end
+		for _, player in ipairs(Players:GetPlayers()) do
+			if player.Character then queueCharacter(player.Character) end
+		end
+	end
+end)
 
 ------------------------------------------------------------------------------------------------------------------------
 -- PUT BACK

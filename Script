@@ -291,11 +291,12 @@ do
             .. string.sub(src, b + 1)
     end
     function helpers.Get2014()
-        for _, url in ipairs({ PASTEBIN_2014, REPO_2014 }) do
+        -- (this repo's copy first: pastebin often hangs instead of failing, and then the 2014 GUI never came, at random)
+        for _, url in ipairs({ REPO_2014, PASTEBIN_2014 }) do
             for _ = 1, 2 do
                 local ok, src = pcall(function() return game:HttpGet(url) end)
                 if ok and type(src) == "string" and #src > 5000 and string.find(src, "LegacySettings", 1, true) then
-                    if url == REPO_2014 then print("[Loader] 2014 GUI: pastebin didn't answer, this repo's copy is used") end
+                    if url == PASTEBIN_2014 then print("[Loader] 2014 GUI: this repo's copy didn't come, pastebin's is used") end
                     return helpers.Without2016Loading(src)
                 end
                 task.wait(0.5)

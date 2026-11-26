@@ -483,12 +483,12 @@ local function replay(frame, taps)
 		if btn then
 			press(btn)
 			local t0 = os.clock()
-			repeat task.wait() until moved or not frame.Parent or os.clock() - t0 > 0.12
+			repeat task.wait() until moved or not frame.Parent or os.clock() - t0 > 0.3
 		end
 	end
 	if not moved and frame.Parent then
 		local t0 = os.clock()
-		repeat task.wait() until moved or not frame.Parent or os.clock() - t0 > 0.3
+		repeat task.wait() until moved or not frame.Parent or os.clock() - t0 > 0.6
 	end
 	c:Disconnect()
 	return moved or not frame.Parent
@@ -704,10 +704,23 @@ local function setupTopbar(frame)
 			end
 		end)
 	end
-	-- a tap on the one already shown (or on "none") changes nothing on the label: the tap itself goes on
+	-- a tap on the one already shown (or on "none") changes nothing on the label: the tap itself goes on, but only when
+	-- the label then shows that option (a scroll of the list on a phone, or a tap on nothing, used to go on with
+	-- Bloxy's default GUI, 2014)
 	local function hookOption(d)
 		if not d:IsA("TextButton") or d == confirm or not d:FindFirstAncestorWhichIsA("ScrollingFrame") then return end
-		d.Activated:Connect(goOn)
+		local downAt = nil
+		d.InputBegan:Connect(function(input) downAt = input.Position end)
+		d.Activated:Connect(function(input)
+			-- (a drag, not a tap)
+			if downAt and input and input.Position and (input.Position - downAt).Magnitude > 12 then return end
+			task.delay(0.1, function()
+				local picked = base(d.Text)
+				if picked ~= "" and toggle and string.find(string.lower(base(toggle.Text)), string.lower(picked), 1, true) then
+					goOn()
+				end
+			end)
+		end)
 	end
 	for _, d in ipairs(frame:GetDescendants()) do hookOption(d) end
 	frame.DescendantAdded:Connect(function(d) task.defer(hookOption, d) end)
@@ -786,6 +799,11 @@ goForward = function()
 	refreshButtons()
 	local frame = current.frame
 	local went = replay(frame, taps)
+	-- (sometimes the first press is missed while the question is still sliding in: once more)
+	if not went and frame.Parent and current and current.frame == frame then
+		task.wait(0.25)
+		went = replay(frame, taps)
+	end
 	if not went and isTopbar(current and current.title) then
 		local confirm = confirmOf(frame)
 		if confirm then press(confirm) end
