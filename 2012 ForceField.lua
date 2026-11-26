@@ -47,7 +47,7 @@ do
 	local SPHERE_HOLDER = "Forcefield2012Spheres"
 	-- the bubble in the user's clips: a strong mid blue (measured over three backgrounds: about 0, 29, 163 at 43% seen),
 	-- a little darker here as neon shows brighter than its colour
-	local SPHERE_COLOR = Color3.fromRGB(0, 25, 190) -- (a clear dark blue: deep, but plainly blue, not black)
+	local SPHERE_COLOR = Color3.fromRGB(0, 12, 150) -- (between the navy 0, 0, 110 and the brighter 0, 25, 190, as the user asked)
 	local OUTER_SEE_THROUGH = 0.62 -- (the bubble, at its strongest)
 	local INNER_SEE_THROUGH = 0.8  -- (the little one inside: lighter, so you see yourself through it)
 	-- the bubble flares in and out, as in the user's 2012 clip: smoothly from strong to more see-through and back,

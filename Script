@@ -607,6 +607,8 @@ local MORE_GUIS_SWAPS = {
     URL_2011      = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2011%20Gui.lua",
     -- 2008 (2008 Gui.lua): the health bar the 2008 client's size and place (thin, under the player list)
     URL_2008      = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2008%20Gui.lua",
+    -- 2005 (2005 Gui.lua): its Properties window and settings menu drawn as Windows XP windows
+    URL_2005      = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/2005%20Gui.lua",
     -- the game's TopbarPlus icons on the 2015 - 2019 top bars (Retro TopbarPlus.lua): right after the bar's own
     -- buttons, not pushed further right by the 2019 bar's padding
     URL_RETRO_TOPBARPLUS = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Retro%20TopbarPlus.lua",
@@ -772,7 +774,7 @@ end)
 -- Bloxy's 2012 / 2013 GUIs: the menu above the hotbar, and a PC's size on a phone (and the safe chat's size to
 -- match): see "Old Gui Fix.lua"
 local URL_OLD_GUI_FIX = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Old%20Gui%20Fix.lua"
--- the old red disconnect bar for the 2015 - 2019 GUIs (Legacy Disconnect.lua in this repo, see evaluateAndLoad)
+-- the old red disconnect bar for the 2015 - 2017 GUIs (Legacy Disconnect.lua in this repo, see evaluateAndLoad)
 local URL_LEGACY_DISCONNECT = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Legacy%20Disconnect.lua"
 -- the old loading screens of the 2014 / 2015 / 2016 GUIs, above the GUI (Old Loading Screen.lua, see evaluateAndLoad)
 local URL_OLD_LOADING = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Old%20Loading%20Screen.lua?v=" .. tostring(os.time())
@@ -862,6 +864,16 @@ loadUrl(URL_TERRAIN_HOOK, "Terrain Hook", function(src)
         "if not bloxySkipOn() then local wizard = Env.BPWizard; if not (type(wizard) == \"table\" and type(wizard.later) == \"function\" "
         .. "and wizard.later(\"terrain\", function() runTerrain(choice) end)) then runTerrain(choice) end end")
     if count == 0 then warn("[Loader] Terrain Hook: its pick wasn't found, so with < > on it loads as soon as it is picked") end
+    -- its question is laid over Bloxy's box above the "SETUP" picture (ZIndex 50-52 against the picture's 10), so the
+    -- picture's lower half went behind it: now under the picture, still over Bloxy's own buttons (5)
+    local z = 0
+    for _, pair in ipairs({ { "overlay.ZIndex = 50", "overlay.ZIndex = 7" }, { "t.ZIndex = 51", "t.ZIndex = 8" },
+        { "btn.ZIndex = 52", "btn.ZIndex = 9" } }) do
+        local n
+        patched, n = replacePlain(patched, pair[1], pair[2])
+        z = z + n
+    end
+    if z < 3 then warn("[Loader] Terrain Hook: its layers weren't found, so its question may still cover the SETUP picture") end
     return patched
 end)
 loadUrl(URL_EMOTES_HOOK, "Emotes Hook")
@@ -3207,8 +3219,7 @@ end
     --========================================================
     -- CLASSIC NOTIFICATIONS (Classic Notifications.lua in this repo): badges and friend requests, by GUI
     --   2014: the 2013-2014 boxes with the 2014 NotificationScript's words ("2014": "Badge Awarded!" and its icon...)
-    --   2013 / 2013 mobile with the old health bar OFF: the 2013-2014 boxes ("classic")
-    --   2011, 2012, and 2013 / 2013 mobile with the old health bar ON: nothing shown or played ("silent")
+    --   2011, 2012, 2013 / 2013 mobile: the 2013-2014 boxes ("classic")
     --   before 2011: no boxes, a badge plays victory.wav ("sound")
     --   2015 and later (and no GUI): Roblox's own notices
     -- In the first three, Roblox's own badge notice is hidden (and its friend request notice, when nothing is shown).
@@ -3224,10 +3235,9 @@ end
         local mode = nil
         if year == 2014 then
             mode = "2014" -- (the 2013-2014 boxes with the 2014 NotificationScript's words and icons)
-        elseif year == 2013 and not oldBar then
-            mode = "classic"
         elseif year == 2011 or year == 2012 or year == 2013 then
-            mode = "silent"
+            -- (the old boxes for 2011, 2012 and 2013 too, as the user asked: they were silent there before)
+            mode = "classic"
         elseif year and year < 2011 then
             mode = "sound"
         end
@@ -3320,13 +3330,14 @@ end
         getgenv().BloxyEra = era
         getgenv().BloxyTopbarRaw = tostring(raw)
 
-        -- LEGACY DISCONNECT MESSAGE: with the 2015 early / 2015 / 2016 / 2017 / 2019 GUIs a disconnect shows as the
+        -- LEGACY DISCONNECT MESSAGE: with the 2015 early / 2015 / 2016 / 2017 GUIs a disconnect shows as the
         -- old red bar under the top bar (Legacy Disconnect.lua), no box or blur. The real pick is used (More guis'
         -- 2017 / 2019 save as "2023").
         do
             local pick = tostring(getgenv().BloxyTopbarPick or raw or "")
             local year = tonumber(string.match(pick, "20%d%d") or "")
-            if year and year >= 2015 and year <= 2019 then
+            -- (only 2015 early, 2015, 2016 and 2017: not 2019, nor any year before or after, as the user asked)
+            if year and year >= 2015 and year <= 2017 then
                 if not legacyDisconnectOn then
                     legacyDisconnectOn = true
                     task.spawn(function()
@@ -3846,29 +3857,49 @@ end
 -- Bloxy's "old sounds" swaps the character's sounds for its own (ParadoxStep, ParadoxJump, ParadoxDeath...) and
 -- removes Roblox's, so the death sound was Bloxy's (rbxassetid://17755696142), not the classic oof. The oof is
 -- Roblox's own default death sound again since 31 July 2025, and Roblox put it in the Creator Store ("Official OOF
--- Sound Effect", asset 79348298352567): Bloxy's death sound is pointed at that. If it doesn't load, Roblox's own
--- default death sound file is used instead (the oof again since then).
+-- Sound Effect", asset 79348298352567). It is loaded ahead and played here the moment you die (Bloxy's own death
+-- sound kept quiet): swapping only the file sometimes played nothing, the oof not loaded yet when you died. If it
+-- doesn't load, Roblox's own default death sound file is used instead (the oof again since then).
 --========================================================
 task.spawn(function()
     local OOF = "rbxassetid://79348298352567"
     local OOF_FALLBACK = "rbxasset://sounds/uuhhh.mp3"
     local player = game:GetService("Players").LocalPlayer
     if not player then return end
+    local ContentProvider = game:GetService("ContentProvider")
+    -- the oof, loaded ahead (a sound that isn't loaded yet when you die plays nothing)
+    local oofSound = Instance.new("Sound")
+    oofSound.Name = "BPOldOof"
+    oofSound.SoundId = OOF
+    oofSound.Volume = 0.65
+    oofSound.Parent = game:GetService("SoundService")
+    task.spawn(function()
+        pcall(function() ContentProvider:PreloadAsync({ oofSound }) end)
+        task.wait(4)
+        if not oofSound.IsLoaded then oofSound.SoundId = OOF_FALLBACK end
+    end)
     local function useOof(sound)
         if not (sound:IsA("Sound") and sound.Name == "ParadoxDeath") then return end
-        if sound.SoundId == OOF or sound.SoundId == OOF_FALLBACK then return end
+        -- (Bloxy's own death sound is kept quiet: the oof below is played instead, so it is never missed or doubled)
         sound.SoundId = OOF
-        task.delay(5, function()
-            if sound.Parent and sound.SoundId == OOF and not sound.IsLoaded then
-                sound.SoundId = OOF_FALLBACK
-            end
-        end)
+        sound.Volume = 0
     end
     local function watch(character)
         local root = character:WaitForChild("HumanoidRootPart", 10)
-        if not root then return end
+        local humanoid = character:WaitForChild("Humanoid", 10)
+        if not (root and humanoid) then return end
         for _, child in ipairs(root:GetChildren()) do pcall(useOof, child) end
         root.ChildAdded:Connect(function(child) pcall(useOof, child) end)
+        -- the moment you die, with old sounds on (Bloxy's death sound is there): the oof, played here
+        humanoid.Died:Connect(function()
+            if not root:FindFirstChild("ParadoxDeath") then return end
+            pcall(function()
+                local s = oofSound:Clone()
+                s.Parent = root
+                s:Play()
+                game:GetService("Debris"):AddItem(s, 4)
+            end)
+        end)
     end
     if player.Character then task.spawn(watch, player.Character) end
     player.CharacterAdded:Connect(watch)
