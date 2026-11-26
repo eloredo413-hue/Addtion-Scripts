@@ -4644,6 +4644,28 @@ local function reset2005Game()
 	playClassicSound(SOUND_BOOP, 0.55, 1.0)
 end
 
+-- (Addtion-Scripts) CLEAR ALL (the menu's old RESET GAME button): the simulation stops and everything in the world that
+-- the 2005 GUI holds is removed - the bricks and models, the figures, and the players' figures too (they are marked as
+-- deleted so they are not made again). Only this screen's copies go: nothing happens to the other players.
+function S.clearAll2005()
+	if S.isSimulationRunning then stop2005Simulation() end
+	S.deletedPlayerRigs = S.deletedPlayerRigs or {}
+	for char in pairs(S.rigRegistry or {}) do
+		if char and char.Name then S.deletedPlayerRigs[char.Name] = true end
+	end
+	S.rigRegistry = {}
+	for _, p in ipairs(Players:GetPlayers()) do
+		S.deletedPlayerRigs[p.Name] = true
+	end
+	S.deletedPlayerRigs[LocalPlayer.Name] = true
+	S.localPlayerRig = nil
+	S.controlledObjects = {}
+	S.activeControlledModel = nil
+	SpawnedModelsFolder:ClearAllChildren()
+	selectStudioObject(nil)
+	playClassicSound(SOUND_BOOP, 0.55, 1.0)
+end
+
 storeConnection(GoStopBtn.MouseButton1Click:Connect(function()
 	if S.isSimulationRunning then
 		stop2005Simulation()
@@ -6134,25 +6156,27 @@ do
 		PopupMenuFrame.Visible = false
 	end))
 
-	local ResetOrgBtn = Instance.new("ImageButton")
-	ResetOrgBtn.AnchorPoint = Vector2.new(0.5, 0)
-	ResetOrgBtn.Position = UDim2.new(0.5, 0, 0, 36)
-	ResetOrgBtn.Size = UDim2.new(0, 130, 0, 32)
-	ResetOrgBtn.BackgroundTransparency = 1
-	ResetOrgBtn.ZIndex = 32
-	ResetOrgBtn.Parent = PopupMenuFrame
-	local ResetOrgFb, ResetOrgLbl = createMetallicOrbFallback(ResetOrgBtn, "RESET GAME", Color3.fromRGB(90, 60, 20), false, false, false)
-	if ResetOrgLbl then
-		-- (the words in the middle of the button: Oswald scaled to its height sat low)
-		ResetOrgLbl.TextScaled = false
-		ResetOrgLbl.TextSize = 16
-		ResetOrgLbl.TextYAlignment = Enum.TextYAlignment.Center
-		ResetOrgLbl.Size = UDim2.new(1, 0, 1, -4)
-		ResetOrgLbl.Position = UDim2.new(0, 0, 0, 0)
-	end
-	bindButtonSprites(ResetOrgBtn, ResetOrgFb, "ResetOrg", "ResetOrg_ovr", "ResetOrg_dn", "ResetOrg_ds")
-	storeConnection(ResetOrgBtn.MouseButton1Click:Connect(function()
-		reset2005Game()
+	-- (Addtion-Scripts) CLEAR ALL: where RESET GAME was (its picture had the words RESET GAME in it, so it is an XP button now,
+	-- like the others in this menu). It clears everything in the world, the players' figures too (S.clearAll2005).
+	local ClearAllBtn = Instance.new("TextButton")
+	ClearAllBtn.Name = "ClearAllBtn"
+	ClearAllBtn.AnchorPoint = Vector2.new(0.5, 0)
+	ClearAllBtn.Position = UDim2.new(0.5, 0, 0, 36)
+	ClearAllBtn.Size = UDim2.new(0, 230, 0, 30)
+	ClearAllBtn.Text = ""
+	ClearAllBtn.ZIndex = 31
+	ClearAllBtn.Parent = PopupMenuFrame
+	local ClearAllLbl = Instance.new("TextLabel")
+	ClearAllLbl.Size = UDim2.new(1, 0, 1, 0)
+	ClearAllLbl.BackgroundTransparency = 1
+	ClearAllLbl.Text = "CLEAR ALL"
+	ClearAllLbl.ZIndex = 32
+	ClearAllLbl.Parent = ClearAllBtn
+	S.xpButton(ClearAllBtn, ClearAllLbl)
+	ClearAllLbl.Font = Enum.Font.ArialBold
+	storeConnection(ClearAllBtn.MouseButton1Click:Connect(function()
+		playClassicSound(SOUND_CLICK, 0.45, 1)
+		S.clearAll2005()
 		PopupMenuFrame.Visible = false
 	end))
 
