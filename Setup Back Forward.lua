@@ -371,7 +371,7 @@ local function makeTab(frame, name, glyph, position, onPress)
 	return b
 end
 
-local goBack, goForward, navigateTo -- (below)
+local goBack, goForward, navigateTo, noneOptionOf -- (below)
 
 local function attachButtons(frame)
 	local own = buttonsOf[frame]
@@ -402,8 +402,10 @@ refreshButtons = function()
 	local taps = answers[current.title]
 	-- (">" works when there is an answer to give again, or a next question you came back from: it never needs more)
 	local nextEntry = history[index + 1]
+	-- (nothing picked counts as "none": > is on whenever the question has a none of its own)
 	local canForward = W.session and not busy
-		and ((taps ~= nil and #taps > 0) or (nextEntry ~= nil and nextEntry.show ~= nil))
+		and ((taps ~= nil and #taps > 0) or (nextEntry ~= nil and nextEntry.show ~= nil)
+			or noneOptionOf(current.frame) ~= nil)
 	own.back:SetAttribute("Enabled", canBack == true)
 	own.forward:SetAttribute("Enabled", canForward == true)
 end
@@ -492,6 +494,31 @@ local function findTapButton(frame, tap)
 	if best then return best end
 	if nameCount == 1 then return byName end
 	return hidden
+end
+
+-- The "none" of a question: nothing picked counts as none. The button that says so ("None", "No", "Skip" ...), a
+-- visible one first; a hidden one only in a list (the topbar question's list is closed until opened).
+local NONE_WORDS = { "none", "no", "nothing", "skip", "no thanks", "neither", "normal", "default" }
+noneOptionOf = function(frame)
+	if not (frame and frame.Parent) then return nil end
+	local best, bestRank = nil, math.huge
+	for _, d in ipairs(frame:GetDescendants()) do
+		if d:IsA("TextButton") and d.Name ~= BACK_NAME and d.Name ~= FORWARD_NAME
+			and not string.find(d.Text or "", "▼", 1, true) and not string.find(d.Text or "", "▲", 1, true) then
+			local t = string.lower((string.gsub(string.gsub(string.gsub(d.Text or "", "▼", ""), "▲", ""), "^%s*(.-)%s*$", "%1")))
+			for i, w in ipairs(NONE_WORDS) do
+				if t == w or (i <= 2 and (string.find(t, "^" .. w .. "[%s,%.%(]"))) then
+					local hiddenOk = d:FindFirstAncestorWhichIsA("ScrollingFrame") ~= nil
+					if d.Visible or hiddenOk then
+						local rank = i * 2 + (d.Visible and 0 or 1)
+						if rank < bestRank then best, bestRank = d, rank end
+					end
+					break
+				end
+			end
+		end
+	end
+	return best
 end
 
 -- Gives a question its remembered taps, one after the other, until the question goes (it starts moving away).
@@ -820,26 +847,46 @@ goForward = function()
 	local hasTaps = taps ~= nil and #taps > 0
 	local nextEntry = history[index + 1]
 	local canJump = nextEntry ~= nil and nextEntry.show ~= nil
-	if not hasTaps and not canJump then return end
+	if not hasTaps and not canJump then
+		-- nothing picked: that is "none" (the question's None / No), given as the answer
+		local none = noneOptionOf(frame)
+		if not none then return end
+		remember(none)
+		taps = answers[title]
+		hasTaps = taps ~= nil and #taps > 0
+		if not hasTaps then return end
+	end
 	busy = true
 	refreshButtons()
 	local went = false
-	if hasTaps then
-		-- the answer given again, button by button (a second time if the first press was missed while the question was
-		-- still sliding in)
+	if hasTaps and isTopbar(title) then
+		-- the topbar question has no confirm button of its own on screen: the options pressed, then (when the label's
+		-- change hasn't already moved it on, a tap on the option already shown changes nothing) the hidden confirm
+		local moved = false
+		local c = frame:GetPropertyChangedSignal("Position"):Connect(function() moved = true end)
+		for _, tap in ipairs(taps) do
+			local btn = findTapButton(frame, tap)
+			if btn then
+				press(btn)
+				task.wait(0.15)
+			end
+		end
+		if not moved and frame.Parent then task.wait(0.6) end
+		if not moved and frame.Parent then
+			local confirm = confirmOf(frame)
+			if confirm then press(confirm) end
+		end
+		local t0 = os.clock()
+		repeat task.wait() until moved or not frame.Parent or os.clock() - t0 > 1
+		c:Disconnect()
+		went = moved or not frame.Parent
+	elseif hasTaps then
+		-- the answer given again, button by button (a second time if the first press was missed while the question
+		-- was still sliding in)
 		went = replay(frame, taps)
 		if not went and frame.Parent and current and current.frame == frame then
 			task.wait(0.25)
 			went = replay(frame, taps)
-		end
-		if not went and frame.Parent and isTopbar(title) then
-			local confirm = confirmOf(frame)
-			if confirm then
-				local before = frame.Position
-				press(confirm)
-				task.wait(0.5)
-				went = (not frame.Parent) or frame.Position ~= before
-			end
 		end
 	end
 	-- the buttons didn't take it (or there was nothing to press): the next question you came back from is shown
