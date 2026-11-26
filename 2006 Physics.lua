@@ -984,9 +984,11 @@ local function setupCharacterPhysics(character)
     -- circle, the user's recording). The speed follows how far round you still have to go (TURN_GAIN, never above
     -- TURN_MAX) and itself changes only so fast (TURN_ACCEL), so a turn starts and ends softly; it is never more than
     -- what is left of the turn in a frame, so it never goes past the way you walk (no swinging back and forth)
-    local TURN_GAIN = 12            -- 1 / s: about a twelfth of a second to close most of a turn
-    local TURN_MAX = math.rad(430)  -- the fastest turn (under the spin guard's limit; the earlier one was too quick)
-    local TURN_ACCEL = 70           -- rad / s^2: how fast the turning speed itself may change
+    -- (the user's FWM recordings: the body does not keep up with a stick, or a camera, that swings round fast - it trails
+    -- behind and shows its side - while 430 degrees a second kept up with everything and looked like shift lock)
+    local TURN_GAIN = 9             -- 1 / s: about a ninth of a second to close most of a turn
+    local TURN_MAX = math.rad(300)  -- the fastest turn, degrees a second
+    local TURN_ACCEL = 45           -- rad / s^2: how fast the turning speed itself may change
     local turnRate = 0
     local smoothTurning = false
     local function spinGuard(dt)
