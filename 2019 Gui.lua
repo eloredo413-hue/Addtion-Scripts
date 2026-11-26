@@ -3743,6 +3743,26 @@ task.spawn(function()
 
 	end
 
+	-- (whether a GUI has a top bar in it is looked up once a GUI, and again every few seconds, not twice a second
+	-- through every GUI)
+	local HasTopBar = setmetatable({}, { __mode = "k" })
+
+	local function TopBarIn(Gui)
+
+		local Known = HasTopBar[Gui]
+
+		if Known and os.clock() - Known.At < 5 then
+			return Known.Has
+		end
+
+		local Has = Gui:FindFirstChild("TopBarContainer", true) ~= nil
+
+		HasTopBar[Gui] = { Has = Has, At = os.clock() }
+
+		return Has
+
+	end
+
 	while task.wait(0.5) do
 
 		for _, Gui in ipairs(PlayerGui:GetChildren()) do
@@ -3752,7 +3772,7 @@ task.spawn(function()
 				and Gui.Enabled
 				and not Ignored[Gui.Name]
 				and Gui ~= LegacyGui
-				and not Gui:FindFirstChild("TopBarContainer", true)
+				and not TopBarIn(Gui)
 			then
 
 				pcall(function()
@@ -5902,7 +5922,7 @@ task.spawn(function()
 
 			end)
 
-			task.wait(0.25)
+			task.wait(1)
 
 		end
 

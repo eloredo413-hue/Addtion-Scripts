@@ -1159,6 +1159,22 @@ print("[Retro Master] Full script loaded successfully.")
 	local busy = false
 
 	-- (looked for 5 times a second: it went through Bloxy's windows on every frame for the whole game)
+	-- (and each window only when it is new or something came into it, or every 2 s)
+	local lookedAt = setmetatable({}, { __mode = "k" })
+	local changed = setmetatable({}, { __mode = "k" })
+	local function needsLook(frame)
+		local last = lookedAt[frame]
+		if last == nil then
+			frame.DescendantAdded:Connect(function() changed[frame] = true end)
+			changed[frame] = true
+		end
+		if changed[frame] or os.clock() - (last or 0) > 2 then
+			changed[frame] = nil
+			lookedAt[frame] = os.clock()
+			return true
+		end
+		return false
+	end
 	local lookAcc = 0
 	RunService.RenderStepped:Connect(function(dt)
 		if not sg or not sg.Parent then return end
@@ -1167,7 +1183,7 @@ print("[Retro Master] Full script loaded successfully.")
 		lookAcc = 0
 
 		for _, frame in ipairs(sg:GetChildren()) do
-			if frame:IsA("Frame") and not handled[frame] and not busy then
+			if frame:IsA("Frame") and not handled[frame] and not busy and needsLook(frame) then
 				local titleLabel, yesBtn, noBtn
 
 				for _, d in ipairs(frame:GetDescendants()) do

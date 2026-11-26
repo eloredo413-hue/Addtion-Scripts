@@ -67,6 +67,43 @@ for _, env in ipairs({ _G, BPGenv }) do
 	if env.__RetroMasterCleanup then pcall(env.__RetroMasterCleanup) end
 end
 
+-- (Addtion-Scripts) CAMERA: the classic camera while this is on, as in 2008 (and in FWM's game). On a phone Roblox's
+-- camera follows behind you by default ("Follow"); with Roblox's own turning, holding the stick to the side then turned
+-- you after the camera and the camera after you, round and round. Put back when this stops.
+local cameraWas = nil
+local function useClassicCamera()
+	if cameraWas or not LocalPlayer then return end
+	cameraWas = {}
+	pcall(function()
+		cameraWas.touch = LocalPlayer.DevTouchCameraMode
+		LocalPlayer.DevTouchCameraMode = Enum.DevTouchCameraMovementMode.Classic
+	end)
+	pcall(function()
+		cameraWas.computer = LocalPlayer.DevComputerCameraMode
+		LocalPlayer.DevComputerCameraMode = Enum.DevComputerCameraMovementMode.Classic
+	end)
+	local took = false
+	pcall(function() took = LocalPlayer.DevTouchCameraMode == Enum.DevTouchCameraMovementMode.Classic end)
+	if not took then
+		pcall(function()
+			local settings = UserSettings():GetService("UserGameSettings")
+			cameraWas.userTouch = settings.TouchCameraMovementMode
+			settings.TouchCameraMovementMode = Enum.TouchCameraMovementMode.Classic
+		end)
+	end
+end
+local function putCameraBack()
+	local was = cameraWas
+	cameraWas = nil
+	if not was or not LocalPlayer then return end
+	if was.touch ~= nil then pcall(function() LocalPlayer.DevTouchCameraMode = was.touch end) end
+	if was.computer ~= nil then pcall(function() LocalPlayer.DevComputerCameraMode = was.computer end) end
+	if was.userTouch ~= nil then
+		pcall(function() UserSettings():GetService("UserGameSettings").TouchCameraMovementMode = was.userTouch end)
+	end
+end
+useClassicCamera()
+
 -- (Addtion-Scripts) FWM's ExtraUtil when the game has it, else the helpers the script uses
 local ExtraUtil
 do
@@ -690,10 +727,14 @@ local function CharacterPhysics(script, R15)
 	local v_u_59 = 0
 	tick()
 	local v60 = game:GetService("RunService").RenderStepped
+	-- (Addtion-Scripts) found now and then instead of every frame: FWM's climbing flag, and the weight of the tool in
+	-- your hand (the script asked for the arm's joined parts once for every part of the tool, every frame)
+	local v_climbScanAt = 0
+	local v_massTool, v_massAt, v_massValue = nil, 0, 0
 	local function v73(p61)
 		-- upvalues: (copy) v_u_11, (copy) v_u_3, (copy) v_u_10, (ref) v_u_7, (copy) v_u_36, (copy) v_u_38, (copy) v_u_17, (copy) v_u_8, (copy) v_u_5, (ref) v_u_58, (copy) v_u_4, (ref) v_u_21, (ref) v_u_15, (copy) v_u_9, (ref) v_u_26, (ref) v_u_59, (ref) v_u_16, (copy) v_u_12, (ref) v_u_57, (ref) v_u_56, (ref) v_u_19, (copy) v_u_6, (ref) v_u_22, (ref) v_u_18
 		if not v_u_11.Parent then return end -- (Addtion-Scripts) the character is gone
-		v_u_11:GetConnectedParts()
+		-- (the script asked for the torso's joined parts here every frame and never used them: dropped)
 		-- (Addtion-Scripts) the script's turning delay above era 14 was here: see v_airTurn (no turning in the air only).
 		-- Here only in case a landing went by unseen: not in the air any more, or on the ground a moment after the jump,
 		-- and you can turn again
@@ -714,24 +755,29 @@ local function CharacterPhysics(script, R15)
 		if not R15 then
 			v_u_10.HipHeight = v_u_58 + v_u_15
 		end -- (Addtion-Scripts) R15: the squash is put on the root joint below, after the lean
-		for _, v64 in pairs(v_u_9:GetChildren()) do
-			if not v64:GetAttribute("FWMClimb") then
-				continue
+		if (not v_u_26 or not v_u_26.Parent) and os.clock() - v_climbScanAt > 1 then
+			v_climbScanAt = os.clock()
+			for _, v64 in pairs(v_u_9:GetChildren()) do
+				if v64:GetAttribute("FWMClimb") then v_u_26 = v64 end
 			end
-			v_u_26 = v64
 		end
 		if v_u_26 then
 			v_u_26.Value = v_climb.isClimbing() or v_u_10:GetState() == Enum.HumanoidStateType.Climbing -- (Addtion-Scripts) the climbing's
 		end
 		v_u_59 = v_u_4.Lerp(v_u_59, v_u_16, 0.3)
 		local v65 = 0
-		if v_u_9:FindFirstChildWhichIsA("Tool") then
-			for _, v66 in pairs(v_u_9:FindFirstChildWhichIsA("Tool"):GetDescendants()) do
-				if not (v66:IsA("Part") and table.find(v_u_12:GetConnectedParts(), v66)) then
-					continue
+		local v_tool = v_u_9:FindFirstChildWhichIsA("Tool")
+		if v_tool then
+			if v_tool ~= v_massTool or os.clock() - v_massAt > 0.5 then
+				v_massTool, v_massAt = v_tool, os.clock()
+				local v_joined = {}
+				for _, v_p in ipairs(v_u_12:GetConnectedParts()) do v_joined[v_p] = true end
+				v_massValue = 0
+				for _, v66 in ipairs(v_tool:GetDescendants()) do
+					if v66:IsA("Part") and v_joined[v66] then v_massValue = v_massValue + v66:GetMass() end
 				end
-				v65 = v65 + v66:GetMass()
 			end
+			v65 = v_massValue
 		end
 		v_u_57 = v_u_57 * (0.9 + p61)
 		v_u_57 = v_u_57 + v_u_11.AssemblyAngularVelocity.Y / 2000 * v65
@@ -941,6 +987,7 @@ local characterAddedConnection = LocalPlayer.CharacterAdded:Connect(onCharacter)
 BPGenv.__Physics2007Cleanup = function()
 	characterAddedConnection:Disconnect()
 	if stopCurrent then pcall(stopCurrent) stopCurrent = nil end
+	putCameraBack()
 	BPGenv.__Physics2007Cleanup = nil
 end
 print("[2008 Physics] on: FWM's CharacterPhysics, its 2008-2009 physics (time period " .. tostring(TIME_PERIOD) .. ": no landing bounce, into the ground a bit instead; no turning in the air).")

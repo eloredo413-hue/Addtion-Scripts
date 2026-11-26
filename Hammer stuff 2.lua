@@ -2253,17 +2253,46 @@ task.spawn(function()
 				if lim.active then return end
 				lim.active = true
 
+				-- (every part is kept in a list and a few hundred of them are looked at each step, going round, so a
+				-- colour changed later is still put back within a moment; it went through the whole game every step)
+				local list, inList, at = {}, setmetatable({}, { __mode = "k" }), 1
+				local function track(part)
+					if not inList[part] then
+						inList[part] = true
+						list[#list + 1] = part
+					end
+				end
+				for _, desc in ipairs(workspace:GetDescendants()) do
+					if desc:IsA("BasePart") then
+						track(desc)
+						if not isValidColor(desc) then snapPart(desc) end
+					end
+				end
+				local PER_STEP = 300
 				table.insert(lim.connections, RunService.Stepped:Connect(function()
 					if lim.isUpdating then return end
-					for _, desc in ipairs(workspace:GetDescendants()) do
-						if desc:IsA("BasePart") and not isValidColor(desc) then
-							snapPart(desc)
+					local n = 0
+					while n < PER_STEP and #list > 0 do
+						if at > #list then at = 1 end
+						local part = list[at]
+						if part.Parent == nil then
+							-- (gone: out of the list; it comes back in if it is put back)
+							inList[part] = nil
+							list[at] = list[#list]
+							list[#list] = nil
+						else
+							if not isValidColor(part) then snapPart(part) end
+							at = at + 1
 						end
+						n = n + 1
 					end
 				end))
 
 				table.insert(lim.connections, workspace.DescendantAdded:Connect(function(desc)
-					if desc:IsA("BasePart") then snapPart(desc) end
+					if desc:IsA("BasePart") then
+						track(desc)
+						snapPart(desc)
+					end
 				end))
 				print("[" .. tag .. "] Enabled.")
 			end

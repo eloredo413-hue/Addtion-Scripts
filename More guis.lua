@@ -504,6 +504,23 @@ task.spawn(function()
 	end
 
 	-- (looked for 10 times a second: it went through Bloxy's windows on every frame for the whole game)
+	-- (and each window only when it is new or something came into it, or every 2 s: Bloxy's windows that stay open
+	-- were gone through 10 times a second)
+	local lookedAt = setmetatable({}, { __mode = "k" })
+	local changed = setmetatable({}, { __mode = "k" })
+	local function needsLook(frame)
+		local last = lookedAt[frame]
+		if last == nil then
+			frame.DescendantAdded:Connect(function() changed[frame] = true end)
+			changed[frame] = true
+		end
+		if changed[frame] or os.clock() - (last or 0) > 2 then
+			changed[frame] = nil
+			lookedAt[frame] = os.clock()
+			return true
+		end
+		return false
+	end
 	local lookAcc = 0
 	RunService.RenderStepped:Connect(function(dt)
 		if not sg or not sg.Parent then return end
@@ -512,7 +529,7 @@ task.spawn(function()
 		lookAcc = 0
 
 		for _, frame in ipairs(sg:GetChildren()) do
-			if frame:IsA("Frame") and not handled[frame] then
+			if frame:IsA("Frame") and not handled[frame] and needsLook(frame) then
 				local slider = nil
 				for _, d in ipairs(frame:GetDescendants()) do
 					if d:IsA("ScrollingFrame") then
