@@ -3320,13 +3320,17 @@ end
         if year == 2011 or year == 2012 then return "2011" end
         if year == 2013 then
             local env = getgenv()
-            local oldBar = env.BPOldHealthBar2013 == true or env.BPOldHealthBar2013Mobile == true
-            if not oldBar then
-                -- (Addtion-Scripts) The old health bar is turned on a moment AFTER the loading screen goes up when a preset
-                -- (or a saved file) sets it, so the first screen was the wrong one and the other took its place: two loading
-                -- screens one after the other. The setting is already in the config file by then: it is read from there.
-                local cfg = readJsonFile("BloxyParadoxConfig.json")
-                oldBar = cfg ~= nil and cfg.isOldHealthBarEnabled == true
+            -- (Addtion-Scripts) The old health bar is turned on or off a moment AFTER the loading screen goes up when a preset (or
+            -- a saved file) sets it, so the first screen was the wrong one and the other took its place: two loading screens
+            -- one after the other. The setting is already in the config file by then, so that is what counts. The flags the
+            -- hammer sets stay set in the executor between runs (early 2014 after 2013 showed regular 2013's older screen from
+            -- the old flag): they are only used when the config doesn't say.
+            local cfg = readJsonFile("BloxyParadoxConfig.json")
+            local oldBar
+            if cfg ~= nil and cfg.isOldHealthBarEnabled ~= nil then
+                oldBar = cfg.isOldHealthBarEnabled == true
+            else
+                oldBar = env.BPOldHealthBar2013 == true or env.BPOldHealthBar2013Mobile == true
             end
             return oldBar and "2011" or "2013"
         end
