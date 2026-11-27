@@ -326,10 +326,17 @@ local function startClimbingFWM(o)
             lastGrab = now
             pcall(function() humanoid:ChangeState(Enum.HumanoidStateType.Climbing) end)
             local v = rootPart.AssemblyLinearVelocity
-            rootPart.AssemblyLinearVelocity = v * (XZ * damp) + Vector3.new(0, CLIMB_KICK, 0)
+            -- (Addtion-Scripts) the climb speed is eased to, not set each frame: the kick every frame, off and on between rungs,
+            -- made the climb hop (the user: climbing a bit more smooth)
+            local easeUp = 1 - math.exp(-14 * dt)
+            rootPart.AssemblyLinearVelocity = v * (XZ * damp) + Vector3.new(0, v.Y + (CLIMB_KICK - v.Y) * easeUp, 0)
         elseif now - lastGrab > CLIMB_GRACE then
             endClimb()
             return
+        else
+            -- (a gap between two rungs, inside the grace: the climb carries on at its speed instead of stalling)
+            local v = rootPart.AssemblyLinearVelocity
+            rootPart.AssemblyLinearVelocity = Vector3.new(v.X * damp, v.Y + (CLIMB_KICK - v.Y) * (1 - math.exp(-8 * dt)), v.Z * damp)
         end
         -- FWM's handleClimbing, every frame of the climb
         if md.Magnitude < 0.1 then
