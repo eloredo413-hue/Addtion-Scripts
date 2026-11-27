@@ -150,7 +150,7 @@ local TURN_P_GROUND, TURN_P_AIR = 4000, 1000 -- ...and how hard it pulls, on the
 local TURN_SHARE = 0.2          -- ...the facing it aims for moves this share of the way each 1/60 s
 -- (Addtion-Scripts) The gyro had no damping at all (D = 0): a spring with nothing to stop it swings past where it is
 -- aimed and back, the "recoil" the user saw turning the body a bit on every jump. Damped now, so it settles on the way.
-local TURN_D_GROUND, TURN_D_AIR = 450, 350
+local TURN_D_GROUND, TURN_D_AIR = 0, 0 -- (damping and the air lock below were taken out again: the user: fix whatever you did to the physics, turning around)
 -- CLIMBING: the rays find a rung or not from one frame to the next (the gaps between rungs), which switched the lift on and
 -- off and jerked the climb: it holds on this long after the last frame that found something, and its speed eases
 local CLIMB_HOLD = 0.2
@@ -571,7 +571,7 @@ local function setupCharacter(char)
 		-- (Addtion-Scripts) FALLING: the body keeps the way it faced as it left the ground and is never spun in the air. Aimed at the
 		-- stick, with a camera that follows the body round, the aim moved as the body turned and the fall went into a spin
 		-- (the user: when you fall the spinning goes crazy). Any spin the air gives it is held to a gentle turn.
-		local airborne = state == Enum.HumanoidStateType.Jumping or state == Enum.HumanoidStateType.Freefall
+		local airborne = false -- (off: the Old physics turns as it did before)
 		if airborne and not faceCamera then
 			if not airFacing then
 				local l = rootPart.CFrame.LookVector * XZ
