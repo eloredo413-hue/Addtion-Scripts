@@ -907,8 +907,10 @@ MODULES.TransparencyController = function()
 		if not camera or not self.character then return end
 		local now = tick()
 		local distance = (camera.Focus.p - camera.CFrame.p).Magnitude
-		local transparency = (distance < 2) and (1.0 - (distance - 0.5) / 1.5) or 0
-		if transparency < 0.5 then transparency = 0 end
+		-- (Addtion-Scripts) the body is gone well before the camera is in the head: from 4 studs it fades, and by 2.2 it is invisible, so
+		-- the big yellow head no longer fills the screen on the way into first person (the user's recording)
+		local transparency = (distance < 4) and ((4 - distance) / 1.8) or 0
+		if transparency < 0.05 then transparency = 0 end
 		if self.last and transparency < 1 and self.last < 0.95 then
 			local maxDelta = MAX_TWEEN_RATE * (now - self.lastUpdate)
 			transparency = self.last + clamp(-maxDelta, maxDelta, transparency - self.last)

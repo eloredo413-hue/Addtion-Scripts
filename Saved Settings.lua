@@ -1227,12 +1227,12 @@ end
 -- it was last time (an old "2006" animations answer left over made walking not animate).
 local function answers2013(textures)
 	return setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "2007" }, { "sounds", "Yes" },
-		{ "mouse", "normal" }, { "textures", textures }, { "mobileJump", "No" }, { "body2006", "No" }, { "forcefield", "normal" },
+		{ "mouse", "normal" }, { "textures", textures }, { "mobileJump", "No" }, { "body2006", "No" }, { "forcefield", "2012" },
 		{ "explosion", "2013" }, { "terrain", "2013" }, { "particles", "2013" }, { "emotes", "No" } })
 end
 local ANSWERS_2013 = answers2013("2012 textures")
 local CHOICES_2013 = { SafeChat = false, Sounds = true, Mouse = "normal", Textures = "2012", MobileJump = false, Body2006 = false,
-	Forcefield = "normal", Emotes = false }
+	Forcefield = "2012", Emotes = false }
 local EXTRA_2014 = { is2014ShadowsEnabled = true, is2013DynamicEnabled = true, isOutlineEnabled = true, isClassicFaceEnabled = true,
 	isOldPartSoundsEnabled = true, isHealthESPEnabled = true, isRemoveLeaderboardEnabled = true, isHideGameGuiEnabled = true,
 	isOldThumbstickEnabled = true }
@@ -1256,7 +1256,7 @@ local function presetEarly2014()
 		-- (and the 2016 studs: the textures question answered "2016 textures", as the user asked for early 2014)
 		physicsCamera = "bothOld2013", answers = answers2013("2016 textures"),
 		choices = { SafeChat = false, Sounds = true, Mouse = "normal", Textures = "2016", MobileJump = false, Body2006 = false,
-			Forcefield = "normal", Emotes = false } }
+			Forcefield = "2012", Emotes = false } }
 end
 local PRESETS = {
 	-- 2005 - 2008: from the user's videos of each (the hammer's options and the setup's answers as they gave them). No skybox in
@@ -1322,8 +1322,8 @@ local PRESETS = {
 			isAllPlayersEnabled = true, isRemoveProEnabled = true, isOldAvatarEnabled = false, is2006AvatarEnabled = false, is2008PlayersEnabled = false },
 		physicsCamera = "bothOld2007",
 		answers = setup({ { "safeChat", "Yes" }, { "animations", "2007" }, { "mouse", "normal" }, { "textures", "2012 textures" },
-			{ "body2006", "No" }, { "terrain", "2013" }, { "emotes", "No" } }),
-		choices = { SafeChat = true, Mouse = "normal", Textures = "2012", Body2006 = false, Emotes = false } },
+			{ "body2006", "No" }, { "forcefield", "2012" }, { "terrain", "2013" }, { "emotes", "No" } }),
+		choices = { SafeChat = true, Mouse = "normal", Textures = "2012", Body2006 = false, Forcefield = "2012", Emotes = false } },
 	era { name = "2012", resetAll = true, resetOld = true, topbar = "2012", note = "the 2011 options (remove pro, all players) with the chat bar, Old physics + 2007 camera",
 		hideControls = true, material = "is2009MaterialsEnabled",
 		extra = { isSmoothPlasticEnabled = true, isRemoveLightingEnabled = true, isNoShadowsEnabled = true, isOldMoonEnabled = true,
@@ -1332,9 +1332,9 @@ local PRESETS = {
 			isUGCRemoverEnabled = false, isAllPlayersEnabled = true, isRemoveProEnabled = true, isOldAvatarEnabled = false, is2006AvatarEnabled = false,
 			is2008PlayersEnabled = false },
 		physicsCamera = "bothOld2007",
-		answers = setup({ { "backpack", "No" }, { "sounds", "Yes" }, { "body2006", "No" }, { "terrain", "none" },
+		answers = setup({ { "backpack", "No" }, { "sounds", "Yes" }, { "body2006", "No" }, { "forcefield", "2012" }, { "terrain", "none" },
 			{ "particles", "2010" }, { "emotes", "No" } }),
-		choices = { Backpack = "none", Sounds = true, Body2006 = false, Emotes = false } },
+		choices = { Backpack = "none", Sounds = true, Body2006 = false, Forcefield = "2012", Emotes = false } },
 	preset2013(),
 	presetEarly2014(),
 	-- 2014 - 2024, from the user's recordings of each. No skybox in any of them; classic face on in all of them to 2023;
