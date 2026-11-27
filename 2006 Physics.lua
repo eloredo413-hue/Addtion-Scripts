@@ -1195,6 +1195,83 @@ local function setupCharacterPhysics(character)
         if child == fwmClimbValue then fwmClimbValue = nil end
     end))
 
+    -- (Addtion-Scripts) A READOUT OF WHAT THE BODY IS DOING, on the screen while you play (top left, small): so a screen recording
+    -- shows the numbers behind "unstable" and "spin" instead of me guessing from the pictures. Peaks are the highest in the last
+    -- second. Switch it off with getgenv().BP_PhysicsDebug = false before running.
+    local debugLabel, debugGui = nil, nil
+    local dbg = { yaw = nil, windowAt = os.clock(), textAt = 0, pYaw = 0, pTilt = 0, pCam = 0, pAng = 0, pAcc = 0,
+        sYaw = 0, sTilt = 0, sCam = 0, sAng = 0, sAcc = 0, lastVel = nil, yawRate = 0, tilt = 0, cam = 0, ang = 0, acc = 0 }
+    if BPGenv.BP_PhysicsDebug ~= false then
+        pcall(function()
+            local holder = (gethui and gethui()) or game:GetService("CoreGui")
+            debugGui = Instance.new("ScreenGui")
+            debugGui.Name = "BP2006Debug"
+            debugGui.ResetOnSpawn = false
+            debugGui.DisplayOrder = 100
+            debugLabel = Instance.new("TextLabel")
+            debugLabel.BackgroundColor3 = Color3.new(0, 0, 0)
+            debugLabel.BackgroundTransparency = 0.45
+            debugLabel.Position = UDim2.new(0, 4, 0, 52)
+            debugLabel.Size = UDim2.new(0, 300, 0, 128)
+            debugLabel.TextXAlignment = Enum.TextXAlignment.Left
+            debugLabel.TextYAlignment = Enum.TextYAlignment.Top
+            debugLabel.Font = Enum.Font.Code
+            debugLabel.TextSize = 13
+            debugLabel.TextColor3 = Color3.new(1, 1, 1)
+            debugLabel.Text = "2006 physics readout"
+            debugLabel.Parent = debugGui
+            debugGui.Parent = holder
+        end)
+        table.insert(activeConnections, {
+            Connected = true,
+            Disconnect = function(self)
+                self.Connected = false
+                if debugGui then pcall(function() debugGui:Destroy() end) end
+            end,
+        })
+    end
+    local function debugTick(dt)
+        if not debugLabel or not debugLabel.Parent or not dt or dt <= 0 then return end
+        local body = rootPart or torso
+        local cf = body.CFrame
+        local look = cf.LookVector
+        local yaw = math.atan2(-look.X, -look.Z)
+        if dbg.yaw then
+            local d = (yaw - dbg.yaw + math.pi) % (2 * math.pi) - math.pi
+            dbg.yawRate = math.abs(d) / dt
+        end
+        dbg.yaw = yaw
+        dbg.tilt = math.deg(math.acos(math.clamp(cf.UpVector.Y, -1, 1)))
+        local cam = workspace.CurrentCamera
+        dbg.cam = cam and math.deg(math.acos(math.clamp(cam.CFrame.UpVector.Y, -1, 1))) or 0
+        local w = body.AssemblyAngularVelocity
+        dbg.ang = w.Magnitude
+        local v = body.AssemblyLinearVelocity
+        if dbg.lastVel then dbg.acc = (v - dbg.lastVel).Magnitude / dt end
+        dbg.lastVel = v
+        dbg.pYaw = math.max(dbg.pYaw, dbg.yawRate)
+        dbg.pTilt = math.max(dbg.pTilt, dbg.tilt)
+        dbg.pCam = math.max(dbg.pCam, dbg.cam)
+        dbg.pAng = math.max(dbg.pAng, dbg.ang)
+        dbg.pAcc = math.max(dbg.pAcc, dbg.acc)
+        local now = os.clock()
+        if now - dbg.windowAt >= 1 then
+            dbg.windowAt = now
+            dbg.sYaw, dbg.sTilt, dbg.sCam, dbg.sAng, dbg.sAcc = dbg.pYaw, dbg.pTilt, dbg.pCam, dbg.pAng, dbg.pAcc
+            dbg.pYaw, dbg.pTilt, dbg.pCam, dbg.pAng, dbg.pAcc = 0, 0, 0, 0, 0
+        end
+        if now - dbg.textAt < 0.1 then return end
+        dbg.textAt = now
+        local horiz = (v * xzVector).Magnitude
+        local state = humanoid:GetState()
+        debugLabel.Text = string.format(
+            "2006 physics readout\nstate %s  walk %.1f  speed %.1f  up %.1f\nAutoRotate %s  glide %s  airlock %s\nyaw rate %.1f  (peak %.1f) rad/s\nbody tilt %.1f  (peak %.1f) deg\ncamera roll %.1f  (peak %.1f) deg\nbody spin %.1f  (peak %.1f) rad/s\nvelocity change %.0f  (peak %.0f)\ntool %s  camera %s",
+            tostring(state):gsub("Enum.HumanoidStateType.", ""), humanoid.MoveDirection.Magnitude, horiz, v.Y,
+            tostring(humanoid.AutoRotate), tostring(glideVelocity.Parent ~= nil), tostring(glideVelocity.Parent ~= nil and airYaw ~= nil),
+            dbg.yawRate, dbg.sYaw, dbg.tilt, dbg.sTilt, dbg.cam, dbg.sCam, dbg.ang, dbg.sAng, dbg.acc, dbg.sAcc,
+            tostring(character:FindFirstChildWhichIsA("Tool") ~= nil), tostring(cam and cam.CameraType and cam.CameraType.Name or "?"))
+    end
+
     table.insert(activeConnections, RunService.RenderStepped:Connect(function(dt)
         if not torso.Parent then return end
         -- (FWM asked for the torso's connected parts here every frame and never used them: dropped, it costs)
@@ -1255,6 +1332,8 @@ local function setupCharacterPhysics(character)
                 end)
             end
         end
+
+        pcall(debugTick, dt)
 
         if tick() - lastJumpTick > 0.05
             and glideVelocity.Parent ~= nil
