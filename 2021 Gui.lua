@@ -1168,8 +1168,22 @@ local scriptToRun = "local SHOW_STATUS = " .. tostring(SHOW_STATUS) .. "\n"
                 pcall(function() btn.ImageTransparency = 1 end)
             end
 
+            local function isNativeBadge(d)
+                -- (Addtion-Scripts) Roblox's own unread badge (the flag's), and what it is made of, is left as it is
+                local p = d
+                while p and p ~= btn do
+                    local n = string.lower(p.Name)
+                    if string.find(n, "badge", 1, true) or string.find(n, "unread", 1, true) or string.find(n, "notif", 1, true)
+                        or string.find(n, "counter", 1, true) then
+                        return true
+                    end
+                    p = p.Parent
+                end
+                if d:IsA("TextLabel") and tonumber(string.match(d.Text or "", "%d+")) then return true end
+                return false
+            end
             for _, d in ipairs(btn:GetDescendants()) do
-                if d == pill then
+                if d == pill or isNativeBadge(d) then
                 elseif d.Name == "LegacyChatIcon"
                     or d.Name == "LegacyChatBadge"
                     or d.Name == "LegacyChatBadgeChild"
@@ -1208,6 +1222,8 @@ local scriptToRun = "local SHOW_STATUS = " .. tostring(SHOW_STATUS) .. "\n"
         end
 
         local function attachBadge(btn)
+            -- (Addtion-Scripts) no badge of ours: the flag's (Roblox's own, on the chat button) is the one shown
+            if true then return end
             if not btn then return end
             if badgeOuter and badgeOuter.Parent then badgeOuter:Destroy() end
 
