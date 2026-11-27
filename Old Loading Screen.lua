@@ -1271,7 +1271,13 @@ end
 
 function api.Show(year)
 	year = tostring(year or genv.BPLoadingScreenYear or "2014")
-	local style = STYLES[year] or "2014"
+	-- (a year it has no screen for shows nothing: it used to fall back to the 2014 screen, which then came up over GUIs
+	-- that were not 2014)
+	local style = STYLES[year]
+	if not style then
+		print("[Old Loading Screen] no loading screen for \"" .. year .. "\"")
+		return false
+	end
 	api.Stop()
 
 	local conns = {}

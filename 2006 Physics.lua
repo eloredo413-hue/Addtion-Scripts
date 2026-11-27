@@ -636,6 +636,7 @@ local function setupCharacterPhysics(character)
     end
 
     local autoRotateTime = os.clock()
+    local lastLandAt = -math.huge -- (when the body last landed: the turn cap below only applies just after a landing)
     local landCount = 0
     local targetHipHeight = isR15 and r15HipHeight or 0
     local tiltAngleTarget = 0
@@ -865,6 +866,7 @@ local function setupCharacterPhysics(character)
     local function onStateChanged(_, newState)
         if newState == Enum.HumanoidStateType.Landed then
             autoRotateTime = os.clock() + 0.25
+            lastLandAt = os.clock()
             local velY = torso.AssemblyLinearVelocity.Y
             if velY >= -250 then
                 landCount += 1
@@ -969,6 +971,7 @@ local function setupCharacterPhysics(character)
     local SPIN_TIME = 0.4   -- seconds (more than half a turn at that speed)
     local SPIN_HOLD = 0.5   -- seconds held
     local TURN_LIMIT = 5   -- radians a second: the fastest the body is ever seen to turn (see below)
+    local TURN_LIMIT_WINDOW = 1.0 -- seconds after a landing that the cap applies: walking turns are Roblox's own
     local SPIN_TURN = 1.25 * math.pi -- radians: going round this far one way is a spin at any speed (turning to where you walk is
                                     -- half a turn at most), the user's spin was slower than SPIN_RATE
     local GROUND_STATES = {
@@ -1069,7 +1072,11 @@ local function setupCharacterPhysics(character)
             local spinW = body.AssemblyAngularVelocity
             local spinNow = spinW and spinW.Y or 0
             local physical = spinNow * turned > 0 and math.abs(spinNow) > 0.4 * math.abs(turned / dt)
-            if math.abs(turned) > maxStep and math.abs(turned) < 1.2 and humanoid.AutoRotate and stickMoving < 1.5 and physical then
+            -- (Addtion-Scripts) ONLY JUST AFTER A LANDING: that is the spin it was made for. On the ground, walking, the cap
+            -- slowed every turn and pulled the body back by the excess each frame, so a turn started, was held back, and the
+            -- body looked to turn and go back (the user's video): walking turns are Roblox's own now)
+            local justLanded = now - lastLandAt < TURN_LIMIT_WINDOW
+            if justLanded and math.abs(turned) > maxStep and math.abs(turned) < 1.2 and humanoid.AutoRotate and stickMoving < 1.5 and physical then
                 local excess = turned - (turned > 0 and maxStep or -maxStep)
                 local cf0 = body.CFrame
                 local pos = cf0.Position

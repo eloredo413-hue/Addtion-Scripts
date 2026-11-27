@@ -930,6 +930,11 @@ local function answerSetup(answers, files, name, firstWait)
 					end
 					if press(btn) then
 						given = given + 1
+						-- (the GUI picked, as the loader reads it: its loading screen, bubbles, purchase prompt and the
+						-- rest follow this pick, not whatever year Bloxy's config held before)
+						if isTopbar and text ~= "confirm" and text ~= DROPDOWN and text ~= CAMERA_DROPDOWN then
+							Env.BloxyTopbarPick = text
+						end
 						-- (the setup's < > remember it as this question's answer: ">" gives it again)
 						local wizard = Env.BPWizard
 						if type(wizard) == "table" and type(wizard.noteTap) == "function" then pcall(wizard.noteTap, btn) end
@@ -1120,8 +1125,8 @@ end
 -- of each preset: anything before 2013 with the mobile controls hidden; the year's plastic (2005, 2006 / 2007, 2008,
 -- 2010 for 2010 - 2013); the era's sky (2008 up to 2008, 2009 for 2010 - 2012, 2013 for 2013 - 2014); 2006-07 lighting
 -- for 2006 / 2007; iw legacy lighting with the year's lighting era for 2014 and early 2015 (with legacy lighting for
--- 2013 - early 2014), and the year's lighting era from 2016 on; 2006 without the old safe chat; 2007 with the old
--- players (old avatar) and no forcefields. Each preset sets every material, sky and lighting option, on or off, so
+-- 2013 - early 2014), and the year's lighting era from 2016 on; 2006 without the old safe chat; 2006 with the 2006 avatar, 2007 (on
+-- the 2008 GUI) with the old players (old avatar) and 2008 with the 2008 players, the UGC remover on in all of them but 2006. Each preset sets every material, sky and lighting option, on or off, so
 -- one picked after another leaves nothing of the one before. The other setup answers stay as last given, and the
 -- hammer's other options as they are.
 local SAFE_CHAT_QUESTION, FORCEFIELD_QUESTION = "Do you want the old safe chat?", "choose your forcefield"
@@ -1136,6 +1141,10 @@ local PHYSICS_CAMERA = {
 	-- (the 2006 and 2007 presets, from the user's videos: the 2006 physics and the 2007 camera, "Both")
 	both2006 = { config = { physicsCameraChoice = "both", physicsVariant = "2006", cameraVariant = "2007" },
 		answers = { DROPDOWN, "2006 Physics", CAMERA_DROPDOWN, "2007 Camera", "Both" } },
+	-- (the 2008 preset, from the user's video: the physics dropdown put on 2008, the camera one left on 2007, then "Both".
+	-- The 2008 physics is saved as "2007": see the label map at the physics / camera answer)
+	both2008 = { config = { physicsCameraChoice = "both", physicsVariant = "2007", cameraVariant = "2007" },
+		answers = { DROPDOWN, "2008 Physics", CAMERA_DROPDOWN, "2007 Camera", "Both" } },
 }
 local MATERIAL_KEYS = { "isSmoothPlasticEnabled", "isPlasticEnabled", "is2005MaterialsEnabled", "is2006MaterialsEnabled",
 	"is2008MaterialsEnabled", "is2009MaterialsEnabled", "is2010MaterialsEnabled", "is2016MaterialsEnabled",
@@ -1188,40 +1197,46 @@ local PRESETS = {
 	-- any of them: the night sky, the old moon and "remove lighting" make the sky.
 	era { name = "2005", topbar = "2005", note = "2005 plastic, remove lighting, no shadows, 2008 night sky, old moon, game GUI hidden, no controls",
 		hideControls = true, material = "is2005MaterialsEnabled", sky = { "is2008NightSkyEnabled" },
-		extra = { isRemoveLightingEnabled = true, isNoShadowsEnabled = true, isOldMoonEnabled = true, isHideGameGuiEnabled = true },
+		extra = { isRemoveLightingEnabled = true, isNoShadowsEnabled = true, isOldMoonEnabled = true, isHideGameGuiEnabled = true,
+			isUGCRemoverEnabled = true },
 		physicsCamera = "none",
 		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "Normal" }, { "sounds", "No" },
 			{ "mobileJump", "No" }, { "body2006", "No" }, { "explosion", "2006" }, { "terrain", "none" }, { "emotes", "No" } }),
 		choices = { SafeChat = false, Sounds = false, MobileJump = false, Body2006 = false, Emotes = false } },
 	era { name = "2006", topbar = "2006", note = "2006 plastic, the 2006 avatar, remove lighting, no shadows, 2006-07 lighting, lens flare, night sky, old moon, 2006 physics + 2007 camera",
 		hideControls = true, material = "is2006MaterialsEnabled", sky = { "is2008NightSkyEnabled" }, lighting = { "is2006LightingEnabled" },
-		-- (the hammer's avatar: one of its three at a time: the 2006 avatar here, the old avatar in 2007)
+		-- (the hammer's avatar: one of its three at a time: the 2006 avatar here, the old avatar in 2007, 2008 players in 2008;
+		-- the UGC remover on in every year but this one)
 		extra = { isRemoveLightingEnabled = true, isNoShadowsEnabled = true, isOldMoonEnabled = true, isLensFlareEnabled = true,
-			is2006AvatarEnabled = true, isOldAvatarEnabled = false, is2008PlayersEnabled = false },
+			is2006AvatarEnabled = true, isOldAvatarEnabled = false, is2008PlayersEnabled = false, isUGCRemoverEnabled = false },
 		physicsCamera = "both2006",
 		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "2006" }, { "sounds", "Yes" },
 			{ "mouse", "normal" }, { "textures", "2008 textures" }, { "mobileJump", "No" }, { "body2006", "No" },
 			{ "forcefield", "normal" }, { "explosion", "2006" }, { "terrain", "none" }, { "oldParticles", "Yes" },
 			{ "particles", "2008" }, { "emotes", "No" } }),
 		choices = { SafeChat = false, Sounds = true, Forcefield = "normal", MobileJump = false, Body2006 = false, Emotes = false } },
-	era { name = "2007", topbar = "2006", note = "the 2006-2007 GUI, old players, 2006 plastic, 2006-07 lighting, 2006 physics + 2007 camera, no forcefields",
+	-- (2007 picks the 2008 GUI in the user's video: there is no 2007 GUI)
+	era { name = "2007", topbar = "2008", note = "the 2008 GUI, old players, 2006 plastic, 2006-07 lighting, 2006 physics + 2007 camera, UGC remover",
 		hideControls = true, material = "is2006MaterialsEnabled", sky = { "is2008NightSkyEnabled" }, lighting = { "is2006LightingEnabled" },
 		extra = { isRemoveLightingEnabled = true, isNoShadowsEnabled = true, isOldMoonEnabled = true, isLensFlareEnabled = true,
-			isOldAvatarEnabled = true, is2006AvatarEnabled = false, is2008PlayersEnabled = false, isAllPlayersEnabled = false },
+			isOldAvatarEnabled = true, is2006AvatarEnabled = false, is2008PlayersEnabled = false, isAllPlayersEnabled = false,
+			isUGCRemoverEnabled = true },
 		physicsCamera = "both2006",
 		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "2007" }, { "sounds", "Yes" },
 			{ "mouse", "normal" }, { "textures", "2008 textures" }, { "mobileJump", "No" }, { "forcefield", "normal" },
 			{ "explosion", "2007" }, { "terrain", "none" }, { "oldParticles", "Yes" }, { "particles", "2008" }, { "emotes", "No" } }),
 		choices = { SafeChat = false, Sounds = true, Forcefield = "normal", MobileJump = false, Emotes = false } },
-	era { name = "2008", topbar = "2008", note = "2008 plastic, remove lighting, no shadows, 2006-07 lighting, lens flare, night sky, old moon, 2006 colours, camera sound, health ESP",
+	era { name = "2008", topbar = "2008", note = "2008 plastic, 2008 players, remove lighting, no shadows, 2006-07 lighting, lens flare, night sky, old moon, 2006 colours, camera sound, health ESP, UGC remover, 2008 physics + 2007 camera",
 		hideControls = true, material = "is2008MaterialsEnabled", sky = { "is2008NightSkyEnabled" }, lighting = { "is2006LightingEnabled" },
 		extra = { isRemoveLightingEnabled = true, isNoShadowsEnabled = true, isOldMoonEnabled = true, isLensFlareEnabled = true,
-			is2006ColorsEnabled = true, isOldCameraSoundEnabled = true, isHealthESPEnabled = true },
+			is2006ColorsEnabled = true, isOldCameraSoundEnabled = true, isHealthESPEnabled = true,
+			is2008PlayersEnabled = true, isOldAvatarEnabled = false, is2006AvatarEnabled = false, isUGCRemoverEnabled = true },
+		physicsCamera = "both2008",
 		answers = setup({ { "safeChat", "Yes" }, { "animations", "2007" }, { "sounds", "No" }, { "textures", "2008 textures" },
 			{ "mobileJump", "No" }, { "terrain", "none" }, { "emotes", "No" } }),
 		choices = { SafeChat = true, Sounds = false, MobileJump = false, Emotes = false } },
-	era { name = "2010", topbar = "2010", note = "2010 plastic, 2009 sky, old safe chat",
-		hideControls = true, material = "is2010MaterialsEnabled", sky = SKY_2009,
+	era { name = "2010", topbar = "2010", note = "2010 plastic, 2009 sky, old safe chat, UGC remover",
+		hideControls = true, material = "is2010MaterialsEnabled", sky = SKY_2009, extra = { isUGCRemoverEnabled = true },
 		answers = setup({ { "safeChat", "Yes" }, { "mobileJump", "No" }, { "terrain", "none" }, { "emotes", "No" } }),
 		choices = { SafeChat = true, MobileJump = false, Emotes = false } },
 	era { name = "2011", topbar = "2011", note = "2010 plastic, 2009 sky",
@@ -1254,6 +1269,12 @@ local BLOXY_TOPBAR_IDS = {
 	["2013 mobile"] = "2013mobile", ["2013"] = "2013", ["2012"] = "2012", ["2010"] = "2010",
 }
 
+-- The year Bloxy itself saves when one of More guis' GUIs is picked (More guis presses that year's button for it, then
+-- swaps the GUI in). A preset writes it too: left alone, the config kept whatever year was in it before, and the
+-- loader then gave 2008, 2006 and the like that year's loading screen, purchase prompt and bubbles.
+local MORE_GUIS_BLOXY_IDS = { ["2011"] = "2013", ["2008"] = "2013", ["2006"] = "2013", ["2005"] = "2013",
+	["1989"] = "2013", ["1988"] = "2013", ["2015 early"] = "2014" }
+
 local function findPreset(name)
 	for _, preset in ipairs(PRESETS) do
 		if preset.name == name then return preset end
@@ -1268,7 +1289,8 @@ local function presetFiles(preset)
 	if type(config) ~= "table" then config = {} end
 	for key, value in pairs(preset.config or {}) do config[key] = value end
 	config.Choices = type(config.Choices) == "table" and config.Choices or {}
-	if BLOXY_TOPBAR_IDS[preset.topbar] then config.Choices.Topbar = BLOXY_TOPBAR_IDS[preset.topbar] end
+	local bloxyId = BLOXY_TOPBAR_IDS[preset.topbar] or MORE_GUIS_BLOXY_IDS[preset.topbar]
+	if bloxyId then config.Choices.Topbar = bloxyId end
 	for key, value in pairs(preset.choices or {}) do config.Choices[key] = value end
 	files[CONFIG_FILE] = encode(config) or files[CONFIG_FILE] or "{}"
 	files[TOPBAR_PICK_FILE] = encode({ Pick = preset.topbar }) or files[TOPBAR_PICK_FILE]
