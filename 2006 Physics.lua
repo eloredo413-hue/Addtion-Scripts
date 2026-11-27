@@ -650,6 +650,13 @@ local function setupCharacterPhysics(character)
         humanoid.JumpPower = 0
     end
 
+    -- (Addtion-Scripts) WHAT TURNS AND TILTS THE BODY ON A JUMP: FWM put its glide, its sideways stop and its landing bounce on the
+    -- torso (BodyVelocity, a force of 9,000,000,000). In FWM's own character a constraint on the torso (TorsoAttach.AngularTilt)
+    -- holds the body steady against it; any other game's character has none, and a huge force on a part that is not at the
+    -- body's centre is a huge turning force: the little tilt when you walk and jump, and the spin on a jump (the user's
+    -- recordings). They are on the HumanoidRootPart now (the body's own centre: nothing for them to turn), and the body's
+    -- own turning is held at zero while one of them pushes.
+    local pushPart = rootPart or torso
     local glideVelocity = ExtraUtil.Create("BodyVelocity", {
         Name = "GlideVelocity",
         MaxForce = xzVector * 9000000000,
@@ -744,15 +751,16 @@ local function setupCharacterPhysics(character)
     end
 
     local landTilt, landDip = 0, 0 -- (the landing tip and dip: see applyRootPose)
-    local LAND_TILT = 9       -- degrees tipped forward landing at walking speed: FWM's own number (its tilt is speed / 16 * 9)
-    local LAND_TILT_MAX = 12  -- (14 was too much: "the tilt isn't that crazy" in FWM)
+    local shownTilt, shownDip = 0, 0 -- (what is drawn: eased toward them, so nothing snaps)
+    local LAND_TILT = 12      -- degrees aimed at landing at walking speed (FWM: speed / 16 * 9; eased in it shows about half way: 6)
+    local LAND_TILT_MAX = 14
     local LAND_DIP = -0.4     -- studs into the ground on landing
     local FALL_OVER_SPEED = 110 -- (a landing this fast, from a high place: you fall over, as in the reference)
     local function triggerTilt()
         if not isTilting then
             isTilting = true
             task.spawn(function()
-                tiltStopVel.Parent = torso
+                tiltStopVel.Parent = pushPart
                 task.wait()
                 tiltStopVel.Parent = nil
             end)
@@ -806,6 +814,14 @@ local function setupCharacterPhysics(character)
         end,
     })
 
+    -- the body's own turning held at zero (no tilt, no spin) while a push is on it
+    local function noTurn(part)
+        pcall(function()
+            local w = part.AssemblyAngularVelocity
+            if w.X ~= 0 or w.Y ~= 0 or w.Z ~= 0 then part.AssemblyAngularVelocity = Vector3.new(0, 0, 0) end
+        end)
+    end
+
     local function forceVelocity(upwardSpeed)
         -- (Addtion-Scripts) for the 2007 animation: this throws you up as a landing bounce, not a fall, so it keeps
         -- the arms coming down instead of putting them back up
@@ -813,11 +829,13 @@ local function setupCharacterPhysics(character)
         holdOffFall() -- (and no falling state for it: see above)
         local bv = ExtraUtil.Create("BodyVelocity", {
             MaxForce = Vector3.new(0, 9000000000, 0),
-            Parent = torso,
+            Parent = pushPart,
             Velocity = Vector3.new(0, 1, 0) * upwardSpeed,
         })
         RunService.Heartbeat:Wait()
+        noTurn(pushPart)
         RunService.Heartbeat:Wait()
+        noTurn(pushPart)
         bv:Destroy()
     end
 
@@ -837,7 +855,7 @@ local function setupCharacterPhysics(character)
         lastJumpTick = tick()
         if timePeriod <= 14 then
             glideVelocity.Velocity = torso.AssemblyLinearVelocity * xzVector
-            glideVelocity.Parent = torso
+            glideVelocity.Parent = pushPart
         end
     end
 
@@ -1103,6 +1121,12 @@ local function setupCharacterPhysics(character)
         landDip = landDip * math.exp(-9 * dt)
         if math.abs(landTilt) < 0.05 then landTilt = 0 end
         if math.abs(landDip) < 0.005 then landDip = 0 end
+        -- (smooth, the way FWM's tilt is: it rose a third of the way to its target each frame; set straight to the number it
+        -- snapped, the user's "very unsmooth, very clunky")
+        shownTilt = shownTilt + (landTilt - shownTilt) * (1 - math.exp(-18 * dt))
+        shownDip = shownDip + (landDip - shownDip) * (1 - math.exp(-30 * dt))
+        if math.abs(shownTilt) < 0.02 and landTilt == 0 then shownTilt = 0 end
+        if math.abs(shownDip) < 0.002 and landDip == 0 then shownDip = 0 end
     end
     local function applyRootPose()
         if not (rootJoint and rootJoint.Parent) then
@@ -1114,13 +1138,13 @@ local function setupCharacterPhysics(character)
         if rootWritten == nil or current ~= rootWritten then rootBase = current end
         local want = rootBase
         if isR15 and sinkOffset ~= 0 then want = want + Vector3.new(0, sinkOffset, 0) end
-        if landDip ~= 0 then want = want + Vector3.new(0, landDip, 0) end
-        if landTilt ~= 0 then
+        if shownDip ~= 0 then want = want + Vector3.new(0, shownDip, 0) end
+        if shownTilt ~= 0 then
             -- (tipped forward about the feet, in the body's own space: forward is its -Z)
             local body = rootPart or torso
             local feet = ((body and body.Size and body.Size.Y / 2) or 1) + (isR15 and r15HipHeight or 2)
             local pivot = Vector3.new(0, -feet, 0)
-            want = CFrame.new(pivot) * CFrame.fromAxisAngle(Vector3.new(1, 0, 0), -math.rad(landTilt)) * CFrame.new(-pivot) * want
+            want = CFrame.new(pivot) * CFrame.fromAxisAngle(Vector3.new(1, 0, 0), -math.rad(shownTilt)) * CFrame.new(-pivot) * want
         end
         if current ~= want then
             rootJoint.C0 = want
@@ -1221,14 +1245,8 @@ local function setupCharacterPhysics(character)
         -- jumped. The jump glide turns Roblox's turning off for the jump, but the body still had the turn it was making
         -- as it left the ground and kept going round in the air (turning left or right while jumping: a spin, the
         -- user's video). That turn is stopped here.
-        if glideVelocity.Parent ~= nil and not humanoid.AutoRotate then
-            local body = rootPart or torso
-            pcall(function()
-                local w = body.AssemblyAngularVelocity
-                if math.abs(w.Y) > 0.01 then
-                    body.AssemblyAngularVelocity = Vector3.new(w.X, 0, w.Z)
-                end
-            end)
+        if glideVelocity.Parent ~= nil then
+            noTurn(rootPart or torso)
         end
 
         if tick() - lastJumpTick > 0.05
