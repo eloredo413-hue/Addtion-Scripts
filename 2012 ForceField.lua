@@ -321,6 +321,8 @@ do
 	function engine.IsRunning() return running end
 	function engine.Start()
 		if running or not alive then return end
+		-- (Addtion-Scripts) the old avatar is on (Hammer stuff 2): no forcefield effect for anyone
+		if Env.BPNoForcefield == true then return end
 		running = true
 		for _, player in ipairs(Players:GetPlayers()) do pcall(watchPlayer, player) end
 		connect(engineConns, Players.PlayerAdded, function(player) pcall(watchPlayer, player) end)

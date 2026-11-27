@@ -204,6 +204,8 @@ local function checkForcefield(char, data)
 	local field = char:FindFirstChildOfClass("ForceField")
 	local style = field and choices.forcefield or nil
 	if style == "2012" and particles2012() then style = nil end -- (drawn by 2012 ForceField.lua)
+	-- (Addtion-Scripts) the old avatar is on (Hammer stuff 2): no forcefield effect for anyone
+	if Env.BPNoForcefield == true then style = nil end
 	local st = data.ff
 	if st and (st.style ~= style or st.field ~= field) then
 		removeForcefield(data)

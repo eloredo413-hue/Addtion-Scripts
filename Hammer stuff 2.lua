@@ -1918,6 +1918,95 @@ task.spawn(function()
 	end
 
 	------------------------------------------------------------
+	-- OLD AVATAR: NO FORCEFIELD EFFECT (Addtion-Scripts)
+	-- With the old avatar ("regular old players") on, nobody has the forcefield effect: Roblox's own bubble is hidden on every
+	-- character (yours and everyone's), Bloxy's 2008 outline and its blue 2012 bubble are taken off a character that has a
+	-- forcefield, and the particle 2012 forcefield is stopped and kept from starting (getgenv().BPNoForcefield is the flag
+	-- 2012 ForceField.lua and All Players.lua look at). Unticking it puts what was hidden back.
+	------------------------------------------------------------
+	do
+		local genv = (getgenv and getgenv()) or _G
+		local origApply, origRestore = actions.applyOldAvatar, actions.restoreOldAvatar
+		local ffOff = { on = false, conns = {}, hidden = setmetatable({}, { __mode = "k" }) }
+		local function hideOne(obj)
+			if not ffOff.on then return end
+			local class = obj.ClassName
+			if class == "ForceField" then
+				if ffOff.hidden[obj] == nil then ffOff.hidden[obj] = obj.Visible end
+				pcall(function() obj.Visible = false end)
+				table.insert(ffOff.conns, obj:GetPropertyChangedSignal("Visible"):Connect(function()
+					if ffOff.on and obj.Visible then pcall(function() obj.Visible = false end) end
+				end))
+			elseif class == "SelectionBox" or class == "SelectionSphere" then
+				-- (Bloxy's 2008 forcefield: an outline round each part, flashing; only on a character that has a forcefield)
+				local char = obj:FindFirstAncestorOfClass("Model")
+				if char and char:FindFirstChildOfClass("ForceField") then
+					if ffOff.hidden[obj] == nil then ffOff.hidden[obj] = obj.Visible end
+					pcall(function() obj.Visible = false end)
+				end
+			end
+		end
+		local function watchCharacter(char)
+			if not char or not ffOff.on then return end
+			for _, d in ipairs(char:GetDescendants()) do hideOne(d) end
+			table.insert(ffOff.conns, char.DescendantAdded:Connect(function(d)
+				-- (a frame later: the forcefield is in the character by then, for the outline to be told apart)
+				task.defer(function() if d.Parent then hideOne(d) end end)
+			end))
+		end
+		local function watchPlayer(plr)
+			if plr.Character then watchCharacter(plr.Character) end
+			table.insert(ffOff.conns, plr.CharacterAdded:Connect(watchCharacter))
+		end
+		local function takeBloxyEffectsOff()
+			-- the particle 2012 forcefield, and Bloxy's blue 2012 bubble (workspace.FFCloneHolder)
+			local api = genv.Forcefield2012
+			if type(api) == "table" and type(api.IsRunning) == "function" and type(api.Stop) == "function" then
+				local ok, running = pcall(api.IsRunning)
+				if ok and running then pcall(api.Stop) end
+			end
+			local holder = workspace:FindFirstChild("FFCloneHolder")
+			if holder then
+				for _, child in ipairs(holder:GetChildren()) do pcall(function() child:Destroy() end) end
+			end
+		end
+		local function ffOffStart()
+			if ffOff.on then return end
+			ffOff.on = true
+			genv.BPNoForcefield = true
+			for _, plr in ipairs(Players:GetPlayers()) do watchPlayer(plr) end
+			table.insert(ffOff.conns, Players.PlayerAdded:Connect(watchPlayer))
+			takeBloxyEffectsOff()
+			task.spawn(function()
+				while ffOff.on do
+					task.wait(1)
+					if ffOff.on then pcall(takeBloxyEffectsOff) end
+				end
+			end)
+			print("[Old Avatar] The forcefield effect is off while it is on.")
+		end
+		local function ffOffStop()
+			if not ffOff.on then return end
+			ffOff.on = false
+			genv.BPNoForcefield = nil
+			for _, c in ipairs(ffOff.conns) do pcall(function() c:Disconnect() end) end
+			table.clear(ffOff.conns)
+			for obj, was in pairs(ffOff.hidden) do
+				if obj.Parent then pcall(function() obj.Visible = was end) end
+			end
+			table.clear(ffOff.hidden)
+		end
+		function actions.applyOldAvatar()
+			origApply()
+			ffOffStart()
+		end
+		function actions.restoreOldAvatar()
+			ffOffStop()
+			origRestore()
+		end
+	end
+
+	------------------------------------------------------------
 	-- 6. CLASSIC FACE LOGIC (LOADSTRING)
 	------------------------------------------------------------
 	do
