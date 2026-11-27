@@ -1399,7 +1399,18 @@ local function setupCharacterPhysics(character)
     local raycastParams = RaycastParams.new()
     raycastParams.FilterDescendantsInstances = { character, workspace.CurrentCamera }
     raycastParams.RespectCanCollide = true
-    local lastGlideBounce = tick()
+    local lastGlideBounce = 0
+    local GLIDE_BOUNCE_GAP = 0.3 -- (seconds: one bounce per wall; the next limb to touch it is not another)
+    local GLIDE_HEAD_ON = 0.8    -- (how straight into the wall: the cosine of the angle, about 37 degrees)
+
+    -- another player's body (or what it holds) is not a wall
+    local function glideBodyHit(hit)
+        local ok, other = pcall(function()
+            local model = hit:FindFirstAncestorWhichIsA("Model")
+            return model ~= nil and model ~= character and model:FindFirstChildOfClass("Humanoid") ~= nil
+        end)
+        return ok and other
+    end
 
     local function createGlideConnections()
         for _, part in pairs(character:GetChildren()) do
@@ -1416,27 +1427,57 @@ local function setupCharacterPhysics(character)
                     glideVelocity.Parent = nil
                     return
                 end
-                local minHeight = torso.Position.Y - 2
-                if hit.Position.Y >= minHeight and tick() - lastGlideBounce > 0.01 then
-                    lastGlideBounce = tick()
-                    local closestPoint = hit:GetClosestPointOnSurface(part.Position)
-                    local dir = closestPoint - part.Position
-                    local castDir = dir.Magnitude <= 0 and Vector3.new(0, 0, 0) or dir.Unit
-                    local result = workspace:Shapecast(part, castDir, raycastParams)
-
-                    if result then
-                        if not result.Instance.CanCollide then
-                            return
-                        end
-                        if minHeight < result.Position.Y then
-                            local speed = glideVelocity.Velocity.Magnitude
-                            local reflected = result.Normal * speed
-                            glideVelocity.Velocity = Vector3.new(reflected.X, glideVelocity.Velocity.Y, reflected.Z)
-                        end
-                    elseif minHeight < part.Position.Y then
-                        glideVelocity.Velocity = glideVelocity.Velocity * Vector3.new(-1, 1, -1)
-                    end
+                -- (Addtion-Scripts) NO SWING SIDEWAYS. FWM sent the glide off along the touched surface's normal at full speed,
+                -- from any touch of any part, by any limb, one touch after another: brushing a railing, a step, a slope, the side
+                -- of a platform or another player's body threw the whole jump off to the left or right (and the second touch,
+                -- from the next limb, threw it back), the user's "swings left and right when walking straight and jumping".
+                -- Now the glide is only turned back by a wall it runs straight into (within about 37 degrees of head-on), once;
+                -- anything else (a glancing touch, the side of something, the ground, a slope, a player) leaves it alone,
+                -- Roblox's own collision stops you where it should.
+                if tick() - lastGlideBounce < GLIDE_BOUNCE_GAP then
+                    return
                 end
+                local minHeight = torso.Position.Y - 2
+                if hit.Position.Y < minHeight or glideBodyHit(hit) then
+                    return
+                end
+                local v = glideVelocity.Velocity
+                local vxz = Vector3.new(v.X, 0, v.Z)
+                local speed = vxz.Magnitude
+                if speed < 2 then
+                    return
+                end
+                local gotPoint, closestPoint = pcall(function() return hit:GetClosestPointOnSurface(part.Position) end)
+                if not gotPoint or closestPoint == nil then
+                    return
+                end
+                local dir = closestPoint - part.Position
+                local castDir = dir.Magnitude <= 0 and Vector3.new(0, 0, 0) or dir.Unit
+                local result = workspace:Shapecast(part, castDir, raycastParams)
+
+                local normal
+                if result then
+                    if not result.Instance.CanCollide or minHeight >= result.Position.Y then
+                        return
+                    end
+                    normal = result.Normal
+                elseif castDir.Magnitude > 0 then
+                    normal = -castDir -- (no hit from the cast: the wall's face is the way from the touched point back to the part)
+                else
+                    return
+                end
+                -- a wall: upright, not a floor, a slope you could walk up, or an underside
+                local flat = Vector3.new(normal.X, 0, normal.Z)
+                if math.abs(normal.Y) > 0.5 or flat.Magnitude < 0.5 then
+                    return
+                end
+                flat = flat.Unit
+                if vxz.Unit:Dot(flat) > -GLIDE_HEAD_ON then
+                    return
+                end
+                lastGlideBounce = tick()
+                local reflected = flat * speed
+                glideVelocity.Velocity = Vector3.new(reflected.X, v.Y, reflected.Z)
             end)
             table.insert(glideTouchConnections, conn)
         end
