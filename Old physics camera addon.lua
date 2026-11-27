@@ -148,6 +148,13 @@ local SPRING_KEEP = 0.75        -- ...with this share of the speed
 local TURN_TORQUE = 2000        -- turning: the gyro's strength, so the character turns round rather than snapping
 local TURN_P_GROUND, TURN_P_AIR = 4000, 1000 -- ...and how hard it pulls, on the ground and in the air
 local TURN_SHARE = 0.2          -- ...the facing it aims for moves this share of the way each 1/60 s
+-- (Addtion-Scripts) The gyro had no damping at all (D = 0): a spring with nothing to stop it swings past where it is
+-- aimed and back, the "recoil" the user saw turning the body a bit on every jump. Damped now, so it settles on the way.
+local TURN_D_GROUND, TURN_D_AIR = 450, 350
+-- CLIMBING: the rays find a rung or not from one frame to the next (the gaps between rungs), which switched the lift on and
+-- off and jerked the climb: it holds on this long after the last frame that found something, and its speed eases
+local CLIMB_HOLD = 0.2
+local CLIMB_EASE = 14
 local CLIMB_SIDE_DAMP = 0.8     -- sideways speed kept each frame while climbing
 local XZ = Vector3.new(1, 0, 1)
 
@@ -530,7 +537,7 @@ local function setupCharacter(char)
 	-- while walking to a clicked point (Roblox turns it then).
 	local turnGyro = Instance.new("BodyGyro")
 	turnGyro.Name = "HumanoidRotate"
-	turnGyro.D = 0
+	turnGyro.D = TURN_D_GROUND
 	turnGyro.P = 3800
 	turnGyro.MaxTorque = Vector3.new(0, TURN_TORQUE, 0)
 	table.insert(CharacterObjects, turnGyro)
@@ -567,6 +574,7 @@ local function setupCharacter(char)
 			if not faceCamera then
 				local inAir = state == Enum.HumanoidStateType.Jumping or state == Enum.HumanoidStateType.Freefall
 				turnGyro.P = inAir and TURN_P_AIR or TURN_P_GROUND
+				turnGyro.D = inAir and TURN_D_AIR or TURN_D_GROUND
 			end
 			local pos = rootPart.Position
 			local share = 1 - (1 - TURN_SHARE) ^ (elapsed * 60)
@@ -689,17 +697,27 @@ local function setupCharacter(char)
 			Parent = true,
 			Destroy = function() if humanoid.Parent then setRobloxClimbing(true) end end,
 		})
-		addConnection(RunService.Heartbeat:Connect(function()
+		local lastFoundClimb, easedLift = -1, nil
+		addConnection(RunService.Heartbeat:Connect(function(dt)
 			if destroyed or not char.Parent or humanoid.Health <= 0 then return end
 			local md = humanoid.MoveDirection
 			local climbingNow = false
 			if not humanoid.SeatPart and md.Magnitude > 0 then
 				local ok, yes = pcall(retroClimbable)
 				climbingNow = ok and yes == true
+				if climbingNow then
+					lastFoundClimb = os.clock()
+				elseif retroClimbing and os.clock() - lastFoundClimb < CLIMB_HOLD then
+					climbingNow = true -- (a gap between two rungs: still climbing)
+				end
 			end
 			if climbingNow then
 				local ws = humanoid.WalkSpeed
-				retroLift.Velocity = Vector3.new(md.X * ws, ws * CLIMB_SPEED_SHARE, md.Z * ws)
+				local want = Vector3.new(md.X * ws, ws * CLIMB_SPEED_SHARE, md.Z * ws)
+				-- (the speed eases to the one wanted, instead of switching to it)
+				if not easedLift or not retroClimbing then easedLift = Vector3.new(0, math.max(0, rootPart.AssemblyLinearVelocity.Y), 0) end
+				easedLift = easedLift:Lerp(want, 1 - math.exp(-CLIMB_EASE * math.min(dt or 1 / 60, 0.1)))
+				retroLift.Velocity = easedLift
 				if retroLift.Parent ~= rootPart then retroLift.Parent = rootPart end
 				-- (the climbing pose: Roblox's Climbing state, only while this climbs)
 				setRobloxClimbing(true)
