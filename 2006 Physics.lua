@@ -968,6 +968,7 @@ local function setupCharacterPhysics(character)
     local SPIN_RATE = 8     -- radians a second (more than a turn every 0.8 s)
     local SPIN_TIME = 0.4   -- seconds (more than half a turn at that speed)
     local SPIN_HOLD = 0.5   -- seconds held
+    local TURN_LIMIT = 5   -- radians a second: the fastest the body is ever seen to turn (see below)
     local SPIN_TURN = 1.25 * math.pi -- radians: going round this far one way is a spin at any speed (turning to where you walk is
                                     -- half a turn at most), the user's spin was slower than SPIN_RATE
     local GROUND_STATES = {
@@ -1042,6 +1043,22 @@ local function setupCharacterPhysics(character)
         local yaw = yawOf(look)
         if lastYaw then
             local turned = (yaw - lastYaw + math.pi) % (2 * math.pi) - math.pi
+            -- (Addtion-Scripts) THE FASTEST TURN: Roblox's own turning is quick, and the moment a jump ends (the air lock held the
+            -- body facing the way it jumped, and the stick has moved since) it swung the body round at 15 to 23 radians a second,
+            -- 2 to 4 turns a second: the spin after every jump (the readout, in the user's recording). Whatever turns the body
+            -- (Roblox's turning, a gyro, anything), it is never seen to turn faster than TURN_LIMIT: what is over is taken back
+            -- each frame, so it eases round to where you walk instead. Ordinary turning (a few radians a second) is not touched.
+            -- (a body set to a new facing in one frame - over 1.2 radians - is a teleport or a script facing it somewhere, not
+            -- turning: that is left as it is)
+            local maxStep = TURN_LIMIT * dt
+            if math.abs(turned) > maxStep and math.abs(turned) < 1.2 and humanoid.AutoRotate then
+                local excess = turned - (turned > 0 and maxStep or -maxStep)
+                local cf0 = body.CFrame
+                local pos = cf0.Position
+                body.CFrame = CFrame.new(pos) * CFrame.fromAxisAngle(Vector3.new(0, 1, 0), -excess) * (CFrame.new(-pos) * cf0)
+                yaw = yaw - excess
+                turned = turned - excess
+            end
             local rate = turned / dt
             local sign = rate > 0 and 1 or -1
             -- (going round with a stick that is going round is Roblox's normal turning, however fast you swing the stick: not a
@@ -1195,13 +1212,13 @@ local function setupCharacterPhysics(character)
         if child == fwmClimbValue then fwmClimbValue = nil end
     end))
 
-    -- (Addtion-Scripts) A READOUT OF WHAT THE BODY IS DOING, on the screen while you play (top left, small): so a screen recording
-    -- shows the numbers behind "unstable" and "spin" instead of me guessing from the pictures. Peaks are the highest in the last
-    -- second. Switch it off with getgenv().BP_PhysicsDebug = false before running.
+    -- (Addtion-Scripts) A READOUT OF WHAT THE BODY IS DOING (top left, small), OFF unless getgenv().BP_PhysicsDebug = true is set
+    -- before running: so a screen recording can show the numbers behind "unstable" and "spin". Peaks are the highest in the last
+    -- second. (It showed the spin: after every jump the body turned at 15 to 23 radians a second the moment it landed.)
     local debugLabel, debugGui = nil, nil
     local dbg = { yaw = nil, windowAt = os.clock(), textAt = 0, pYaw = 0, pTilt = 0, pCam = 0, pAng = 0, pAcc = 0,
         sYaw = 0, sTilt = 0, sCam = 0, sAng = 0, sAcc = 0, lastVel = nil, yawRate = 0, tilt = 0, cam = 0, ang = 0, acc = 0 }
-    if BPGenv.BP_PhysicsDebug ~= false then
+    if BPGenv.BP_PhysicsDebug == true then
         pcall(function()
             local holder = (gethui and gethui()) or game:GetService("CoreGui")
             debugGui = Instance.new("ScreenGui")
