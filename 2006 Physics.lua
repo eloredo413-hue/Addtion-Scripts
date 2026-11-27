@@ -657,6 +657,7 @@ local function setupCharacterPhysics(character)
     -- recordings). They are on the HumanoidRootPart now (the body's own centre: nothing for them to turn), and the body's
     -- own turning is held at zero while one of them pushes.
     local pushPart = rootPart or torso
+    local airYaw = nil -- (the way the body faced as it left the ground: it keeps facing it until it lands, see THE AIR LOCK)
     local glideVelocity = ExtraUtil.Create("BodyVelocity", {
         Name = "GlideVelocity",
         MaxForce = xzVector * 9000000000,
@@ -855,6 +856,8 @@ local function setupCharacterPhysics(character)
         lastJumpTick = tick()
         if timePeriod <= 14 then
             glideVelocity.Velocity = torso.AssemblyLinearVelocity * xzVector
+            local lv = pushPart.CFrame.LookVector
+            airYaw = math.atan2(-lv.X, -lv.Z)
             glideVelocity.Parent = pushPart
         end
     end
@@ -964,13 +967,16 @@ local function setupCharacterPhysics(character)
     -- sitting, tripped or flung.
     local SPIN_RATE = 8     -- radians a second (more than a turn every 0.8 s)
     local SPIN_TIME = 0.4   -- seconds (more than half a turn at that speed)
-    local SPIN_HOLD = 0.5   -- seconds held still
+    local SPIN_HOLD = 0.5   -- seconds held
+    local SPIN_TURN = 1.25 * math.pi -- radians: going round this far one way is a spin at any speed (turning to where you walk is
+                                    -- half a turn at most), the user's spin was slower than SPIN_RATE
     local GROUND_STATES = {
         [Enum.HumanoidStateType.Running] = true,
         [Enum.HumanoidStateType.RunningNoPhysics] = true,
         [Enum.HumanoidStateType.Landed] = true,
     }
     local lastYaw, spinFor, spinSign, holdUntil, holdLook, spinReported = nil, 0, 0, 0, nil, false
+    local spinAccum, holdYaw, airSpinReported = 0, nil, false
     local lastStickYaw = nil -- (where the stick pointed last frame: a body that goes round with a stick going round is turning)
     local function flatLookOf(cframe)
         local look = cframe.LookVector * xzVector
@@ -1003,28 +1009,36 @@ local function setupCharacterPhysics(character)
         local body = rootPart or torso
         if not body or not body.Parent or not dt or dt <= 0 then return end
         local state = humanoid:GetState()
-        local guarded = GROUND_STATES[state] or (glideVelocity.Parent ~= nil
-            and (state == Enum.HumanoidStateType.Jumping or state == Enum.HumanoidStateType.Freefall))
+        local guarded = GROUND_STATES[state] or state == Enum.HumanoidStateType.Jumping or state == Enum.HumanoidStateType.Freefall
         if not guarded or climbFWM.isClimbing() or humanoid.Sit or humanoid.PlatformStand or checkIfTrippedState()
             or humanoid.Health <= 0 then
-            lastYaw, spinFor, lastStickYaw = nil, 0, nil
+            lastYaw, spinFor, lastStickYaw, spinAccum, holdYaw = nil, 0, nil, 0, nil
             return
         end
         local look = flatLookOf(body.CFrame)
         if not look then return end
         local now = os.clock()
         if now < holdUntil then
+            -- (held, but never frozen or snapped: the body is set, every frame, to a facing that eases round to where you
+            -- walk (or the way it faced, with the stick let go), so whatever is turning it can't, and it never jumps)
             local md = humanoid.MoveDirection * xzVector
             local want = md.Magnitude > 0.1 and md.Unit or holdLook or look
             local v = body.AssemblyAngularVelocity
             body.AssemblyAngularVelocity = Vector3.new(v.X, 0, v.Z)
-            if want:Dot(look) < 0.999 then
-                local pos = body.Position
-                body.CFrame = CFrame.lookAt(pos, pos + want)
+            local curYaw = yawOf(look)
+            holdYaw = holdYaw or curYaw
+            local toWant = (yawOf(want) - holdYaw + math.pi) % (2 * math.pi) - math.pi
+            holdYaw = holdYaw + math.clamp(toWant * (1 - math.exp(-14 * dt)), -9 * dt, 9 * dt)
+            local fix = (holdYaw - curYaw + math.pi) % (2 * math.pi) - math.pi
+            if math.abs(fix) > 0.0005 then
+                local cf0 = body.CFrame
+                local pos = cf0.Position
+                body.CFrame = CFrame.new(pos) * CFrame.fromAxisAngle(Vector3.new(0, 1, 0), fix) * (CFrame.new(-pos) * cf0)
             end
-            lastYaw, spinFor = yawOf(want), 0
+            lastYaw, spinFor, spinAccum = holdYaw, 0, 0
             return
         end
+        holdYaw = nil
         local yaw = yawOf(look)
         if lastYaw then
             local turned = (yaw - lastYaw + math.pi) % (2 * math.pi) - math.pi
@@ -1050,10 +1064,19 @@ local function setupCharacterPhysics(character)
             else
                 spinFor = 0
             end
-            if spinFor >= SPIN_TIME then
-                spinFor = 0
+            -- (how far it has gone round the same way, at any speed: a body that stopped, or goes round with the stick, starts again)
+            if followsStick or math.abs(rate) < 0.5 then
+                spinAccum = 0
+            elseif spinAccum * turned > 0 or spinAccum == 0 then
+                spinAccum = spinAccum + turned
+            else
+                spinAccum = turned
+            end
+            if spinFor >= SPIN_TIME or math.abs(spinAccum) >= SPIN_TURN then
+                spinFor, spinAccum = 0, 0
                 holdUntil = now + SPIN_HOLD
                 holdLook = look
+                holdYaw = yaw
                 if not spinReported then
                     spinReported = true
                     warn(("[2006 Physics] stopped a spin (%.1f turns a second). Turning the body then: %s")
@@ -1210,7 +1233,27 @@ local function setupCharacterPhysics(character)
         -- as it left the ground and kept going round in the air (turning left or right while jumping: a spin, the
         -- user's video). That turn is stopped here.
         if glideVelocity.Parent ~= nil then
-            noTurn(rootPart or torso)
+            local body = rootPart or torso
+            noTurn(body)
+            -- (and it is set back to that facing every frame: a turn of a few radians a second, slower than the spin guard's
+            -- limit, was still a spin in the air, the user's recording. FWM's body doesn't turn in the air at all.)
+            if airYaw then
+                pcall(function()
+                    local cf0 = body.CFrame
+                    local lv = cf0.LookVector
+                    local cur = math.atan2(-lv.X, -lv.Z)
+                    local d = (airYaw - cur + math.pi) % (2 * math.pi) - math.pi
+                    if math.abs(d) > 0.0005 then
+                        if math.abs(d) > 0.04 and not airSpinReported then
+                            airSpinReported = true
+                            warn(("[2006 Physics] the body was turning in the air (%.1f turns a second): held facing the way you jumped. Turning the body then: %s")
+                                :format(math.abs(d) / math.max(dt, 0.001) / (2 * math.pi), whatTurns()))
+                        end
+                        local pos = cf0.Position
+                        body.CFrame = CFrame.new(pos) * CFrame.fromAxisAngle(Vector3.new(0, 1, 0), d) * (CFrame.new(-pos) * cf0)
+                    end
+                end)
+            end
         end
 
         if tick() - lastJumpTick > 0.05
