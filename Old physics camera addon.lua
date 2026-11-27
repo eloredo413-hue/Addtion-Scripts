@@ -558,6 +558,7 @@ local function setupCharacter(char)
 		addConnection(humanoid.MoveToFinished:Connect(function() isMoveTo = false end))
 	end
 	local turnTime = 0
+	local airFacing = nil
 	local function turnStep(dt, zoom)
 		turnTime = turnTime + (dt or 1 / 60)
 		if turnTime < 1 / 60 then return end -- (60 times a second at most, as Rowind)
@@ -567,7 +568,21 @@ local function setupCharacter(char)
 		local faceCamera = UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter or zoom <= 1.5
 		humanoid.AutoRotate = isMoveTo or state == Enum.HumanoidStateType.Climbing
 		local moveDir = humanoid.MoveDirection
-		local dir = (faceCamera and camera.CFrame.LookVector or moveDir) * XZ
+		-- (Addtion-Scripts) FALLING: the body keeps the way it faced as it left the ground and is never spun in the air. Aimed at the
+		-- stick, with a camera that follows the body round, the aim moved as the body turned and the fall went into a spin
+		-- (the user: when you fall the spinning goes crazy). Any spin the air gives it is held to a gentle turn.
+		local airborne = state == Enum.HumanoidStateType.Jumping or state == Enum.HumanoidStateType.Freefall
+		if airborne and not faceCamera then
+			if not airFacing then
+				local l = rootPart.CFrame.LookVector * XZ
+				airFacing = l.Magnitude > 0.01 and l.Unit or nil
+			end
+			local w = rootPart.AssemblyAngularVelocity
+			if math.abs(w.Y) > 4 then rootPart.AssemblyAngularVelocity = Vector3.new(w.X, math.sign(w.Y) * 4, w.Z) end
+		else
+			airFacing = nil
+		end
+		local dir = ((airborne and not faceCamera and airFacing) or (faceCamera and camera.CFrame.LookVector or moveDir)) * XZ
 		if (moveDir.Magnitude > 0 or faceCamera) and dir.Magnitude > 0.01 and not humanoid.PlatformStand
 			and not humanoid.SeatPart and not NO_TURN[state] and not isMoveTo and climbLift.Parent == nil then
 			if turnGyro.Parent == nil then turnGyro.CFrame = rootPart.CFrame end -- (from where it faces now)
