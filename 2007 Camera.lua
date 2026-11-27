@@ -556,6 +556,14 @@ MODULES.RootCamera = function(require)
 	return CreateCamera
 end
 
+-- (Addtion-Scripts) While the 2006 physics is running the camera stays where you put it, as in 2006: the Follow camera turning
+-- itself behind you as you walk, together with the 2006 physics' own turning, swung the camera and the body left and
+-- right as you walked ("turn and it goes back", the user's video: walking with the 2006 physics and this camera).
+-- The 2006 physics keeps a hook in getgenv() while it runs.
+local function physics2006On()
+	return type(genv.__Physics2006Cleanup) == "function"
+end
+
 -- ClassicCamera / FollowCamera: the same Update, the Follow one turning behind you as you walk
 local function MakeOrbitingCamera(require, follow)
 	local RootCamera = require("RootCamera")
@@ -654,7 +662,7 @@ local function MakeOrbitingCamera(require, follow)
 									self.RotateInput = self.RotateInput + Vector2.new(y * percent, 0)
 								end
 							end
-						elseif follow and not (isInFirstPerson or userRecentlyPannedCamera) then
+						elseif follow and not (isInFirstPerson or userRecentlyPannedCamera or physics2006On()) then
 							-- (FollowCamera) turn towards where the character went; a dead zone keeps small steps from
 							-- swinging the camera
 							local lastVec = -(self.LastCameraTransform.p - subjectPosition)
@@ -2155,7 +2163,7 @@ do
 				if zoom < 0.25 then zoom = 0.25 end
 
 				-- (Addtion-Scripts) also while the camera is Follow (the CameraScript keeps it Follow)
-				if TeleportService:GetTeleportSetting("FollowCamera") or camera.CameraType == Enum.CameraType.Follow then
+				if (TeleportService:GetTeleportSetting("FollowCamera") or camera.CameraType == Enum.CameraType.Follow) and not physics2006On() then
 					if self.LastCameraTransform and not self:IsInFirstPerson() then
 						local lastVec = -(self.LastCameraTransform.p - subjectPosition)
 						local y = findAngleBetweenXZVectors(lastVec, self:GetCameraLook())
