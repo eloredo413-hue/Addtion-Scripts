@@ -211,7 +211,13 @@ do
         local errors = {}
         for _, url in ipairs(SUITE_URLS) do
             local ok, result = pcall(function()
-                local src = game:HttpGet(url)
+                local src
+                local shared = env.BPDownload
+                if type(shared) == "function" then
+                    local good, body = shared(url)
+                    if good then src = body end
+                end
+                if src == nil then src = game:HttpGet(url) end
                 assert(type(src) == "string" and #src > 1000, "empty download")
                 local fn = assert(loadstring(src, "RBXMSuite"))
                 local suite = fn()
@@ -425,7 +431,19 @@ do
                 end
                 return table.unpack(results, 1, results.n)
             end,
-        }, { __index = function(_, key) return base()[key] end })
+        }, { __index = function(_, key)
+            -- (Addtion-Scripts) Not downloaded here: downloading waits, and a metamethod cannot wait ("thread is not yieldable"):
+            -- the 2019 menu's Suite.download(...) came through here before the library was loaded and failed with it, and
+            -- the 2021 GUI showed the red "2019 ESC menu ERROR while starting: RBXM Suite couldn't be loaded" message. What
+            -- is asked for gets loaded when it is CALLED, which can wait.
+            if real ~= nil then return real[key] end
+            if previous ~= nil and previous[key] ~= nil then return previous[key] end
+            return function(...)
+                local member = base()[key]
+                if type(member) == "function" then return member(...) end
+                return member
+            end
+        end })
     end
 end
 
