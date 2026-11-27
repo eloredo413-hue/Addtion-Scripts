@@ -978,8 +978,13 @@ local function build2013(screenGui)
 
 	local lastTexture = nil
 	local fading = false
-	local shownAt = os.clock()
-	function view.step()
+	-- (Addtion-Scripts) THE SQUARES' CLOCK is the frames shown, each at most 1/20 s long, not the wall clock: while the setup
+	-- loads under the loading screen the game stalls for a moment now and then, and by the wall clock the squares then
+	-- jumped half the loop ahead the moment it was over (the user's "it's lagging, it's like flickering"). Now they just
+	-- carry on from where they were.
+	local animTime = 0
+	function view.step(dt)
+		animTime = animTime + math.min(dt or (1 / 60), 1 / 20)
 		if root.AbsoluteSize ~= laidOut then layout() end
 		if placeLabel.Text == "" and placeName ~= "" then placeLabel.Text = escapeRich(placeName) end
 		if creatorLabel.Text == "" and creatorName ~= "" then
@@ -990,7 +995,7 @@ local function build2013(screenGui)
 			tileTexture(textureFrame, picture("texture"), 0)
 		end
 		-- the squares
-		local list = squaresAt(os.clock() - shownAt)
+		local list = squaresAt(animTime)
 		-- (Addtion-Scripts) whole pixels only: a square centred on a fraction of a pixel, and growing by a fraction of one
 		-- each frame, had its edges drawn on half pixels that came and went (it shimmered and jumped: the user's "it
 		-- glitches"). Each square is put by its top left corner, with an even whole-pixel side, so it stays crisp and
@@ -1294,6 +1299,10 @@ function api.Show(year)
 		DisplayOrder = 2147483647, -- above the GUI and everything else
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 	}
+	-- (Addtion-Scripts) THE WHOLE SCREEN, NOTCH TO NOTCH: a ScreenGui is kept out of the phone's camera cut-out and rounded
+	-- corners (its "safe insets") unless told otherwise, so the 2016 screen sat about 100 pixels in from both sides, its
+	-- pattern, the name and the circle with it, and a flat dark band showed on each side (the user's screenshot of it).
+	pcall(function() screenGui.ScreenInsets = Enum.ScreenInsets.None end)
 	local view
 	if style == "2016" then
 		view = build2016(screenGui)

@@ -377,6 +377,16 @@ end
 -- Let go of the stick and it is unlocked. Not while climbing, sitting, swimming or tripped. The cameras themselves
 -- are not changed.
 local LOCK_PAN_GRACE = 0.25 -- seconds after the player turned the camera that its turning still steers
+-- (Addtion-Scripts) THE WAY YOU WALK TURNS SMOOTHLY: the body turns to face the way it is walking, so a stick flicked to the
+-- side and back, or a camera dragged quickly, swung the body 90 degrees in a fifth of a second and straight back (the user,
+-- twice: "don't make it swing like that, make it more smooth, don't make it go back like it recognized its mistake").
+-- The way handed to the humanoid now eases towards the way the stick points: at most TURN_RATE radians a second, easing in
+-- over about 1 / TURN_EASE of a second, so a quick flick hardly moves it and a real turn takes its time. Roblox's own turning
+-- still does the turning, to a way that no longer jumps. getgenv().BP2006TurnRate / BP2006TurnEase change them.
+local TURN_RATE = 5.5 -- radians a second: the fastest the way (and so the body) goes round
+local TURN_EASE = 9   -- the way closes the rest of a turn in about a ninth of a second
+local TURN_ACCEL = 25 -- radians a second, each second: how quickly it gets up to that speed (and back down from it): a flick of
+                      -- a tenth of a second moves the way by about 15 degrees, not 90
 local function startWalkLock(o)
     -- o: humanoid, isOff() (true while the lock must stay out of the way)
     local humanoid, isOff = o.humanoid, o.isOff
@@ -391,6 +401,7 @@ local function startWalkLock(o)
     end
     local alive = true
     local lockedDir, lastStick, lastYaw = nil, nil, nil
+    local smoothDir, lastEaseAt, smoothW = nil, nil, 0 -- (the way handed to the humanoid: lockedDir, eased; how fast it is going round)
     local lastPan, lastMousePan = -1, -1
     local cameraTouches = {}
     local conns = {}
@@ -461,7 +472,43 @@ local function startWalkLock(o)
         return flat
     end
     local function walk(stick)
-        humanoid:Move(lockedDir * math.min(stick.Magnitude, 1), false)
+        humanoid:Move((smoothDir or lockedDir) * math.min(stick.Magnitude, 1), false)
+    end
+    -- smoothDir goes round towards lockedDir: the angle is that of turnRight (from -Z towards +X)
+    local function easeWay()
+        local now = os.clock()
+        local dt = lastEaseAt and math.clamp(now - lastEaseAt, 0, 0.1) or 0
+        lastEaseAt = now
+        local rate = tonumber(getgenv().BP2006TurnRate) or TURN_RATE
+        local ease = tonumber(getgenv().BP2006TurnEase) or TURN_EASE
+        local accel = tonumber(getgenv().BP2006TurnAccel) or TURN_ACCEL
+        if not smoothDir then
+            -- (starting to walk: from the way the body faces, so it turns into the walk instead of being swung round)
+            local from = nil
+            pcall(function()
+                local root = humanoid.RootPart
+                local l = root and root.CFrame.LookVector
+                if l and (l.X * l.X + l.Z * l.Z) > 1e-4 then from = Vector3.new(l.X, 0, l.Z).Unit end
+            end)
+            smoothDir = from or lockedDir
+            smoothW = 0
+        end
+        local v, t = smoothDir, lockedDir
+        local angle = math.atan2(v.X * t.Z - v.Z * t.X, v.X * t.X + v.Z * t.Z)
+        if math.abs(angle) < 1e-4 then
+            smoothDir, smoothW = t, 0
+            return
+        end
+        -- the speed it wants (the rest of the turn, at most TURN_RATE), reached no quicker than TURN_ACCEL allows
+        local want = math.clamp(angle * ease, -rate, rate)
+        local dw = math.clamp(want - smoothW, -accel * dt, accel * dt)
+        smoothW = smoothW + dw
+        local move = smoothW * dt
+        -- (never past the way: it stops on it)
+        if (angle > 0 and move > angle) or (angle < 0 and move < angle) then move, smoothW = angle, 0 end
+        smoothDir = turnRight(v, move)
+        local m = smoothDir.Magnitude
+        if m > 1e-6 then smoothDir = smoothDir / m else smoothDir = t end
     end
     local function step()
         if not alive then return end
@@ -469,6 +516,7 @@ local function startWalkLock(o)
         local look = cameraLook()
         if not stick or not look or isOff() then
             lockedDir, lastStick = nil, nil
+            smoothDir, lastEaseAt, smoothW = nil, nil, 0
             lastYaw = look and math.atan2(look.X, -look.Z) or nil
             return
         end
@@ -488,6 +536,7 @@ local function startWalkLock(o)
             end
         end
         lastStick, lastYaw = stickAngle, yaw
+        easeWay()
         walk(stick)
     end
     local name = "BP2006WalkLock" .. tostring(math.random(1, 1000000000))

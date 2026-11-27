@@ -850,9 +850,12 @@ task.spawn(function()
 		rlState.exp =
 			Lighting.ExposureCompensation
 
+		local sliced = 0
 		for _, object in ipairs(
 			Workspace:GetDescendants()
 		) do
+			sliced = sliced + 1
+			if sliced % 250 == 0 then task.wait() end -- (Addtion-Scripts: a slice a frame)
 
 			if object:IsA("Light") then
 				hideLight(object)
@@ -1064,12 +1067,6 @@ task.spawn(function()
 
 		spState.active = true
 
-		for _, object in ipairs(
-			Workspace:GetDescendants()
-		) do
-			toSmooth(object)
-		end
-
 		spState.conn =
 			Workspace.DescendantAdded:Connect(
 				function(object)
@@ -1081,6 +1078,15 @@ task.spawn(function()
 					end
 				end
 			)
+
+		local sliced = 0
+		for _, object in ipairs(
+			Workspace:GetDescendants()
+		) do
+			toSmooth(object)
+			sliced = sliced + 1
+			if sliced % 250 == 0 then task.wait() end -- (Addtion-Scripts: a slice a frame, not the whole map at once)
+		end
 
 		print(
 			"[Bloxy Paradox] Smooth Plastic ON."
@@ -1168,12 +1174,6 @@ task.spawn(function()
 
 		plState.active = true
 
-		for _, object in ipairs(
-			Workspace:GetDescendants()
-		) do
-			toPlastic(object)
-		end
-
 		plState.conn =
 			Workspace.DescendantAdded:Connect(
 				function(object)
@@ -1185,6 +1185,15 @@ task.spawn(function()
 					end
 				end
 			)
+
+		local sliced = 0
+		for _, object in ipairs(
+			Workspace:GetDescendants()
+		) do
+			toPlastic(object)
+			sliced = sliced + 1
+			if sliced % 250 == 0 then task.wait() end -- (Addtion-Scripts: a slice a frame, not the whole map at once)
+		end
 
 		print(
 			"[Bloxy Paradox] Plastic ON."
@@ -1569,10 +1578,13 @@ task.spawn(function()
 			end
 		end
 
+		local sliced = 0
 		for _, object in ipairs(
 			Workspace:GetDescendants()
 		) do
 			checkNeon(object)
+			sliced = sliced + 1
+			if sliced % 250 == 0 then task.wait() end -- (Addtion-Scripts: a slice a frame)
 		end
 
 		m09.neonConn =
@@ -2232,20 +2244,6 @@ task.spawn(function()
 			Lighting.GlobalShadows = false
 		end)
 
-		for _, part in ipairs(
-			Workspace:GetDescendants()
-		) do
-
-			if part:IsA("BasePart") then
-
-				trackPartShadow(part)
-
-				pcall(function()
-					part.CastShadow = false
-				end)
-			end
-		end
-
 		shState.conn =
 			Workspace.DescendantAdded:Connect(
 				function(object)
@@ -2273,6 +2271,25 @@ task.spawn(function()
 					end
 				end
 			)
+
+		local sliced = 0
+		for _, part in ipairs(
+			Workspace:GetDescendants()
+		) do
+			sliced = sliced + 1
+			if sliced % 250 == 0 then task.wait() end -- (Addtion-Scripts: a slice a frame)
+			if not shState.active then break end -- (switched off again while it was going through)
+
+			if part:IsA("BasePart") then
+
+				trackPartShadow(part)
+
+				pcall(function()
+					part.CastShadow = false
+				end)
+			end
+		end
+
 
 		print(
 			"[Bloxy Paradox] Shadows disabled."

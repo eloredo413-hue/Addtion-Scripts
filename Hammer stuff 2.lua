@@ -3548,7 +3548,13 @@ task.spawn(function()
 			end))
 
 			local convertedCount = 0
+			-- (Addtion-Scripts) what is added while the pass is going through is seen from the start, and the pass is a slice a
+			-- frame instead of the whole map in one (the 2006 and 2007 presets turn this on with the rest of their options)
+			table.insert(Connections, workspace.DescendantAdded:Connect(onDescendantAdded))
+			local sliced = 0
 			for _, desc in ipairs(workspace:GetDescendants()) do
+				sliced = sliced + 1
+				if sliced % 200 == 0 then task.wait() end
 				if desc:IsA("Model") and desc:FindFirstChildOfClass("Humanoid") then
 					local head = desc:FindFirstChild("Head")
 					if head and head:IsA("BasePart") then pcall(setupCharacterHead, desc, head) end
@@ -3560,7 +3566,6 @@ task.spawn(function()
 				end
 			end
 
-			table.insert(Connections, workspace.DescendantAdded:Connect(onDescendantAdded))
 			print(string.format("[Old Decal] Enabled. Processed %d decals, head faces & 2006 T-shirts (studs & surface textures protected).", convertedCount))
 		end
 
