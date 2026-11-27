@@ -1220,13 +1220,27 @@ local function setup(list)
 	for _, pair in ipairs(list) do table.insert(out, { q = SQ[pair[1]], a = pair[2] }) end
 	return out
 end
+-- (2013 and early 2014 are the same preset, as the user said: early 2014 is basically late 2013: the 2013 mobile GUI, with
+-- the old health bar, health ESP, no leaderboard, mobile controls and the old thumbstick)
+local function preset2013(name)
+	return era { name = name, resetAll = true, resetOld = true, topbar = "2013 mobile", note = "the 2013 mobile GUI with the old health bar and no leaderboard (early 2014 is the same), 2009 materials with smooth plastic, remove lighting, no shadows, old moon, remove pro, classic face, part sounds, health ESP, game GUI hidden, mobile controls and the old thumbstick, Old physics + 2013 camera",
+		material = "is2009MaterialsEnabled",
+		extra = { isSmoothPlasticEnabled = true, isRemoveLightingEnabled = true, isNoShadowsEnabled = true, isOldMoonEnabled = true,
+			isRemoveProEnabled = true, is2012ColorsEnabled = true, isClassicFaceEnabled = true, isOldPartSoundsEnabled = true,
+			isHealthESPEnabled = true, isHideGameGuiEnabled = true, isOldHealthBarEnabled = true, isRemoveLeaderboardEnabled = true,
+			isMobileControlsEnabled = true, isOldThumbstickEnabled = true, isOutlineEnabled = true, isOldDecalEnabled = false, isUGCRemoverEnabled = false,
+			isAllPlayersEnabled = false, isOldAvatarEnabled = false, is2006AvatarEnabled = false, is2008PlayersEnabled = false },
+		physicsCamera = "bothOld2013",
+		answers = setup({ { "safeChat", "No" }, { "emotes", "No" } }),
+		choices = { SafeChat = false, Emotes = false } }
+end
 local PRESETS = {
 	-- 2005 - 2008: from the user's videos of each (the hammer's options and the setup's answers as they gave them). No skybox in
 	-- any of them: the night sky, the old moon and "remove lighting" make the sky.
 	era { name = "2005", resetOld = true, topbar = "2005", note = "2005 plastic, remove lighting, no shadows, 2008 night sky, old moon, game GUI hidden, no controls",
 		hideControls = true, material = "is2005MaterialsEnabled", sky = { "is2008NightSkyEnabled" },
 		extra = { isRemoveLightingEnabled = true, isNoShadowsEnabled = true, isOldMoonEnabled = true, isHideGameGuiEnabled = true,
-			isUGCRemoverEnabled = true, isOldDecalEnabled = false },
+			isUGCRemoverEnabled = true, isOldDecalEnabled = false, isHealthESPEnabled = true },
 		physicsCamera = "none",
 		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "Normal" }, { "sounds", "No" },
 			{ "mobileJump", "No" }, { "body2006", "No" }, { "explosion", "2006" }, { "terrain", "none" }, { "emotes", "No" } }),
@@ -1237,7 +1251,7 @@ local PRESETS = {
 		-- the UGC remover on in every year but this one)
 		extra = { isRemoveLightingEnabled = true, isNoShadowsEnabled = true, isOldMoonEnabled = true, isLensFlareEnabled = true,
 			is2006AvatarEnabled = true, isOldAvatarEnabled = false, is2008PlayersEnabled = false, isUGCRemoverEnabled = false,
-			isOldDecalEnabled = true },
+			isOldDecalEnabled = true, isHealthESPEnabled = true },
 		physicsCamera = "both2006",
 		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "2006" }, { "sounds", "Yes" },
 			{ "mouse", "normal" }, { "textures", "2008 textures" }, { "mobileJump", "No" }, { "body2006", "No" },
@@ -1249,7 +1263,7 @@ local PRESETS = {
 		hideControls = true, material = "is2006MaterialsEnabled", sky = { "is2008NightSkyEnabled" }, lighting = { "is2006LightingEnabled" },
 		extra = { isRemoveLightingEnabled = true, isNoShadowsEnabled = true, isOldMoonEnabled = true, isLensFlareEnabled = true,
 			isOldAvatarEnabled = true, is2006AvatarEnabled = false, is2008PlayersEnabled = false, isAllPlayersEnabled = false,
-			isUGCRemoverEnabled = true, isOldDecalEnabled = true },
+			isUGCRemoverEnabled = true, isOldDecalEnabled = true, isHealthESPEnabled = true },
 		physicsCamera = "both2006",
 		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "2007" }, { "sounds", "Yes" },
 			{ "mouse", "normal" }, { "textures", "2008 textures" }, { "mobileJump", "No" }, { "forcefield", "normal" },
@@ -1266,7 +1280,7 @@ local PRESETS = {
 			{ "mobileJump", "No" }, { "terrain", "none" }, { "emotes", "No" } }),
 		choices = { SafeChat = true, Sounds = false, MobileJump = false, Emotes = false } },
 	era { name = "2010", resetOld = true, topbar = "2010", note = "2010 plastic, 2009 sky, old safe chat, UGC remover",
-		hideControls = true, material = "is2010MaterialsEnabled", sky = SKY_2009, extra = { isUGCRemoverEnabled = true, isOldDecalEnabled = false },
+		hideControls = true, material = "is2010MaterialsEnabled", sky = SKY_2009, extra = { isUGCRemoverEnabled = true, isOldDecalEnabled = false, isHealthESPEnabled = true },
 		answers = setup({ { "safeChat", "Yes" }, { "mobileJump", "No" }, { "terrain", "none" }, { "emotes", "No" } }),
 		choices = { SafeChat = true, MobileJump = false, Emotes = false } },
 	-- 2011 - 2013, from the user's videos (the hammer's options and the setup's answers as they gave them; the avatar and
@@ -1293,21 +1307,8 @@ local PRESETS = {
 		answers = setup({ { "backpack", "No" }, { "sounds", "Yes" }, { "body2006", "No" }, { "terrain", "none" },
 			{ "particles", "2010" }, { "emotes", "No" } }),
 		choices = { Backpack = "none", Sounds = true, Body2006 = false, Emotes = false } },
-	-- (the 2013 preset is the 2013 mobile GUI, with the old health bar and no leaderboard)
-	era { name = "2013", resetAll = true, resetOld = true, topbar = "2013 mobile", note = "the 2013 mobile GUI with the old health bar and no leaderboard, 2009 materials with smooth plastic, remove lighting, no shadows, old moon, remove pro, classic face, part sounds, health ESP, game GUI hidden, mobile controls and the old thumbstick, Old physics + 2013 camera",
-		material = "is2009MaterialsEnabled",
-		extra = { isSmoothPlasticEnabled = true, isRemoveLightingEnabled = true, isNoShadowsEnabled = true, isOldMoonEnabled = true,
-			isRemoveProEnabled = true, is2012ColorsEnabled = true, isClassicFaceEnabled = true, isOldPartSoundsEnabled = true,
-			isHealthESPEnabled = true, isHideGameGuiEnabled = true, isOldHealthBarEnabled = true, isRemoveLeaderboardEnabled = true,
-			isMobileControlsEnabled = true, isOldThumbstickEnabled = true, isOutlineEnabled = true, isOldDecalEnabled = false, isUGCRemoverEnabled = false,
-			isAllPlayersEnabled = false, isOldAvatarEnabled = false, is2006AvatarEnabled = false, is2008PlayersEnabled = false },
-		physicsCamera = "bothOld2013",
-		answers = setup({ { "safeChat", "No" }, { "emotes", "No" } }),
-		choices = { SafeChat = false, Emotes = false } },
-	-- (no video of early 2014 yet: it is as it was, with the outlines on, as the user said for 2013 - 2014)
-	era { name = "2013 - early 2014", topbar = "2013", note = "iw + legacy lighting, 2013 sky",
-		sky = SKY_2013, lighting = { "isIWLegacyLightingEnabled", "isLegacyLightingEnabled" },
-		extra = { isOldHealthBarEnabled = false, isOutlineEnabled = true } },
+	preset2013("2013"),
+	preset2013("2013 - early 2014"),
 	-- 2014 - 2024, from the user's recordings of each. No skybox in any of them; classic face on in all of them to 2023;
 	-- the old physics step is only the 2013 camera in 2014, only the 2018 camera in 2015 - 2017, none from 2019
 	era { name = "2014", resetAll = true, topbar = "2014", note = "iw lighting with the 2014 era, 2014 shadows, 2013 dyn, outline, classic face, part sounds, game GUI hidden, old thumbstick, 2013 camera",
