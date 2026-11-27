@@ -1143,6 +1143,8 @@ local PHYSICS_QUESTION = "Old physics or old camera?"
 local PHYSICS_CAMERA = {
 	camera2018 = { config = { physicsCameraChoice = "camera", cameraVariant = "2018" },
 		answers = { CAMERA_DROPDOWN, "2018 Camera", "2018 Camera" } },
+	camera2013 = { config = { physicsCameraChoice = "camera", cameraVariant = "2013" },
+		answers = { CAMERA_DROPDOWN, "2013 Camera", "2013 Camera" } },
 	none = { config = { physicsCameraChoice = "none" }, answers = { "None" } },
 	-- (the 2006 and 2007 presets, from the user's videos: the 2006 physics and the 2007 camera, "Both")
 	both2006 = { config = { physicsCameraChoice = "both", physicsVariant = "2006", cameraVariant = "2007" },
@@ -1171,11 +1173,20 @@ local ERA_LOOK_KEYS = { "isRemoveLightingEnabled", "isNoShadowsEnabled", "isOldM
 -- (the options the 2005 - 2013 videos show on or off, set by those presets only: the years after them are not recorded yet)
 local OLD_ERA_KEYS = { "isRemoveProEnabled", "isRemoveLeaderboardEnabled", "isChatBarEnabled", "isMobileControlsEnabled",
 	"isOldThumbstickEnabled", "isOldHealthBarEnabled", "is2012ColorsEnabled", "is2006ColorsEnabled", "is2005ColorsEnabled" }
+-- (2011 on: every option the videos of 2011 - 2024 show, on or off)
+local RESET_ALL_KEYS = { "isRemoveProEnabled", "isRemoveLeaderboardEnabled", "isChatBarEnabled", "isMobileControlsEnabled",
+	"isOldThumbstickEnabled", "isOldHealthBarEnabled", "is2012ColorsEnabled", "is2006ColorsEnabled", "is2005ColorsEnabled",
+	"isOutlineEnabled", "is2013DynamicEnabled", "is2014ShadowsEnabled", "isSlipperyWalkEnabled", "is2015AudioEnabled",
+	"is2016AudioEnabled", "isOldPartSoundsEnabled", "isClassicFaceEnabled", "isHealthESPEnabled", "isOldDecalEnabled",
+	"isUGCRemoverEnabled", "isAllPlayersEnabled", "isOldAvatarEnabled", "is2006AvatarEnabled", "is2008PlayersEnabled" }
 local function era(t)
 	local config = {}
 	for _, key in ipairs(ERA_LOOK_KEYS) do config[key] = false end
 	if t.resetOld then
 		for _, key in ipairs(OLD_ERA_KEYS) do config[key] = false end
+	end
+	if t.resetAll then
+		for _, key in ipairs(RESET_ALL_KEYS) do config[key] = false end
 	end
 	for _, key in ipairs(MATERIAL_KEYS) do config[key] = false end
 	for _, key in ipairs(SKY_KEYS) do config[key] = false end
@@ -1261,7 +1272,7 @@ local PRESETS = {
 	-- 2011 - 2013, from the user's videos (the hammer's options and the setup's answers as they gave them; the avatar and
 	-- colour dropdowns and the 2012 / 2013 materials were shut in the 2012 and 2013 videos, so the 2011 video's are used).
 	-- No skybox in any of them.
-	era { name = "2011", resetOld = true, topbar = "2011", note = "2009 materials with smooth plastic, remove lighting, no shadows, old moon, 2012 colors, classic face, camera and part sounds, health ESP, game GUI and controls hidden, Old physics + 2007 camera",
+	era { name = "2011", resetAll = true, resetOld = true, topbar = "2011", note = "2009 materials with smooth plastic, remove lighting, no shadows, old moon, 2012 colors, classic face, camera and part sounds, health ESP, game GUI and controls hidden, Old physics + 2007 camera",
 		hideControls = true, material = "is2009MaterialsEnabled",
 		extra = { isSmoothPlasticEnabled = true, isRemoveLightingEnabled = true, isNoShadowsEnabled = true, isOldMoonEnabled = true,
 			is2012ColorsEnabled = true, isClassicFaceEnabled = true, isOldCameraSoundEnabled = true, isOldPartSoundsEnabled = true,
@@ -1271,7 +1282,7 @@ local PRESETS = {
 		answers = setup({ { "safeChat", "Yes" }, { "animations", "2007" }, { "mouse", "normal" }, { "textures", "2012 textures" },
 			{ "body2006", "No" }, { "terrain", "2013" }, { "emotes", "No" } }),
 		choices = { SafeChat = true, Mouse = "normal", Textures = "2012", Body2006 = false, Emotes = false } },
-	era { name = "2012", resetOld = true, topbar = "2012", note = "the 2011 options with the chat bar, Old physics + 2007 camera",
+	era { name = "2012", resetAll = true, resetOld = true, topbar = "2012", note = "the 2011 options with the chat bar, Old physics + 2007 camera",
 		hideControls = true, material = "is2009MaterialsEnabled",
 		extra = { isSmoothPlasticEnabled = true, isRemoveLightingEnabled = true, isNoShadowsEnabled = true, isOldMoonEnabled = true,
 			is2012ColorsEnabled = true, isClassicFaceEnabled = true, isOldCameraSoundEnabled = true, isOldPartSoundsEnabled = true,
@@ -1283,32 +1294,103 @@ local PRESETS = {
 			{ "particles", "2010" }, { "emotes", "No" } }),
 		choices = { Backpack = "none", Sounds = true, Body2006 = false, Emotes = false } },
 	-- (the 2013 preset is the 2013 mobile GUI, with the old health bar and no leaderboard)
-	era { name = "2013", resetOld = true, topbar = "2013 mobile", note = "the 2013 mobile GUI with the old health bar and no leaderboard, 2009 materials with smooth plastic, remove lighting, no shadows, old moon, remove pro, classic face, part sounds, health ESP, game GUI hidden, mobile controls and the old thumbstick, Old physics + 2013 camera",
+	era { name = "2013", resetAll = true, resetOld = true, topbar = "2013 mobile", note = "the 2013 mobile GUI with the old health bar and no leaderboard, 2009 materials with smooth plastic, remove lighting, no shadows, old moon, remove pro, classic face, part sounds, health ESP, game GUI hidden, mobile controls and the old thumbstick, Old physics + 2013 camera",
 		material = "is2009MaterialsEnabled",
 		extra = { isSmoothPlasticEnabled = true, isRemoveLightingEnabled = true, isNoShadowsEnabled = true, isOldMoonEnabled = true,
 			isRemoveProEnabled = true, is2012ColorsEnabled = true, isClassicFaceEnabled = true, isOldPartSoundsEnabled = true,
 			isHealthESPEnabled = true, isHideGameGuiEnabled = true, isOldHealthBarEnabled = true, isRemoveLeaderboardEnabled = true,
-			isMobileControlsEnabled = true, isOldThumbstickEnabled = true, isOldDecalEnabled = false, isUGCRemoverEnabled = false,
+			isMobileControlsEnabled = true, isOldThumbstickEnabled = true, isOutlineEnabled = true, isOldDecalEnabled = false, isUGCRemoverEnabled = false,
 			isAllPlayersEnabled = false, isOldAvatarEnabled = false, is2006AvatarEnabled = false, is2008PlayersEnabled = false },
 		physicsCamera = "bothOld2013",
 		answers = setup({ { "safeChat", "No" }, { "emotes", "No" } }),
 		choices = { SafeChat = false, Emotes = false } },
+	-- (no video of early 2014 yet: it is as it was, with the outlines on, as the user said for 2013 - 2014)
 	era { name = "2013 - early 2014", topbar = "2013", note = "iw + legacy lighting, 2013 sky",
 		sky = SKY_2013, lighting = { "isIWLegacyLightingEnabled", "isLegacyLightingEnabled" },
-		extra = { isOldHealthBarEnabled = false } },
-	era { name = "2014", topbar = "2014", note = "iw lighting with the 2014 era, 2013 sky",
-		sky = SKY_2013, lighting = { "isIWLegacyLightingEnabled", "isIWLighting2014Enabled" } },
-	era { name = "early 2015", topbar = "2015 early", note = "iw lighting with the 2015 era, the 2014 loading screen, 2018 camera",
-		lighting = { "isIWLegacyLightingEnabled", "isIWLighting2015Enabled" }, physicsCamera = "camera2018" },
-	era { name = "2016", topbar = "2016", note = "2016 lighting, 2016 materials, 2018 camera",
-		material = "is2016MaterialsEnabled", lighting = { "isIWLighting2016Enabled" }, physicsCamera = "camera2018" },
-	era { name = "2017", topbar = "2017", note = "2017 lighting, 2018 camera", lighting = { "isIWLighting2017Enabled" },
-		physicsCamera = "camera2018" },
-	era { name = "2019", topbar = "2019", note = "2019 lighting", lighting = { "isIWLighting2019Enabled" }, physicsCamera = "none" },
-	era { name = "2021", topbar = "2021", note = "2020 lighting", lighting = { "isIWLighting2020Enabled" }, physicsCamera = "none" },
-	era { name = "2023 old", topbar = "2023 old", note = "early 2023", physicsCamera = "none" },
-	era { name = "2023 new", topbar = "2023 new", note = "late 2023", physicsCamera = "none" },
-	era { name = "2024", topbar = "2024", physicsCamera = "none" },
+		extra = { isOldHealthBarEnabled = false, isOutlineEnabled = true } },
+	-- 2014 - 2024, from the user's recordings of each. No skybox in any of them; classic face on in all of them to 2023;
+	-- the old physics step is only the 2013 camera in 2014, only the 2018 camera in 2015 - 2017, none from 2019
+	era { name = "2014", resetAll = true, topbar = "2014", note = "iw lighting with the 2014 era, 2014 shadows, 2013 dyn, outline, classic face, part sounds, game GUI hidden, old thumbstick, 2013 camera",
+		lighting = { "isIWLegacyLightingEnabled", "isIWLighting2014Enabled" },
+		extra = { is2014ShadowsEnabled = true, is2013DynamicEnabled = true, isOutlineEnabled = true, isClassicFaceEnabled = true,
+			isOldPartSoundsEnabled = true, isHealthESPEnabled = true, isRemoveLeaderboardEnabled = true, isHideGameGuiEnabled = true,
+			isOldThumbstickEnabled = true },
+		physicsCamera = "camera2013",
+		answers = setup({ { "safeChat", "No" }, { "sounds", "Yes" }, { "mouse", "normal" }, { "mobileJump", "Yes" }, { "body2006", "No" },
+			{ "forcefield", "normal" }, { "explosion", "Normal" }, { "particles", "Normal" }, { "emotes", "No" } }),
+		choices = { SafeChat = false, Sounds = true, Mouse = "normal", MobileJump = true, Body2006 = false, Forcefield = "normal", Emotes = false } },
+	era { name = "early 2015", resetAll = true, topbar = "2015 early", note = "iw lighting with the 2015 era, outline, 2013 dyn, classic face, 2015 audio (no old sounds), slippery walk, game GUI hidden, 2018 camera",
+		lighting = { "isIWLegacyLightingEnabled", "isIWLighting2015Enabled" },
+		extra = { is2013DynamicEnabled = true, isOutlineEnabled = true, isClassicFaceEnabled = true, isOldPartSoundsEnabled = true,
+			is2015AudioEnabled = true, isHealthESPEnabled = true, isRemoveLeaderboardEnabled = true, isHideGameGuiEnabled = true,
+			isOldThumbstickEnabled = true, isSlipperyWalkEnabled = true },
+		physicsCamera = "camera2018",
+		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "Normal" }, { "sounds", "No" }, { "mouse", "normal" },
+			{ "textures", "2016 textures" }, { "mobileJump", "Yes" }, { "body2006", "No" }, { "forcefield", "normal" },
+			{ "explosion", "Normal" }, { "terrain", "none" }, { "particles", "Normal" }, { "emotes", "No" } }),
+		choices = { SafeChat = false, Sounds = false, Mouse = "normal", Textures = "2016", MobileJump = true, Body2006 = false, Forcefield = "normal", Emotes = false } },
+	-- (2015 and 2016, as the user said to fix them: no 2013 dyn, no health ESP, no old mobile jump button)
+	era { name = "2015", resetAll = true, topbar = "2015", note = "iw lighting with the 2015 era, classic face, 2015 audio (no old sounds), slippery walk, old thumbstick, no leaderboard, 2018 camera, the 2016 loading screen",
+		lighting = { "isIWLegacyLightingEnabled", "isIWLighting2015Enabled" },
+		extra = { isClassicFaceEnabled = true, is2015AudioEnabled = true, isRemoveLeaderboardEnabled = true,
+			isOldThumbstickEnabled = true, isSlipperyWalkEnabled = true },
+		physicsCamera = "camera2018",
+		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "Normal" }, { "sounds", "No" }, { "mouse", "normal" },
+			{ "textures", "2016 textures" }, { "mobileJump", "No" }, { "body2006", "No" }, { "forcefield", "normal" },
+			{ "explosion", "Normal" }, { "terrain", "none" }, { "particles", "Normal" }, { "emotes", "No" } }),
+		choices = { SafeChat = false, Sounds = false, Mouse = "normal", Textures = "2016", MobileJump = false, Body2006 = false, Forcefield = "normal", Emotes = false } },
+	era { name = "2016", resetAll = true, topbar = "2016", note = "2016 lighting and materials, classic face, 2016 audio, slippery walk, old thumbstick, no leaderboard, 2018 camera",
+		material = "is2016MaterialsEnabled", lighting = { "isIWLighting2016Enabled" },
+		extra = { isClassicFaceEnabled = true, is2016AudioEnabled = true, isRemoveLeaderboardEnabled = true,
+			isOldThumbstickEnabled = true, isSlipperyWalkEnabled = true },
+		physicsCamera = "camera2018",
+		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "Normal" }, { "sounds", "No" }, { "mouse", "normal" },
+			{ "textures", "2016 textures" }, { "mobileJump", "No" }, { "body2006", "No" }, { "forcefield", "normal" },
+			{ "explosion", "Normal" }, { "terrain", "none" }, { "particles", "Normal" }, { "emotes", "No" } }),
+		choices = { SafeChat = false, Sounds = false, Mouse = "normal", Textures = "2016", MobileJump = false, Body2006 = false, Forcefield = "normal", Emotes = false } },
+	era { name = "2017", resetAll = true, topbar = "2017", note = "legacy materials, legacy lighting with the 2017 era, classic face, no leaderboard, 2018 camera",
+		material = "isLegacyMaterialsEnabled", lighting = { "isLegacyLightingEnabled", "isIWLighting2017Enabled" },
+		extra = { isClassicFaceEnabled = true, isRemoveLeaderboardEnabled = true },
+		physicsCamera = "camera2018",
+		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "Normal" }, { "sounds", "No" }, { "mouse", "normal" },
+			{ "textures", "Normal" }, { "mobileJump", "No" }, { "body2006", "No" }, { "forcefield", "normal" },
+			{ "explosion", "Normal" }, { "terrain", "none" }, { "particles", "Normal" }, { "emotes", "No" } }),
+		choices = { SafeChat = false, Sounds = false, Mouse = "normal", MobileJump = false, Body2006 = false, Forcefield = "normal", Emotes = false } },
+	-- 2019 and 2021: the 2017 options with legacy lighting off and the year's lighting; everything answered No / none / Normal
+	era { name = "2019", resetAll = true, topbar = "2019", note = "legacy materials, 2019 lighting, classic face, no leaderboard, no physics or camera",
+		material = "isLegacyMaterialsEnabled", lighting = { "isIWLighting2019Enabled" },
+		extra = { isClassicFaceEnabled = true, isRemoveLeaderboardEnabled = true },
+		physicsCamera = "none",
+		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "Normal" }, { "sounds", "No" }, { "mouse", "normal" },
+			{ "textures", "Normal" }, { "mobileJump", "No" }, { "body2006", "No" }, { "forcefield", "normal" },
+			{ "explosion", "Normal" }, { "terrain", "none" }, { "particles", "Normal" }, { "emotes", "No" } }),
+		choices = { SafeChat = false, Sounds = false, Mouse = "normal", MobileJump = false, Body2006 = false, Forcefield = "normal", Emotes = false } },
+	era { name = "2021", resetAll = true, topbar = "2021", note = "legacy materials, 2020 lighting, classic face, no leaderboard, no physics or camera",
+		material = "isLegacyMaterialsEnabled", lighting = { "isIWLighting2020Enabled" },
+		extra = { isClassicFaceEnabled = true, isRemoveLeaderboardEnabled = true },
+		physicsCamera = "none",
+		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "Normal" }, { "sounds", "No" }, { "mouse", "normal" },
+			{ "textures", "Normal" }, { "mobileJump", "No" }, { "body2006", "No" }, { "forcefield", "normal" },
+			{ "explosion", "Normal" }, { "terrain", "none" }, { "particles", "Normal" }, { "emotes", "No" } }),
+		choices = { SafeChat = false, Sounds = false, Mouse = "normal", MobileJump = false, Body2006 = false, Forcefield = "normal", Emotes = false } },
+	-- 2023 old: everything off but the classic face; 2023 new the same; 2024: nothing on at all
+	era { name = "2023 old", resetAll = true, topbar = "2023 old", note = "only the classic face on; everything answered No / none / Normal",
+		extra = { isClassicFaceEnabled = true }, physicsCamera = "none",
+		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "Normal" }, { "sounds", "No" }, { "mouse", "normal" },
+			{ "textures", "Normal" }, { "mobileJump", "No" }, { "body2006", "No" }, { "forcefield", "normal" },
+			{ "explosion", "Normal" }, { "terrain", "none" }, { "particles", "Normal" }, { "emotes", "No" } }),
+		choices = { SafeChat = false, Sounds = false, Mouse = "normal", MobileJump = false, Body2006 = false, Forcefield = "normal", Emotes = false } },
+	era { name = "2023 new", resetAll = true, topbar = "2023 new", note = "only the classic face on; everything answered No / none / Normal",
+		extra = { isClassicFaceEnabled = true }, physicsCamera = "none",
+		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "Normal" }, { "sounds", "No" }, { "mouse", "normal" },
+			{ "textures", "Normal" }, { "mobileJump", "No" }, { "body2006", "No" }, { "forcefield", "normal" },
+			{ "explosion", "Normal" }, { "terrain", "none" }, { "particles", "Normal" }, { "emotes", "No" } }),
+		choices = { SafeChat = false, Sounds = false, Mouse = "normal", MobileJump = false, Body2006 = false, Forcefield = "normal", Emotes = false } },
+	era { name = "2024", resetAll = true, topbar = "2024", note = "nothing on; everything answered No / none / Normal", physicsCamera = "none",
+		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "Normal" }, { "sounds", "No" }, { "mouse", "normal" },
+			{ "textures", "Normal" }, { "mobileJump", "No" }, { "body2006", "No" }, { "forcefield", "normal" },
+			{ "explosion", "Normal" }, { "terrain", "none" }, { "particles", "Normal" }, { "emotes", "No" } }),
+		choices = { SafeChat = false, Sounds = false, Mouse = "normal", MobileJump = false, Body2006 = false, Forcefield = "normal", Emotes = false } },
 }
 -- Bloxy's own ids for its own years (More guis' added ones are kept in the topbar pick file instead)
 local BLOXY_TOPBAR_IDS = {
