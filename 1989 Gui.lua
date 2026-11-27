@@ -1241,24 +1241,30 @@ local function createBevel(frame, pressed)
 end
 
 local skipThemeBevel = {}
+-- (Addtion-Scripts) A tool that is selected stays pushed in (its pressed edge and its picture one pixel down) until another is
+-- picked; it used to flash pushed in under the finger and come back out, and the selected one looked raised.
+local function setSpriteShift(btn, on)
+	if (btn:GetAttribute("_SprShift") == true) == on then return end
+	btn:SetAttribute("_SprShift", on)
+	for _, ch in ipairs(btn:GetChildren()) do
+		if ch.Name == "_Sprite" then ch.Position = ch.Position + (on and UDim2.fromOffset(1, 1) or UDim2.fromOffset(-1, -1)) end
+	end
+end
 local function bindPushAnimation(btn)
 	local isDown = false
 	btn.InputBegan:Connect(function(input)
 		if isPointerBegin(input) and not isDown then
 			isDown = true
 			if not skipThemeBevel[btn] then createBevel(btn, true) end
-			for _, ch in ipairs(btn:GetChildren()) do
-				if ch.Name == "_Sprite" then ch.Position = ch.Position + UDim2.fromOffset(1, 1) end
-			end
+			setSpriteShift(btn, true)
 		end
 	end)
 	local function release()
 		if isDown then
 			isDown = false
-			if not skipThemeBevel[btn] then createBevel(btn, false) end
-			for _, ch in ipairs(btn:GetChildren()) do
-				if ch.Name == "_Sprite" then ch.Position = ch.Position - UDim2.fromOffset(1, 1) end
-			end
+			local latched = btn:GetAttribute("_Latched") == true
+			if not skipThemeBevel[btn] then createBevel(btn, latched) end
+			setSpriteShift(btn, latched)
 		end
 	end
 	btn.InputEnded:Connect(function(input) if isPointerEnd(input) then release() end end)
@@ -1487,6 +1493,11 @@ local function exitInteractivePhysics()
 	pcall(function() CoreGui.TopBarApp.TopBarApp.Enabled = true end)
 	pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, true) end)
 	pcall(function() ScreenGui:Destroy() end)
+	-- (Addtion-Scripts) the X leaves the game, as Interactive Physics' close box shut the whole program
+	task.defer(function()
+		local ok = pcall(function() game:Shutdown() end)
+		if not ok then pcall(function() Players.LocalPlayer:Kick("Interactive Physics closed") end) end
+	end)
 end
 
 CloseBtn.MouseButton1Click:Connect(exitInteractivePhysics)
@@ -3703,13 +3714,17 @@ local function setActiveTool(id)
 	for tid, btn in pairs(toolButtons) do
 		local active = (tid == id)
 		btn.BackgroundColor3 = active and Color3.fromRGB(235, 235, 235) or C.WinBg
+		btn:SetAttribute("_Latched", active)
 		createBevel(btn, active)
+		setSpriteShift(btn, active)
 	end
 	for _, tid in ipairs({ "Select", "Rotate", "Text" }) do
 		if tbBtns[tid] then
 			local active = (tid == id)
 			tbBtns[tid].BackgroundColor3 = active and Color3.fromRGB(235, 235, 235) or C.WinBg
+			tbBtns[tid]:SetAttribute("_Latched", active)
 			createBevel(tbBtns[tid], active)
+			setSpriteShift(tbBtns[tid], active)
 		end
 	end
 end

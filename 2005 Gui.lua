@@ -3077,8 +3077,8 @@ do
 							local idx = 0
 							local col = bp.Color
 							local trans = bp.Transparency
-							local bpLimit = math.min(rLimit, 40)
-							local r2Max = bpLimit * bpLimit
+							local bpLimit = math.min(rLimit, 64) -- (a square, not a circle: the corners are filled too)
+							local r2Max = bpLimit * bpLimit * 2
 							local ixMin = math.max(1, math.floor(relCam.X - bpLimit + midX))
 							local ixMax = math.min(sx, math.ceil(relCam.X + bpLimit + midX))
 							local izMin = math.max(1, math.floor(relCam.Z - bpLimit + midZ))
