@@ -20,6 +20,10 @@
 	AvatarEditorService:GetBatchItemDetailsAsync), not one item at a time; each item is looked up only once. Nothing
 	runs every frame: one worker does the lookups, the catalog searches and the loading, one thing at a time with a
 	pause between, your own character first; it sleeps when there's nothing to do.
+	NO BIG FRAME DROP: looking at one player (GetAppliedDescription) and taking their UGC off are each heavy, and all of it
+	used to happen for every player in the same frame (the moment this started, and again every 10 seconds): a big drop
+	that came back. Now one player is looked at, and one player's things taken off, per pass of the worker (0.03 s
+	apart), your own character first, and the re-look at everyone is one player a second.
 	Run again to start over; getgenv().__UGCRemoverCleanup() puts everything back.
 ]]
 
@@ -47,6 +51,8 @@ local info = {}          -- [asset id] = { name = ..., roblox = true/false }
 local wanted = {}        -- [asset id] = tries so far (waiting to be looked up)
 local waiting = {}       -- [character] = its items, waiting for their lookups
 local pending = {}       -- [character] = true while it waits to be scanned
+local toScan = {}        -- characters waiting for their turn to be looked at (the worker takes one a pass, yours first)
+local inScanQueue = {}   -- [character] = true while it is in toScan
 local jobs = {}          -- searches and loads, in order (your own character's first)
 local searchCache = {}   -- [kind | words] = found items
 local closestCache = {}  -- [ugc asset id] = the Roblox item picked (or false)
@@ -878,6 +884,18 @@ local running, lastSave = 0, os.clock()
 local function worker()
 	while alive do
 		local busy = false
+		-- 0. one character looked at (what it wears read out), yours first: they are never all done in one frame
+		do
+			local character = table.remove(toScan, 1)
+			if character then
+				inScanQueue[character] = nil
+				busy = true
+				if alive and character.Parent then
+					local ok, err = pcall(scan, character)
+					if not ok then warn("[UGC Remover] " .. tostring(err)) end
+				end
+			end
+		end
 		-- 1. lookups: up to BATCH at a time
 		local ids = {}
 		for id in pairs(wanted) do
@@ -907,18 +925,27 @@ local function worker()
 			end
 		end
 		if not alive then return end
-		-- 2. characters whose items are all known
-		for character, items in pairs(waiting) do
-			local ready = true
-			for _, item in ipairs(items) do
-				if info[item.id] == nil then ready = false break end
+		-- 2. a character whose items are all known: its UGC taken off (one a pass, yours first: not everyone's in one frame)
+		do
+			local mine = localCharacter()
+			local pick, pickItems = nil, nil
+			for character, items in pairs(waiting) do
+				local ready = true
+				for _, item in ipairs(items) do
+					if info[item.id] == nil then ready = false break end
+				end
+				if ready and (pick == nil or character == mine) then
+					pick, pickItems = character, items
+					if character == mine then break end
+				end
 			end
-			if ready then
-				waiting[character] = nil
-				local ok, err = pcall(apply, character, items)
+			if pick then
+				waiting[pick] = nil
+				local ok, err = pcall(apply, pick, pickItems)
 				if not ok then warn("[UGC Remover] " .. tostring(err)) end
 				busy = true
 			end
+			if next(waiting) ~= nil then busy = true end
 		end
 		-- 3. searches / loads, a few at the same time
 		while running < JOBS_AT_ONCE and #jobs > 0 do
@@ -947,9 +974,9 @@ local function queueCharacter(character)
 	pending[character] = true
 	task.delay(SETTLE, function()
 		pending[character] = nil
-		if alive and character.Parent then
-			local ok, err = pcall(scan, character)
-			if not ok then warn("[UGC Remover] " .. tostring(err)) end
+		if alive and character.Parent and not inScanQueue[character] then
+			inScanQueue[character] = true
+			if character == localCharacter() then table.insert(toScan, 1, character) else table.insert(toScan, character) end
 		end
 	end)
 end
@@ -985,14 +1012,18 @@ end
 for _, player in ipairs(Players:GetPlayers()) do watchPlayer(player) end
 connect(Players.PlayerAdded, watchPlayer)
 task.spawn(worker)
--- (live: everyone looked at again every 10 s, for outfits changed without anything new being put on; what was
--- looked up before costs nothing)
+-- (live: everyone looked at again, one player a second, for outfits changed without anything new being put on; what
+-- was looked up before costs nothing)
 task.spawn(function()
+	local turn = 0
 	while alive do
-		task.wait(10)
+		task.wait(1)
 		if not alive then break end
-		for _, player in ipairs(Players:GetPlayers()) do
-			if player.Character then queueCharacter(player.Character) end
+		local list = Players:GetPlayers()
+		if #list > 0 then
+			turn = turn % #list + 1
+			local player = list[turn]
+			if player and player.Character then queueCharacter(player.Character) end
 		end
 	end
 end)
@@ -1032,6 +1063,8 @@ Env.__UGCRemoverCleanup = function()
 	table.clear(ugcAnims)
 	table.clear(jobs)
 	table.clear(waiting)
+	table.clear(toScan)
+	table.clear(inScanQueue)
 	Env.__UGCRemoverCleanup = nil
 end
 
