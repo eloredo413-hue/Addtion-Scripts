@@ -1252,7 +1252,8 @@ local function presetEarly2014()
 	extra.isOldHealthBarEnabled = false
 	extra.isMobileControlsEnabled = true -- (the user: it should enable the old mobile controls, as 2013 does)
 	return era { name = "2013 - early 2014", resetAll = true, topbar = "2013 mobile", note = "the lighting and hammer options of 2014 (iw legacy lighting with the 2014 era, 2014 shadows, 2013 dyn, outline, classic face, no leaderboard), the old health bar off, the setup answers of 2013 with the 2016 textures (studs)",
-		lighting = { "isIWLegacyLightingEnabled", "isIWLighting2014Enabled" }, extra = extra,
+		-- (no iw lighting: only 2014 to 2016 have it, the user said, not early 2014)
+		lighting = {}, extra = extra,
 		-- (and the 2016 studs: the textures question answered "2016 textures", as the user asked for early 2014)
 		physicsCamera = "bothOld2013", answers = answers2013("2016 textures", "2014"),
 		choices = { SafeChat = false, Sounds = true, Mouse = "normal", Textures = "2016", MobileJump = false, Body2006 = false,
@@ -1367,7 +1368,7 @@ local PRESETS = {
 			{ "explosion", "Normal" }, { "terrain", "none" }, { "particles", "Normal" }, { "emotes", "No" } }),
 		choices = { SafeChat = false, Sounds = false, Mouse = "normal", Textures = "2016", MobileJump = false, Body2006 = false, Forcefield = "normal", Emotes = false } },
 	era { name = "2016", resetAll = true, topbar = "2016", note = "2016 lighting and materials, classic face, 2016 audio, slippery walk, the old mobile jump button, no leaderboard, 2018 camera",
-		material = "is2016MaterialsEnabled", lighting = { "isIWLighting2016Enabled" },
+		material = "is2016MaterialsEnabled", lighting = { "isIWLegacyLightingEnabled", "isIWLighting2016Enabled" },
 		extra = { isClassicFaceEnabled = true, is2016AudioEnabled = true, isRemoveLeaderboardEnabled = true,
 			isSlipperyWalkEnabled = true },
 		physicsCamera = "camera2018",

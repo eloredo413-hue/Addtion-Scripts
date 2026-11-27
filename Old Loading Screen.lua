@@ -663,13 +663,15 @@ local function build2016(screenGui)
 		BackgroundTransparency = 1,
 		-- (in the middle of the circle, a little bigger, as in the user's screenshot; the dots grow to the right of
 		-- "Loading" without moving it: the label is as wide as "Loading..." and starts where that one is centred)
-		Size = UDim2.new(0, 52, 1, 0),
-		Position = UDim2.new(0.5, -26, 0, 0),
+		-- (Addtion-Scripts) centred in the circle, the whole width of it (the dots are padded with spaces so "Loading" stays put)
+		Size = UDim2.new(1, 0, 1, 0),
+		Position = UDim2.new(0, 0, 0, 0),
 		Font = Enum.Font.SourceSans,
 		TextSize = 14,
 		TextWrapped = false,
 		TextColor3 = COLORS.WHITE,
-		TextXAlignment = Enum.TextXAlignment.Left,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextYAlignment = Enum.TextYAlignment.Center,
 		Text = "Loading...",
 		ZIndex = 2,
 		Parent = graphicsFrame,
@@ -713,7 +715,7 @@ local function build2016(screenGui)
 			lastDot = os.clock()
 			dots = dots .. "."
 			if dots == "...." then dots = "" end
-			loadingText.Text = "Loading" .. dots
+			loadingText.Text = "Loading" .. dots .. string.rep(" ", 3 - #dots)
 		end
 	end
 	function view.picture() end
