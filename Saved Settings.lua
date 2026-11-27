@@ -1126,7 +1126,7 @@ end
 -- 2010 for 2010 - 2013); the era's sky (2008 up to 2008, 2009 for 2010 - 2012, 2013 for 2013 - 2014); 2006-07 lighting
 -- for 2006 / 2007; iw legacy lighting with the year's lighting era for 2014 and early 2015 (with legacy lighting for
 -- 2013 - early 2014), and the year's lighting era from 2016 on; 2006 without the old safe chat; 2006 with the 2006 avatar, 2007 (on
--- the 2008 GUI) with the old players (old avatar) and 2008 with the 2008 players, the UGC remover on in all of them but 2006. Each preset sets every material, sky and lighting option, on or off, so
+-- the 2008 GUI) with the old players (old avatar) and 2008 with the 2008 players, the UGC remover on in all of them but 2006, old decal rendering on for 2006 and 2007 (off for the others). Each preset sets every material, sky and lighting option, on or off, so
 -- one picked after another leaves nothing of the one before. The other setup answers stay as last given, and the
 -- hammer's other options as they are.
 local SAFE_CHAT_QUESTION, FORCEFIELD_QUESTION = "Do you want the old safe chat?", "choose your forcefield"
@@ -1198,17 +1198,18 @@ local PRESETS = {
 	era { name = "2005", topbar = "2005", note = "2005 plastic, remove lighting, no shadows, 2008 night sky, old moon, game GUI hidden, no controls",
 		hideControls = true, material = "is2005MaterialsEnabled", sky = { "is2008NightSkyEnabled" },
 		extra = { isRemoveLightingEnabled = true, isNoShadowsEnabled = true, isOldMoonEnabled = true, isHideGameGuiEnabled = true,
-			isUGCRemoverEnabled = true },
+			isUGCRemoverEnabled = true, isOldDecalEnabled = false },
 		physicsCamera = "none",
 		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "Normal" }, { "sounds", "No" },
 			{ "mobileJump", "No" }, { "body2006", "No" }, { "explosion", "2006" }, { "terrain", "none" }, { "emotes", "No" } }),
 		choices = { SafeChat = false, Sounds = false, MobileJump = false, Body2006 = false, Emotes = false } },
-	era { name = "2006", topbar = "2006", note = "2006 plastic, the 2006 avatar, remove lighting, no shadows, 2006-07 lighting, lens flare, night sky, old moon, 2006 physics + 2007 camera",
+	era { name = "2006", topbar = "2006", note = "2006 plastic, the 2006 avatar, remove lighting, no shadows, 2006-07 lighting, lens flare, night sky, old moon, old decal rendering, 2006 physics + 2007 camera",
 		hideControls = true, material = "is2006MaterialsEnabled", sky = { "is2008NightSkyEnabled" }, lighting = { "is2006LightingEnabled" },
 		-- (the hammer's avatar: one of its three at a time: the 2006 avatar here, the old avatar in 2007, 2008 players in 2008;
 		-- the UGC remover on in every year but this one)
 		extra = { isRemoveLightingEnabled = true, isNoShadowsEnabled = true, isOldMoonEnabled = true, isLensFlareEnabled = true,
-			is2006AvatarEnabled = true, isOldAvatarEnabled = false, is2008PlayersEnabled = false, isUGCRemoverEnabled = false },
+			is2006AvatarEnabled = true, isOldAvatarEnabled = false, is2008PlayersEnabled = false, isUGCRemoverEnabled = false,
+			isOldDecalEnabled = true },
 		physicsCamera = "both2006",
 		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "2006" }, { "sounds", "Yes" },
 			{ "mouse", "normal" }, { "textures", "2008 textures" }, { "mobileJump", "No" }, { "body2006", "No" },
@@ -1216,11 +1217,11 @@ local PRESETS = {
 			{ "particles", "2008" }, { "emotes", "No" } }),
 		choices = { SafeChat = false, Sounds = true, Forcefield = "normal", MobileJump = false, Body2006 = false, Emotes = false } },
 	-- (2007 picks the 2008 GUI in the user's video: there is no 2007 GUI)
-	era { name = "2007", topbar = "2008", note = "the 2008 GUI, old players, 2006 plastic, 2006-07 lighting, 2006 physics + 2007 camera, UGC remover",
+	era { name = "2007", topbar = "2008", note = "the 2008 GUI, old players, 2006 plastic, 2006-07 lighting, old decal rendering, 2006 physics + 2007 camera, UGC remover",
 		hideControls = true, material = "is2006MaterialsEnabled", sky = { "is2008NightSkyEnabled" }, lighting = { "is2006LightingEnabled" },
 		extra = { isRemoveLightingEnabled = true, isNoShadowsEnabled = true, isOldMoonEnabled = true, isLensFlareEnabled = true,
 			isOldAvatarEnabled = true, is2006AvatarEnabled = false, is2008PlayersEnabled = false, isAllPlayersEnabled = false,
-			isUGCRemoverEnabled = true },
+			isUGCRemoverEnabled = true, isOldDecalEnabled = true },
 		physicsCamera = "both2006",
 		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "2007" }, { "sounds", "Yes" },
 			{ "mouse", "normal" }, { "textures", "2008 textures" }, { "mobileJump", "No" }, { "forcefield", "normal" },
@@ -1230,13 +1231,14 @@ local PRESETS = {
 		hideControls = true, material = "is2008MaterialsEnabled", sky = { "is2008NightSkyEnabled" }, lighting = { "is2006LightingEnabled" },
 		extra = { isRemoveLightingEnabled = true, isNoShadowsEnabled = true, isOldMoonEnabled = true, isLensFlareEnabled = true,
 			is2006ColorsEnabled = true, isOldCameraSoundEnabled = true, isHealthESPEnabled = true,
-			is2008PlayersEnabled = true, isOldAvatarEnabled = false, is2006AvatarEnabled = false, isUGCRemoverEnabled = true },
+			is2008PlayersEnabled = true, isOldAvatarEnabled = false, is2006AvatarEnabled = false, isUGCRemoverEnabled = true,
+			isOldDecalEnabled = false },
 		physicsCamera = "both2008",
 		answers = setup({ { "safeChat", "Yes" }, { "animations", "2007" }, { "sounds", "No" }, { "textures", "2008 textures" },
 			{ "mobileJump", "No" }, { "terrain", "none" }, { "emotes", "No" } }),
 		choices = { SafeChat = true, Sounds = false, MobileJump = false, Emotes = false } },
 	era { name = "2010", topbar = "2010", note = "2010 plastic, 2009 sky, old safe chat, UGC remover",
-		hideControls = true, material = "is2010MaterialsEnabled", sky = SKY_2009, extra = { isUGCRemoverEnabled = true },
+		hideControls = true, material = "is2010MaterialsEnabled", sky = SKY_2009, extra = { isUGCRemoverEnabled = true, isOldDecalEnabled = false },
 		answers = setup({ { "safeChat", "Yes" }, { "mobileJump", "No" }, { "terrain", "none" }, { "emotes", "No" } }),
 		choices = { SafeChat = true, MobileJump = false, Emotes = false } },
 	era { name = "2011", topbar = "2011", note = "2010 plastic, 2009 sky",

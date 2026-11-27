@@ -1118,6 +1118,42 @@ local function setupCharacterPhysics(character)
         lastYaw = yaw
     end
 
+    -- (Addtion-Scripts) NO OVERSHOOT: the body turning past where you walk and then back (the user's video: it turns, "realizes it
+    -- went too much, so it goes back a little"; they asked for it to be exact). Roblox's turning is left to do the turning, but
+    -- the moment the body has gone past where you are walking (the way it is off from it changes side) it is put right on it and
+    -- the turning it had is dropped, so nothing is left to swing it back. Only on the ground, walking, with Roblox's own turning
+    -- on; a body already on its way (off by under half a degree) is never written, so walking straight writes nothing.
+    local lastTurnErr = nil
+    local OVERSHOOT_MIN = 0.01 -- radians: a smaller miss is left alone
+    local function overshootGuard(dt)
+        local body = rootPart or torso
+        if not body or not body.Parent or not dt or dt <= 0 then return end
+        if not GROUND_STATES[humanoid:GetState()] or glideVelocity.Parent ~= nil or climbFWM.isClimbing()
+            or humanoid.Sit or humanoid.PlatformStand or humanoid.Health <= 0 or not humanoid.AutoRotate
+            or os.clock() < holdUntil or checkIfTrippedState() then
+            lastTurnErr = nil
+            return
+        end
+        local md = humanoid.MoveDirection * xzVector
+        local look = flatLookOf(body.CFrame)
+        if md.Magnitude < 0.1 or not look then
+            lastTurnErr = nil
+            return
+        end
+        local err = (yawOf(md.Unit) - yawOf(look) + math.pi) % (2 * math.pi) - math.pi -- (where you walk, minus where it faces)
+        local prev = lastTurnErr
+        lastTurnErr = err
+        -- (gone from one side of where you walk to the other: past it. Both small: not the half turn where the sides swap)
+        if prev and prev * err < 0 and math.abs(err) > OVERSHOOT_MIN and math.abs(prev) + math.abs(err) < 2 then
+            local w = body.AssemblyAngularVelocity
+            body.AssemblyAngularVelocity = Vector3.new(w.X, 0, w.Z)
+            local cf0 = body.CFrame
+            local pos = cf0.Position
+            body.CFrame = CFrame.new(pos) * CFrame.fromAxisAngle(Vector3.new(0, 1, 0), err) * (CFrame.new(-pos) * cf0)
+            lastTurnErr = 0
+        end
+    end
+
     -- (Addtion-Scripts) the sink (see SINKING INTO THE GROUND above)
     local sinkRay = RaycastParams.new()
     sinkRay.FilterType = Enum.RaycastFilterType.Exclude
@@ -1336,6 +1372,7 @@ local function setupCharacterPhysics(character)
         -- (holding a sword, the user's recordings). It is not drawn at all now.
 
         spinGuard(dt) -- (see SPIN GUARD above)
+        overshootGuard(dt) -- (see NO OVERSHOOT above)
         -- (Addtion-Scripts) THE AIR LOCK, as the 2008 physics': from a jump until you land you keep facing the way you
         -- jumped. The jump glide turns Roblox's turning off for the jump, but the body still had the turn it was making
         -- as it left the ground and kept going round in the air (turning left or right while jumping: a spin, the
