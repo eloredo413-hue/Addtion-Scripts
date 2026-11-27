@@ -745,12 +745,30 @@ local function applySpeedups(src)
 end
 
 -- patch (optional): changes the downloaded code before it runs (the speed-ups above always apply)
+-- (Addtion-Scripts) A file is downloaded with the executor's own request() when it has one: the game keeps drawing while
+-- it comes down. game:HttpGet holds the whole game still until it is back, and about twenty files are fetched right
+-- after the setup (the 2013 mobile loading screen's squares crawled at 5 frames a second meanwhile, the user's
+-- recording). HttpGet is the fallback, and More guis uses this one too (getgenv().BPDownload).
+local function download(url)
+    local req = (type(request) == "function" and request) or (type(http_request) == "function" and http_request)
+        or (type(syn) == "table" and type(syn.request) == "function" and syn.request)
+        or (type(fluxus) == "table" and type(fluxus.request) == "function" and fluxus.request)
+    if req then
+        local ok, res = pcall(req, { Url = url, Method = "GET" })
+        if ok and type(res) == "table" and res.StatusCode == 200 and type(res.Body) == "string" and #res.Body > 0 then
+            return true, res.Body
+        end
+    end
+    return pcall(game.HttpGet, game, url)
+end
+getgenv().BPDownload = download
+
 local function loadUrl(url, label, patch)
     -- (tried twice: a phone's connection drops a request now and then; a "404" or an error page counts as failed, so
     -- the callers' gist fallbacks are used)
     local ok, src = false, nil
     for attempt = 1, 2 do
-        ok, src = pcall(game.HttpGet, game, url)
+        ok, src = download(url)
         if ok and type(src) == "string" and #src > 0 and not string.find(src, "^%s*<") and not string.find(src, "^404") then
             break
         end
