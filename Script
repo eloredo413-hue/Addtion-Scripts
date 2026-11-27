@@ -3332,6 +3332,21 @@ end
         local era, raw = getSelectedEra()
         if confirmedVariant then
             era, raw = confirmedVariant, confirmedVariantName
+        else
+            -- (Addtion-Scripts) No Confirm seen for this GUI (a preset, or a saved file, answering the setup, or the
+            -- setup's < >): the GUI that was picked (BloxyTopbarPick, which Saved Settings sets when it presses the
+            -- list), not the year Bloxy's config holds. That one can be an older year left over from before (or the
+            -- year a More guis GUI stands in for), which gave 2008, 2006 and the like the 2014 loading screen, the
+            -- 2014 purchase prompt and the classic bubbles.
+            local known = tostring(getgenv().BloxyTopbarPick or "")
+            if known ~= "" then
+                local variant = TOPBAR_VARIANTS[known] or TOPBAR_VARIANTS[string.lower(known)]
+                if variant then
+                    era, raw = variant, known
+                else
+                    era, raw = classifyEra(known), known
+                end
+            end
         end
         print("[Loader] topbar choice \"" .. tostring(raw) .. "\" -> era: " .. era)
         getgenv().BloxyEra = era
