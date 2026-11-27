@@ -954,8 +954,6 @@ local function setupCharacterPhysics(character)
         end
     end))
 
-    local currentSway = 0
-    local targetSway = 0
     local currentSquash = 0
     local currentTilt = 0
 
@@ -1164,32 +1162,13 @@ local function setupCharacterPhysics(character)
         })
     end
 
-    -- (Addtion-Scripts) found once and as things come in, instead of every frame: FWM's climbing flag and the weight
-    -- of the tool in your hand (FWM's: its parts joined to the right arm)
-    local heldToolMass = 0
-    local function toolWeight()
-        local tool = character:FindFirstChildWhichIsA("Tool")
-        if not tool then heldToolMass = 0 return end
-        local joined = {}
-        for _, p in ipairs(rightArm:GetConnectedParts()) do joined[p] = true end
-        local m = 0
-        for _, d in ipairs(tool:GetDescendants()) do
-            if d:IsA("Part") and joined[d] then m = m + d:GetMass() end
-        end
-        heldToolMass = m
-    end
+    -- (Addtion-Scripts) found once and as things come in, instead of every frame: FWM's climbing flag
     local function lookAtChild(child)
         if child:GetAttribute("FWMClimb") then fwmClimbValue = child end
-        if child:IsA("Tool") then
-            -- (once it's in the hand, and once more a moment later when its grip has joined it)
-            toolWeight()
-            task.delay(0.2, toolWeight)
-        end
     end
     for _, child in ipairs(character:GetChildren()) do lookAtChild(child) end
     table.insert(activeConnections, character.ChildAdded:Connect(lookAtChild))
     table.insert(activeConnections, character.ChildRemoved:Connect(function(child)
-        if child:IsA("Tool") then toolWeight() end
         if child == fwmClimbValue then fwmClimbValue = nil end
     end))
 
@@ -1220,25 +1199,10 @@ local function setupCharacterPhysics(character)
 
         currentTilt = ExtraUtil.Lerp(currentTilt, tiltAngleTarget, 0.3)
 
-        -- (the held tool's weight, worked out when it changes, not every frame: see below)
-        local toolMass = heldToolMass
-
-        -- (Addtion-Scripts) the sway fades the same at any frame rate: FWM's 0.9 + dt stopped fading at all on a slow
-        -- frame (a tenth of a second), and with a tool in hand the turning then fed it until it spun you round
-        targetSway = targetSway * (0.9 + math.min(dt, 0.05)) + (torso.AssemblyAngularVelocity.Y / 2000) * toolMass
-        currentSway = ExtraUtil.Lerp(currentSway, targetSway, 0.3)
-
-        -- (Addtion-Scripts) the lean and the landing tilt only while there is one to give, and turned on the body's root
-        -- (HumanoidRootPart). FWM set the torso's CFrame to itself every frame, also with nothing to lean: the torso's
-        -- CFrame holds what the walk animation does to the waist joint, so writing it back turned the whole body by that
-        -- again every frame you walked, a spin (holding left, right or up: the user's recording). FWM's own animations
-        -- don't turn that joint; other games' and Bloxy's can. (The 2008 physics already only leans when there is one.)
-        if not checkIfTrippedState() and math.abs(currentSway) > 0.0001 then
-            local rollDivisor = torso.AssemblyAngularVelocity.Y < 0 and 2.5 or 5
-            local pitchAngle = -currentSway / 5 -- (the landing tip is the look above)
-            local body = rootPart or torso
-            body.CFrame = body.CFrame * cf.fromEulerAnglesXYZ(pitchAngle, 0, currentSway / rollDivisor)
-        end
+        -- (Addtion-Scripts) NO LEAN WITH A TOOL IN HAND. FWM turned its torso a little more every frame by (your turning speed x
+        -- the weight of the tool in your hand): in FWM a torso constraint (TorsoAttach.AngularTilt) takes that back each frame; in
+        -- any other game nothing does, the turns add up and the body goes round and over: the spin that would not go away
+        -- (holding a sword, the user's recordings). It is not drawn at all now.
 
         spinGuard(dt) -- (see SPIN GUARD above)
         -- (Addtion-Scripts) THE AIR LOCK, as the 2008 physics': from a jump until you land you keep facing the way you
