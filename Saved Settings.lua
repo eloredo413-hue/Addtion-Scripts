@@ -1824,6 +1824,30 @@ local function buildGui()
 	local askedAt, askedName = nil, nil
 	connect(saveButton.MouseButton1Click, function()
 		playClick()
+		-- (Addtion-Scripts) THE 1988 EASTER EGG: type 1988 in the name box and press save. It does not save anything; the title says
+		-- "1988 unlocked", and the 1988 GUI (the E Sprites joke GUI) is in the topbar list from then on (More guis.lua),
+		-- under 1989 when that is unlocked too. The unlock is kept in a file so it never goes away.
+		if string.match(nameBox.Text or "", "^%s*(.-)%s*$") == "1988" then
+			local env = (getgenv and getgenv()) or _G
+			local EGG_FILE_1988 = "BloxyEasterEgg1988.json"
+			local already = env.BP_1988Unlocked
+			if not already then
+				local okFile, there = pcall(function() return isfile and isfile(EGG_FILE_1988) end)
+				already = okFile and there
+			end
+			env.BP_1988Unlocked = true
+			nameBox.Text = ""
+			if not already then
+				pcall(function() if writefile then writefile(EGG_FILE_1988, '{"unlocked":true}') end end)
+				print("[1988] Easter egg unlocked: the 1988 option is in the GUI list from now on.")
+				titleLabel.Text = "1988 unlocked"
+				task.delay(2.5, function()
+					if titleLabel.Parent then titleLabel.Text = "saved settings" end
+				end)
+			end
+			flash(saveButton, "1988 ✓")
+			return
+		end
 		local name = cleanName(nameBox.Text)
 		local taken = name ~= "" and findName(name)
 		local now = os.clock()
