@@ -1078,6 +1078,16 @@ local function setupCharacterPhysics(character)
         end
         local look = flatLookOf(body.CFrame)
         if not look then return end
+        -- (Addtion-Scripts) FALLING: whatever the fall does to the body, it is never allowed to spin fast: the turn is held to a
+        -- gentle 3 radians a second and any tumble (round the other axes) is taken out (the user: when you fall the spinning
+        -- goes crazy). On the ground it is left to the guards below.
+        if state == Enum.HumanoidStateType.Freefall or state == Enum.HumanoidStateType.Jumping then
+            local w = body.AssemblyAngularVelocity or Vector3.new(0, 0, 0)
+            local wy = math.clamp(w.Y, -3, 3)
+            if wy ~= w.Y or math.abs(w.X) > 0.01 or math.abs(w.Z) > 0.01 then
+                body.AssemblyAngularVelocity = Vector3.new(0, wy, 0)
+            end
+        end
         local now = os.clock()
         if now < holdUntil then
             -- (held, but never frozen or snapped: the body is set, every frame, to a facing that eases round to where you
