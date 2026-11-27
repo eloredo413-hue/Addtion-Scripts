@@ -582,6 +582,18 @@ local function finish(why)
 	navTarget = nil
 	removeButtons()
 	local given = 0
+	-- (Addtion-Scripts) THE LOADING SCREEN FIRST: it goes up the moment the last question is answered, before anything
+	-- starts loading, so what loads under it is never seen (the GUI's own loading screen, or the bare game, showed for a
+	-- moment first in the recordings). The loader's follow-up (loadingScreen, bubbles, ...) is that first item.
+	do
+		local FOLLOW_UP = "loader: the GUI's follow-up"
+		local item = queue[FOLLOW_UP]
+		if item then
+			queue[FOLLOW_UP] = nil
+			local ok, err = pcall(item.fn)
+			if not ok then warn("[Setup Back/Forward] \"" .. FOLLOW_UP .. "\" didn't load: " .. tostring(err)) end
+		end
+	end
 	-- the textures (and their studs) load last of all, once the rest has started (the GUI takes a moment to download)
 	local function isTextures(orig) return string.find(string.lower(tostring(pickPage[orig] or "")), "texture", 1, true) ~= nil end
 	local lastOnes = {}
