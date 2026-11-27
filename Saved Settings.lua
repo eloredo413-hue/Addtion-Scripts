@@ -665,7 +665,7 @@ end
 -- THE ANIMATIONS STEP is "Choose your animations: R6 Mode" or "...: R15 Mode", after the avatar. A pick made on the
 -- other kind of avatar is given as the same era on this one; the rest as it was picked.
 local ANIM_ON_R15 = { ["2007"] = "2008 FE", ["2008"] = "2008 FE", ["2014"] = "2014 FE" }
-local ANIM_ON_R6 = { ["2008 fe"] = "2008", ["2014 fe"] = "2014", ["modern r6"] = "Normal" }
+local ANIM_ON_R6 = { ["2008 fe"] = "2008", ["2014 fe"] = "2014", ["modern r6"] = "Normal", ["old r15"] = "Normal" }
 local function animRig(title)
 	local t = string.lower(title or "")
 	if not string.find(t, "choose your animations", 1, true) then return nil end
@@ -1225,8 +1225,8 @@ end
 -- (the 2013 recording: animations 2007, old sounds, normal cursor, 2012 textures, no old mobile jump button, no 2006 body, the
 -- 2013 explosion, terrain and particles, the old physics with the 2013 camera). Every question is answered, so none is left as
 -- it was last time (an old "2006" animations answer left over made walking not animate).
-local function answers2013(textures)
-	return setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "2007" }, { "sounds", "Yes" },
+local function answers2013(textures, anim)
+	return setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", anim or "2008" }, { "sounds", "Yes" },
 		{ "mouse", "normal" }, { "textures", textures }, { "mobileJump", "No" }, { "body2006", "No" }, { "forcefield", "2012" },
 		{ "explosion", "2013" }, { "terrain", "2013" }, { "particles", "2013" }, { "emotes", "No" } })
 end
@@ -1254,7 +1254,7 @@ local function presetEarly2014()
 	return era { name = "2013 - early 2014", resetAll = true, topbar = "2013 mobile", note = "the lighting and hammer options of 2014 (iw legacy lighting with the 2014 era, 2014 shadows, 2013 dyn, outline, classic face, no leaderboard), the old health bar off, the setup answers of 2013 with the 2016 textures (studs)",
 		lighting = { "isIWLegacyLightingEnabled", "isIWLighting2014Enabled" }, extra = extra,
 		-- (and the 2016 studs: the textures question answered "2016 textures", as the user asked for early 2014)
-		physicsCamera = "bothOld2013", answers = answers2013("2016 textures"),
+		physicsCamera = "bothOld2013", answers = answers2013("2016 textures", "2014"),
 		choices = { SafeChat = false, Sounds = true, Mouse = "normal", Textures = "2016", MobileJump = false, Body2006 = false,
 			Forcefield = "2012", Emotes = false } }
 end
@@ -1266,7 +1266,7 @@ local PRESETS = {
 		extra = { isRemoveLightingEnabled = true, isNoShadowsEnabled = true, isOldMoonEnabled = true, isHideGameGuiEnabled = true,
 			isUGCRemoverEnabled = true, isOldDecalEnabled = false, isHealthESPEnabled = true },
 		physicsCamera = "none",
-		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "Normal" }, { "sounds", "No" },
+		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "2008" }, { "sounds", "No" },
 			{ "mobileJump", "No" }, { "body2006", "No" }, { "explosion", "2006" }, { "terrain", "none" }, { "emotes", "No" } }),
 		choices = { SafeChat = false, Sounds = false, MobileJump = false, Body2006 = false, Emotes = false } },
 	era { name = "2006", resetOld = true, topbar = "2006", note = "2006 plastic, the 2006 avatar, remove lighting, no shadows, 2006-07 lighting, lens flare, night sky, old moon, old decal rendering, 2006 physics + 2007 camera",
@@ -1289,7 +1289,7 @@ local PRESETS = {
 			isOldAvatarEnabled = true, is2006AvatarEnabled = false, is2008PlayersEnabled = false, isAllPlayersEnabled = true,
 			isUGCRemoverEnabled = true, isOldDecalEnabled = true, isHealthESPEnabled = true },
 		physicsCamera = "both2006",
-		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "2007" }, { "sounds", "Yes" },
+		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "2008" }, { "sounds", "Yes" },
 			{ "mouse", "normal" }, { "textures", "2008 textures" }, { "mobileJump", "No" }, { "forcefield", "normal" },
 			{ "explosion", "2007" }, { "terrain", "none" }, { "oldParticles", "Yes" }, { "particles", "2008" }, { "emotes", "No" } }),
 		choices = { SafeChat = false, Sounds = true, Forcefield = "normal", MobileJump = false, Emotes = false } },
@@ -1300,17 +1300,17 @@ local PRESETS = {
 			is2008PlayersEnabled = true, isOldAvatarEnabled = false, is2006AvatarEnabled = false, isUGCRemoverEnabled = true,
 			isOldDecalEnabled = false, isAllPlayersEnabled = true },
 		physicsCamera = "both2008",
-		answers = setup({ { "safeChat", "Yes" }, { "animations", "2007" }, { "sounds", "No" }, { "textures", "2008 textures" },
-			{ "mobileJump", "No" }, { "terrain", "none" }, { "emotes", "No" } }),
-		choices = { SafeChat = true, Sounds = false, MobileJump = false, Emotes = false } },
+		answers = setup({ { "safeChat", "Yes" }, { "animations", "2008" }, { "sounds", "No" }, { "textures", "2008 textures" },
+			{ "mobileJump", "No" }, { "forcefield", "2008(r6 only)" }, { "terrain", "none" }, { "emotes", "No" } }),
+		choices = { Forcefield = "2008", SafeChat = true, Sounds = false, MobileJump = false, Emotes = false } },
 	-- (the user, round 3: no skybox, the UGC remover off (it was the lag), remove pro on (the over-contrast), all players on, and the
 	-- 2008 physics; its camera is the 2007 one, as in the 2008 preset)
 	era { name = "2010", resetOld = true, topbar = "2010", note = "2010 plastic, remove pro, old safe chat, all players, 2008 physics + 2007 camera",
 		hideControls = true, material = "is2010MaterialsEnabled",
 		extra = { isUGCRemoverEnabled = false, isOldDecalEnabled = false, isHealthESPEnabled = true, isRemoveProEnabled = true, isAllPlayersEnabled = true },
 		physicsCamera = "both2008",
-		answers = setup({ { "safeChat", "Yes" }, { "mobileJump", "No" }, { "terrain", "none" }, { "emotes", "No" } }),
-		choices = { SafeChat = true, MobileJump = false, Emotes = false } },
+		answers = setup({ { "safeChat", "Yes" }, { "animations", "2008" }, { "mobileJump", "No" }, { "forcefield", "2008(r6 only)" }, { "terrain", "none" }, { "emotes", "No" } }),
+		choices = { Forcefield = "2008", SafeChat = true, MobileJump = false, Emotes = false } },
 	-- 2011 - 2013, from the user's videos (the hammer's options and the setup's answers as they gave them; the avatar and
 	-- colour dropdowns and the 2012 / 2013 materials were shut in the 2012 and 2013 videos, so the 2011 video's are used).
 	-- No skybox in any of them.
@@ -1321,7 +1321,7 @@ local PRESETS = {
 			isHealthESPEnabled = true, isHideGameGuiEnabled = true, isOldDecalEnabled = false, isUGCRemoverEnabled = false,
 			isAllPlayersEnabled = true, isRemoveProEnabled = true, isOldAvatarEnabled = false, is2006AvatarEnabled = false, is2008PlayersEnabled = false },
 		physicsCamera = "bothOld2007",
-		answers = setup({ { "safeChat", "Yes" }, { "animations", "2007" }, { "mouse", "normal" }, { "textures", "2012 textures" },
+		answers = setup({ { "safeChat", "Yes" }, { "animations", "2008" }, { "mouse", "normal" }, { "textures", "2012 textures" },
 			{ "body2006", "No" }, { "forcefield", "2008(r6 only)" }, { "terrain", "2013" }, { "emotes", "No" } }),
 		choices = { SafeChat = true, Mouse = "normal", Textures = "2012", Body2006 = false, Forcefield = "2008", Emotes = false } },
 	era { name = "2012", resetAll = true, resetOld = true, topbar = "2012", note = "the 2011 options (remove pro, all players) with the chat bar, Old physics + 2007 camera",
@@ -1332,7 +1332,7 @@ local PRESETS = {
 			isUGCRemoverEnabled = false, isAllPlayersEnabled = true, isRemoveProEnabled = true, isOldAvatarEnabled = false, is2006AvatarEnabled = false,
 			is2008PlayersEnabled = false },
 		physicsCamera = "bothOld2007",
-		answers = setup({ { "backpack", "No" }, { "sounds", "Yes" }, { "body2006", "No" }, { "forcefield", "2012" }, { "terrain", "none" },
+		answers = setup({ { "backpack", "No" }, { "animations", "2008" }, { "sounds", "Yes" }, { "body2006", "No" }, { "forcefield", "2012" }, { "terrain", "none" },
 			{ "particles", "2010" }, { "emotes", "No" } }),
 		choices = { Backpack = "none", Sounds = true, Body2006 = false, Forcefield = "2012", Emotes = false } },
 	preset2013(),
@@ -1343,7 +1343,7 @@ local PRESETS = {
 		lighting = { "isIWLegacyLightingEnabled", "isIWLighting2014Enabled" },
 		extra = EXTRA_2014,
 		physicsCamera = "camera2013",
-		answers = setup({ { "safeChat", "No" }, { "animations", "Normal" }, { "sounds", "Yes" }, { "mouse", "normal" }, { "mobileJump", "Yes" }, { "body2006", "No" },
+		answers = setup({ { "safeChat", "No" }, { "animations", "2014" }, { "sounds", "Yes" }, { "mouse", "normal" }, { "mobileJump", "Yes" }, { "body2006", "No" },
 			{ "forcefield", "normal" }, { "explosion", "Normal" }, { "particles", "Normal" }, { "emotes", "No" } }),
 		choices = { SafeChat = false, Sounds = true, Mouse = "normal", MobileJump = true, Body2006 = false, Forcefield = "normal", Emotes = false } },
 	era { name = "early 2015", resetAll = true, topbar = "2015 early", note = "iw lighting with the 2015 era, outline, 2013 dyn, classic face, 2015 audio (no old sounds), slippery walk, game GUI hidden, 2018 camera",
@@ -1352,7 +1352,7 @@ local PRESETS = {
 			is2015AudioEnabled = true, isHealthESPEnabled = true, isRemoveLeaderboardEnabled = true, isHideGameGuiEnabled = true,
 			isOldThumbstickEnabled = true, isSlipperyWalkEnabled = true },
 		physicsCamera = "camera2018",
-		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "Normal" }, { "sounds", "No" }, { "mouse", "normal" },
+		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "Modern R6" }, { "sounds", "No" }, { "mouse", "normal" },
 			{ "textures", "2016 textures" }, { "mobileJump", "Yes" }, { "body2006", "No" }, { "forcefield", "normal" },
 			{ "explosion", "Normal" }, { "terrain", "none" }, { "particles", "Normal" }, { "emotes", "No" } }),
 		choices = { SafeChat = false, Sounds = false, Mouse = "normal", Textures = "2016", MobileJump = true, Body2006 = false, Forcefield = "normal", Emotes = false } },
@@ -1362,7 +1362,7 @@ local PRESETS = {
 		extra = { isClassicFaceEnabled = true, is2015AudioEnabled = true, isRemoveLeaderboardEnabled = true,
 			isSlipperyWalkEnabled = true },
 		physicsCamera = "camera2018",
-		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "Normal" }, { "sounds", "No" }, { "mouse", "normal" },
+		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "Modern R6" }, { "sounds", "No" }, { "mouse", "normal" },
 			{ "textures", "2016 textures" }, { "mobileJump", "No" }, { "body2006", "No" }, { "forcefield", "normal" },
 			{ "explosion", "Normal" }, { "terrain", "none" }, { "particles", "Normal" }, { "emotes", "No" } }),
 		choices = { SafeChat = false, Sounds = false, Mouse = "normal", Textures = "2016", MobileJump = false, Body2006 = false, Forcefield = "normal", Emotes = false } },
@@ -1371,7 +1371,7 @@ local PRESETS = {
 		extra = { isClassicFaceEnabled = true, is2016AudioEnabled = true, isRemoveLeaderboardEnabled = true,
 			isSlipperyWalkEnabled = true },
 		physicsCamera = "camera2018",
-		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "Normal" }, { "sounds", "No" }, { "mouse", "normal" },
+		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "Old R15" }, { "sounds", "No" }, { "mouse", "normal" },
 			{ "textures", "2016 textures" }, { "mobileJump", "Yes" }, { "body2006", "No" }, { "forcefield", "normal" },
 			{ "explosion", "Normal" }, { "terrain", "none" }, { "particles", "Normal" }, { "emotes", "No" } }),
 		choices = { SafeChat = false, Sounds = false, Mouse = "normal", Textures = "2016", MobileJump = true, Body2006 = false, Forcefield = "normal", Emotes = false } },
@@ -1379,7 +1379,7 @@ local PRESETS = {
 		material = "isLegacyMaterialsEnabled", lighting = { "isLegacyLightingEnabled", "isIWLighting2017Enabled" },
 		extra = { isClassicFaceEnabled = true, isRemoveLeaderboardEnabled = true },
 		physicsCamera = "camera2018",
-		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "Normal" }, { "sounds", "No" }, { "mouse", "normal" },
+		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "Old R15" }, { "sounds", "No" }, { "mouse", "normal" },
 			{ "textures", "Normal" }, { "mobileJump", "Yes" }, { "body2006", "No" }, { "forcefield", "normal" },
 			{ "explosion", "Normal" }, { "terrain", "none" }, { "particles", "Normal" }, { "emotes", "No" } }),
 		choices = { SafeChat = false, Sounds = false, Mouse = "normal", MobileJump = true, Body2006 = false, Forcefield = "normal", Emotes = false } },
