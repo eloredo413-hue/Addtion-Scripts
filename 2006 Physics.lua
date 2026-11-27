@@ -714,6 +714,8 @@ local function setupCharacterPhysics(character)
     -- recordings). They are on the HumanoidRootPart now (the body's own centre: nothing for them to turn), and the body's
     -- own turning is held at zero while one of them pushes.
     local pushPart = rootPart or torso
+    local fallLocked = false
+    local landEaseUntil, landEaseOn = 0, false -- (after a landing the body eases round to where you walk: see THE LANDING TURN)
     local airYaw = nil -- (the way the body faced as it left the ground: it keeps facing it until it lands, see THE AIR LOCK)
     local glideVelocity = ExtraUtil.Create("BodyVelocity", {
         Name = "GlideVelocity",
@@ -923,6 +925,7 @@ local function setupCharacterPhysics(character)
         if newState == Enum.HumanoidStateType.Landed then
             autoRotateTime = os.clock() + 0.25
             lastLandAt = os.clock()
+            landEaseUntil = os.clock() + 0.5
             local velY = torso.AssemblyLinearVelocity.Y
             if velY >= -250 then
                 landCount += 1
@@ -1443,7 +1446,48 @@ local function setupCharacterPhysics(character)
         -- jumped. The jump glide turns Roblox's turning off for the jump, but the body still had the turn it was making
         -- as it left the ground and kept going round in the air (turning left or right while jumping: a spin, the
         -- user's video). That turn is stopped here.
-        if glideVelocity.Parent ~= nil then
+        -- (Addtion-Scripts) THE AIR LOCK ALSO FOR A FALL: walking off an edge (no jump, so no glide) the body was free to turn in the
+        -- air, and every fall into a spin came from there. It keeps the way it faced as it left the ground, as in a jump.
+        local fallState = humanoid:GetState()
+        local falling = (fallState == Enum.HumanoidStateType.Freefall) and glideVelocity.Parent == nil
+            and not climbFWM.isClimbing() and not humanoid.Sit and not humanoid.PlatformStand
+        if falling then
+            if not airYaw or not fallLocked then
+                local lv0 = (rootPart or torso).CFrame.LookVector
+                airYaw = math.atan2(-lv0.X, -lv0.Z)
+                fallLocked = true
+            end
+        elseif fallLocked then
+            fallLocked = false
+            if glideVelocity.Parent == nil then airYaw = nil end
+        end
+        -- (Addtion-Scripts) THE LANDING TURN: Roblox's turning gets switched back on at the landing and snaps the body from the way it
+        -- faced in the air to where you walk, the "recoil" the user saw on every jump. For half a second after a landing the body
+        -- is eased round to where you walk instead (at most 5 radians a second), then Roblox's turning is back.
+        if os.clock() < landEaseUntil and GROUND_STATES[fallState] and glideVelocity.Parent == nil then
+            landEaseOn = true
+            pcall(function() humanoid.AutoRotate = false end)
+            local body = rootPart or torso
+            local md = humanoid.MoveDirection * xzVector
+            if md.Magnitude > 0.1 and body then
+                local cf0 = body.CFrame
+                local lv = cf0.LookVector
+                local cur = math.atan2(-lv.X, -lv.Z)
+                local want = math.atan2(-md.X, -md.Z)
+                local d = (want - cur + math.pi) % (2 * math.pi) - math.pi
+                local step = math.clamp(d * (1 - math.exp(-10 * math.min(dt, 0.1))), -5 * math.min(dt, 0.1), 5 * math.min(dt, 0.1))
+                local w = body.AssemblyAngularVelocity or Vector3.new(0, 0, 0)
+                body.AssemblyAngularVelocity = Vector3.new(w.X, 0, w.Z)
+                if math.abs(step) > 1e-5 then
+                    local pos = cf0.Position
+                    body.CFrame = CFrame.new(pos) * CFrame.fromAxisAngle(Vector3.new(0, 1, 0), step) * (CFrame.new(-pos) * cf0)
+                end
+            end
+        elseif landEaseOn then
+            landEaseOn = false
+            if glideVelocity.Parent == nil then pcall(function() humanoid.AutoRotate = true end) end
+        end
+        if glideVelocity.Parent ~= nil or fallLocked then
             local body = rootPart or torso
             noTurn(body)
             -- (and it is set back to that facing every frame: a turn of a few radians a second, slower than the spin guard's
