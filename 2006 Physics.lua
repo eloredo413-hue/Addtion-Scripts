@@ -979,6 +979,7 @@ local function setupCharacterPhysics(character)
     local lastYaw, spinFor, spinSign, holdUntil, holdLook, spinReported = nil, 0, 0, 0, nil, false
     local spinAccum, holdYaw, airSpinReported = 0, nil, false
     local lastStickYaw = nil -- (where the stick pointed last frame: a body that goes round with a stick going round is turning)
+    local stickMoving = 0 -- (how fast the stick has been swinging round lately, rad/s, smoothed over about 0.1 s)
     local function flatLookOf(cframe)
         local look = cframe.LookVector * xzVector
         if look.Magnitude < 0.01 then return nil end
@@ -1013,7 +1014,7 @@ local function setupCharacterPhysics(character)
         local guarded = GROUND_STATES[state] or state == Enum.HumanoidStateType.Jumping or state == Enum.HumanoidStateType.Freefall
         if not guarded or climbFWM.isClimbing() or humanoid.Sit or humanoid.PlatformStand or checkIfTrippedState()
             or humanoid.Health <= 0 then
-            lastYaw, spinFor, lastStickYaw, spinAccum, holdYaw = nil, 0, nil, 0, nil
+            lastYaw, spinFor, lastStickYaw, spinAccum, holdYaw, stickMoving = nil, 0, nil, 0, nil, 0
             return
         end
         local look = flatLookOf(body.CFrame)
@@ -1043,15 +1044,32 @@ local function setupCharacterPhysics(character)
         local yaw = yawOf(look)
         if lastYaw then
             local turned = (yaw - lastYaw + math.pi) % (2 * math.pi) - math.pi
+            -- (where the stick points, and how fast it is swinging round)
+            local mdv = humanoid.MoveDirection * xzVector
+            local stickRate = 0
+            if mdv.Magnitude > 0.1 then
+                local stickYaw = yawOf(mdv.Unit)
+                if lastStickYaw then stickRate = ((stickYaw - lastStickYaw + math.pi) % (2 * math.pi) - math.pi) / dt end
+                lastStickYaw = stickYaw
+            else
+                lastStickYaw = nil
+            end
+            stickMoving = stickMoving * 0.85 + math.abs(stickRate) * 0.15
             -- (Addtion-Scripts) THE FASTEST TURN: Roblox's own turning is quick, and the moment a jump ends (the air lock held the
             -- body facing the way it jumped, and the stick has moved since) it swung the body round at 15 to 23 radians a second,
             -- 2 to 4 turns a second: the spin after every jump (the readout, in the user's recording). Whatever turns the body
             -- (Roblox's turning, a gyro, anything), it is never seen to turn faster than TURN_LIMIT: what is over is taken back
             -- each frame, so it eases round to where you walk instead. Ordinary turning (a few radians a second) is not touched.
             -- (a body set to a new facing in one frame - over 1.2 radians - is a teleport or a script facing it somewhere, not
-            -- turning: that is left as it is)
+            -- turning: that is left as it is). Not while the stick is itself swinging round (spinning the stick): the body has to
+            -- keep up with it or it falls more than half a turn behind and goes back and forth, the user's "what is this" when
+            -- spinning; it is for the body catching up with a stick that is still.
+            -- (And only a turn the physics is making - the body's own turning speed matches it - not a script setting the facing.)
             local maxStep = TURN_LIMIT * dt
-            if math.abs(turned) > maxStep and math.abs(turned) < 1.2 and humanoid.AutoRotate then
+            local spinW = body.AssemblyAngularVelocity
+            local spinNow = spinW and spinW.Y or 0
+            local physical = spinNow * turned > 0 and math.abs(spinNow) > 0.4 * math.abs(turned / dt)
+            if math.abs(turned) > maxStep and math.abs(turned) < 1.2 and humanoid.AutoRotate and stickMoving < 1.5 and physical then
                 local excess = turned - (turned > 0 and maxStep or -maxStep)
                 local cf0 = body.CFrame
                 local pos = cf0.Position
@@ -1063,18 +1081,7 @@ local function setupCharacterPhysics(character)
             local sign = rate > 0 and 1 or -1
             -- (going round with a stick that is going round is Roblox's normal turning, however fast you swing the stick: not a
             -- spin. A spin goes round with the stick still, or against it.)
-            local followsStick = false
-            local mdv = humanoid.MoveDirection * xzVector
-            if mdv.Magnitude > 0.1 then
-                local stickYaw = yawOf(mdv.Unit)
-                if lastStickYaw then
-                    local stickRate = ((stickYaw - lastStickYaw + math.pi) % (2 * math.pi) - math.pi) / dt
-                    followsStick = stickRate * rate > 0 and math.abs(stickRate) > 0.5 * math.abs(rate)
-                end
-                lastStickYaw = stickYaw
-            else
-                lastStickYaw = nil
-            end
+            local followsStick = stickRate ~= 0 and stickRate * rate > 0 and math.abs(stickRate) > 0.5 * math.abs(rate)
             if math.abs(rate) > SPIN_RATE and not followsStick and (spinFor == 0 or sign == spinSign) then
                 spinSign = sign
                 spinFor = spinFor + dt
