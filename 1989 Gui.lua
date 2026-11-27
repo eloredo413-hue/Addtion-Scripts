@@ -1022,21 +1022,50 @@ XPK.icons = {
 XPK.iconByRows = {}
 XPK.colour = {}
 
--- XP toolbar buttons (the toolbar's and the tool palette's) are flat: no outline at all until the finger / mouse is over one
--- (a pale orange fill with an orange edge) or it is the tool in use (the same, a little deeper)
+-- XP toolbar buttons (the toolbar's and the tool palette's) are flat, as in the real program (the user's screenshots of it): no
+-- outline or fill at all, until the finger / mouse is over one (a thin raised edge: white above and left, grey below and right)
+-- or it is the tool in use (pushed in: a pale square, sunken: a grey edge above and left, white below and right)
+XPK.edgeLight, XPK.edgeDark, XPK.sunkenFill = Color3.fromRGB(255, 255, 255), Color3.fromRGB(160, 157, 144), Color3.fromRGB(246, 245, 238)
+function XPK.edges(frame, tlCol, brCol)
+	local spec = { _XPE_T = { UDim2.new(1, 0, 0, 1), UDim2.fromOffset(0, 0), tlCol }, _XPE_L = { UDim2.new(0, 1, 1, 0), UDim2.fromOffset(0, 0), tlCol },
+		_XPE_B = { UDim2.new(1, 0, 0, 1), UDim2.new(0, 0, 1, -1), brCol }, _XPE_R = { UDim2.new(0, 1, 1, 0), UDim2.new(1, -1, 0, 0), brCol } }
+	for name, d in pairs(spec) do
+		local e = frame:FindFirstChild(name)
+		if not tlCol then
+			if e then e:Destroy() end
+		else
+			if not e then
+				e = Instance.new("Frame"); e.Name = name; e.BorderSizePixel = 0; e.ZIndex = frame.ZIndex + 1; e.Parent = frame
+			end
+			e.Size = d[1]; e.Position = d[2]; e.BackgroundColor3 = d[3]
+		end
+	end
+end
 function XPK.flatLook(frame)
 	local down, hot = frame:GetAttribute("_XPPressed"), frame:GetAttribute("_XPHot")
-	local st = frame:FindFirstChild("_ThemeStroke")
-	local uc = frame:FindFirstChild("_ThemeCorner")
-	if uc then uc:Destroy() end
-	if down or hot then
+	local st = frame:FindFirstChild("_ThemeStroke"); if st then st:Destroy() end
+	local uc = frame:FindFirstChild("_ThemeCorner"); if uc then uc:Destroy() end
+	if down then
 		frame.BackgroundTransparency = 0
-		frame.BackgroundColor3 = down and Color3.fromRGB(254, 222, 160) or Color3.fromRGB(255, 244, 206)
-		if not st then st = Instance.new("UIStroke"); st.Name = "_ThemeStroke"; st.Parent = frame end
-		st.Thickness = 1; st.Color = Color3.fromRGB(230, 153, 40); st.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		frame.BackgroundColor3 = XPK.sunkenFill
+		XPK.edges(frame, XPK.edgeDark, XPK.edgeLight)
+	elseif hot then
+		frame.BackgroundTransparency = 1
+		XPK.edges(frame, XPK.edgeLight, XPK.edgeDark)
 	else
 		frame.BackgroundTransparency = 1
-		if st then st:Destroy() end
+		XPK.edges(frame, nil, nil)
+	end
+end
+-- etched dividers between the groups (the real program has them, in the XP theme): a dark line with a white one beside it
+XPK.seps = {}
+function XPK.sepLine(parent, x, y, w, h, vertical)
+	for i, col in ipairs({ Color3.fromRGB(172, 168, 153), Color3.fromRGB(255, 255, 255) }) do
+		local f = Instance.new("Frame")
+		f.Name = "_XPSep"; f.BorderSizePixel = 0; f.BackgroundColor3 = col
+		f.Position = vertical and UDim2.fromOffset(x + i - 1, y) or UDim2.fromOffset(x, y + i - 1)
+		f.Size = UDim2.fromOffset(w, h); f.ZIndex = 3; f.Visible = (currentThemeMode == "WinXP"); f.Parent = parent
+		XPK.seps[#XPK.seps + 1] = f
 	end
 end
 -- the drawn XP push button's edge: navy, orange under the finger / mouse or pressed
@@ -1089,7 +1118,7 @@ function XPK.faceUpdate(frame)
 end
 
 function XPK.clearButton(frame)
-	for _, n in ipairs({ "_XPBtnTex", "_XPBtnGrad" }) do
+	for _, n in ipairs({ "_XPBtnTex", "_XPBtnGrad", "_XPE_T", "_XPE_L", "_XPE_B", "_XPE_R" }) do
 		local o = frame:FindFirstChild(n); if o then o:Destroy() end
 	end
 	XPK.wordsOn(frame, false)
@@ -1576,14 +1605,15 @@ for _, it in ipairs(tbGroup1) do XPK.iconByRows[it.rows] = it.id end
 local tbBtns = {}
 local curTbX = 4
 for i, item in ipairs(tbGroup1) do
-	if i == 4 or i == 7 then curTbX += 5 end
+	if i == 4 or i == 7 then XPK.sepLine(TopToolbar, curTbX + 3, 3, 1, 20, true); curTbX += 8 end
 	local b = makeButton(TopToolbar, "", UDim2.fromOffset(curTbX, 3), UDim2.fromOffset(22, 20), 4)
 	drawPixelArt(b, item.rows, tbPal, 1, 3, 3, 6)
 	tbBtns[item.id] = b
 	curTbX += 22
 end
 
-curTbX += 8
+XPK.sepLine(TopToolbar, curTbX + 4, 3, 1, 20, true)
+curTbX += 10
 local tbGroup2 = {
 	{ id = "Select", rows = {
 		"....K..........", "....KK.........", "....KKK........", "....KKKK.......",
@@ -1624,7 +1654,8 @@ for _, item in ipairs(tbGroup2) do
 	curTbX += 22
 end
 
-curTbX += 8
+XPK.sepLine(TopToolbar, curTbX + 4, 3, 1, 20, true)
+curTbX += 10
 local RunBtn = makeButton(TopToolbar, "", UDim2.fromOffset(curTbX, 3), UDim2.fromOffset(48, 20), 4)
 local runLbl = Instance.new("TextLabel")
 runLbl.Name = "_Sprite"; runLbl.Size = UDim2.fromOffset(28, 18); runLbl.Position = UDim2.fromOffset(4, 1)
@@ -1716,6 +1747,24 @@ local Canvas = Instance.new("Frame")
 Canvas.Name = "PhysicsCanvas"; Canvas.Size = UDim2.new(1, -16, 1, -36); Canvas.Position = UDim2.fromOffset(0, 0)
 Canvas.BackgroundColor3 = C.CanvasBg; Canvas.BorderSizePixel = 0; Canvas.ClipsDescendants = true; Canvas.ZIndex = 3; Canvas.Parent = WorkspaceContainer
 createBevel(Canvas, true)
+
+-- (Addtion-Scripts) the real program's boxes, in the XP theme: the tool palette's right edge (a dark line and a white one) and the
+-- drawing area's sunken frame (grey above and left, white below and right)
+for i, col in ipairs({ XPK.edgeDark, XPK.edgeLight }) do
+	local f = Instance.new("Frame")
+	f.Name = "_XPSep"; f.BorderSizePixel = 0; f.BackgroundColor3 = col
+	f.Position = UDim2.fromOffset(58 + i - 1, 70); f.Size = UDim2.new(0, 1, 1, -72); f.ZIndex = 6; f.Visible = (currentThemeMode == "WinXP"); f.Parent = MainWindow
+	XPK.seps[#XPK.seps + 1] = f
+end
+for _, e in ipairs({
+	{ XPK.edgeDark, UDim2.fromOffset(0, 0), UDim2.new(1, 0, 0, 1) }, { XPK.edgeDark, UDim2.fromOffset(0, 0), UDim2.new(0, 1, 1, 0) },
+	{ XPK.edgeLight, UDim2.new(0, 0, 1, -1), UDim2.new(1, 0, 0, 1) }, { XPK.edgeLight, UDim2.new(1, -1, 0, 0), UDim2.new(0, 1, 1, 0) },
+}) do
+	local f = Instance.new("Frame")
+	f.Name = "_XPSep"; f.BorderSizePixel = 0; f.BackgroundColor3 = e[1]; f.Position = e[2]; f.Size = e[3]; f.ZIndex = 30
+	f.Visible = (currentThemeMode == "WinXP"); f.Parent = Canvas
+	XPK.seps[#XPK.seps + 1] = f
+end
 
 local WorldContainer = Instance.new("Frame")
 WorldContainer.Size = UDim2.fromScale(1, 1); WorldContainer.BackgroundTransparency = 1; WorldContainer.ZIndex = 4; WorldContainer.Parent = Canvas
@@ -3085,6 +3134,7 @@ local function applyTheme(themeId)
 
 	TopToolbar.Visible = not t.macMode
 	ToolPalette.Visible = not t.macMode
+	for _, sp in ipairs(XPK.seps) do sp.Visible = t.xpMode == true end
 	MacToolStrip.Visible = t.macMode
 
 	-- Scrollbar styling per theme (219948.png XP periwinkle scrollbars vs Mac 1-bit B&W vs Win95 dither)
@@ -3665,7 +3715,7 @@ local function setActiveTool(id)
 end
 
 local palY = 4
-local function addPaletteGrid(items)
+local function addPaletteGrid(items, noDivider)
 	for idx, id in ipairs(items) do
 		local col = (idx - 1) % 2
 		local row = math.floor((idx - 1) / 2)
@@ -3676,15 +3726,32 @@ local function addPaletteGrid(items)
 		btn.MouseButton1Click:Connect(function() setActiveTool(id) end)
 		toolButtons[id] = btn
 	end
-	palY += math.ceil(#items / 2) * 23 + 5
+	local groupEnd = palY + math.ceil(#items / 2) * 23
+	if not noDivider then XPK.sepLine(ToolPalette, 2, groupEnd + 3, 52, 1, false) end
+	palY = groupEnd + 9
 end
 
 addPaletteGrid({ "Circle", "Square", "Polygon", "CurvedPoly", "Rect", "Anchor" })
 
-local JoinBtn = makeButton(ToolPalette, "Join (o)", UDim2.fromOffset(3, palY), UDim2.fromOffset(49, 18), 4, C.DisabledText)
-local SplitBtn = makeButton(ToolPalette, "Split o-o", UDim2.fromOffset(3, palY + 19), UDim2.fromOffset(49, 18), 4, C.DisabledText)
-JoinBtn.TextSize = 10; SplitBtn.TextSize = 10
-palY += 41
+-- (the real program's Join and Split: their words in bold, each with its little picture on the right, flat in the XP theme)
+local JoinBtn = makeButton(ToolPalette, "Join", UDim2.fromOffset(3, palY), UDim2.fromOffset(49, 18), 4, C.Text, true)
+local SplitBtn = makeButton(ToolPalette, "Split", UDim2.fromOffset(3, palY + 19), UDim2.fromOffset(49, 18), 4, C.Text, true)
+JoinBtn.TextSize = 11; SplitBtn.TextSize = 11
+JoinBtn.TextXAlignment = Enum.TextXAlignment.Left; SplitBtn.TextXAlignment = Enum.TextXAlignment.Left
+for _, jb in ipairs({ JoinBtn, SplitBtn }) do
+	local pad = Instance.new("UIPadding"); pad.PaddingLeft = UDim.new(0, 3); pad.Parent = jb
+	XPK.flat[jb] = true
+end
+drawPixelArt(JoinBtn, {
+	".............", "...ooooooo...", "..oofffffoo..", ".oofffffffoo.", ".offfffffffo.", ".offfkkkfffo.", ".offfkkkfffo.",
+	".offfkkkfffo.", ".offfffffffo.", ".oofffffffoo.", "..oofffffoo..", "...ooooooo...", ".............",
+}, { o = Color3.fromRGB(128, 128, 116), f = Color3.fromRGB(198, 198, 186), k = Color3.fromRGB(0, 0, 0) }, 1, 35, 3, JoinBtn.ZIndex + 2, "JoinIcon")
+drawPixelArt(SplitBtn, {
+	".............", "...kkkkkkk.bb", "..kkfffffkbb.", ".kkffffffbbk.", ".kffffffbbfk.", ".kfffffbbffk.", ".kffffbbfffk.",
+	".kfffbbffffk.", ".kffbbfffffk.", ".kkbbfffffkk.", "..bbfffffkk..", ".bbkkkkkkk...", ".............",
+}, { k = Color3.fromRGB(0, 0, 0), f = Color3.fromRGB(130, 205, 128), b = Color3.fromRGB(30, 60, 200) }, 1, 35, 3, SplitBtn.ZIndex + 2, "SplitIcon")
+XPK.sepLine(ToolPalette, 2, palY + 40, 52, 1, false)
+palY += 46
 
 JoinBtn.MouseButton1Click:Connect(function()
 	if #sim.selectedBodies >= 2 then
@@ -3715,7 +3782,7 @@ end)
 
 addPaletteGrid({ "Point", "SqPoint", "HSlot", "VSlot", "CSlot", "Pin" })
 addPaletteGrid({ "RigidJoint", "KeySlot", "PinSlot", "Motor", "Gear", "GearPair" })
-addPaletteGrid({ "TorSpring", "Spring", "TorDamper", "Damper", "Pulley", "Rope", "RotForce", "Force", "Sep", "Rod", "Actuator" })
+addPaletteGrid({ "TorSpring", "Spring", "TorDamper", "Damper", "Pulley", "Rope", "RotForce", "Force", "Sep", "Rod", "Actuator" }, true)
 
 ToolPalette.CanvasSize = UDim2.fromOffset(0, palY + 6)
 -- (Addtion-Scripts) the toolbar's and the tool palette's picture buttons are flat in the XP theme (no outline until touched)
