@@ -28,6 +28,8 @@ do
 	local URL_2005      = "https://gist.githubusercontent.com/eloredo413-hue/7eca661bd68389b3fb2ec5b762b3fb7a/raw/17af25bbea489d0e47334f0f72b183421522536e/2005%2520gui"
 	-- (Addtion-Scripts) 1989: the Interactive Physics window (1989 Gui.lua), an Easter egg option: see STEP 11
 	local URL_1989      = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/1989%20Gui.lua"
+	-- (Addtion-Scripts) 1988: the E Sprites joke GUI (1988 Gui.lua), a second Easter egg option: see STEP 11
+	local URL_1988      = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/1988%20Gui.lua"
 	local SIG_2023      = "111872120766790"
 	local SIG_2013      = "Year = 2013"
 	local SIG_2014      = "h5AEhK7N" -- the 2014 topbar's pastebin
@@ -277,6 +279,13 @@ do
 				local src = fetchURL(URL_1989, "1989")
 				if src then return _ORIG_LS(src, name) end
 				return _ORIG_LS("-- [Hook] 1989 fetch failed", name)
+
+			elseif pending == "1988" and code:find(SIG_2013, 1, true) then
+				getgenv().BP_PendingTopbar = nil
+				getgenv().BP_2023Variant = nil
+				local src = fetchURL(URL_1988, "1988")
+				if src then return _ORIG_LS(src, name) end
+				return _ORIG_LS("-- [Hook] 1988 fetch failed", name)
 			end
 		end
 
@@ -942,6 +951,45 @@ task.spawn(function()
 						shiftDown(slider, anchor.Position.Y.Offset, 35, clone)
 					end
 
+					-- (Addtion-Scripts) EASTER EGG number two: the "1988" option (the E Sprites joke GUI, 1988 Gui.lua). Unlocked in the
+					-- "saved settings" window (Saved Settings.lua: type 1988 in the name box and press save); kept in
+					-- BloxyEasterEgg1988.json, so it is in the list from then on, under 1989 when that is there too.
+					local EGG_FILE_1988 = "BloxyEasterEgg1988.json"
+					local function egg1988Unlocked()
+						local env = getgenv()
+						if env.BP_1988Unlocked then return true end
+						local ok, there = pcall(function() return isfile and isfile(EGG_FILE_1988) end)
+						if ok and there then env.BP_1988Unlocked = true return true end
+						return false
+					end
+					local function insert1988()
+						if findButton(slider, "1988") then return end
+						local btn2013 = findButton(slider, "2013")
+						local anchor = findButton(slider, "1989") or findButton(slider, "2005")
+						if not (btn2013 and anchor) then return end
+						local clone = anchor:Clone()
+						clone.Name = "Topbar1988Button"
+						clone.Text = "1988"
+						clone.Position = UDim2.new(0, 0, 0, anchor.Position.Y.Offset + 35)
+						clone.Parent = slider
+
+						wipeHandlers(clone)
+						noTranslate(clone)
+						addHover(clone)
+
+						clone.MouseButton1Click:Connect(function()
+							playClick()
+							fireOriginal(btn2013)
+							getgenv().Force2008BubbleChat = false
+							getgenv().BP_PendingTopbar = "1988"
+							getgenv().BP_2023Variant = nil
+							print("[1988] Selected — will load on confirm.")
+							updateToggle(frame, "1988")
+						end)
+
+						shiftDown(slider, anchor.Position.Y.Offset, 35, clone)
+					end
+
 					-- STEP 10: Insert 2005
 					if not findButton(slider, "2005") then
 						local btn2013 = findButton(slider, "2013")
@@ -975,6 +1023,8 @@ task.spawn(function()
 
 					-- STEP 11: the 1989 option, once the Easter egg has been unlocked
 					if eggUnlocked() then insert1989() end
+					-- (and the 1988 one, under it)
+					if egg1988Unlocked() then insert1988() end
 
 					print("[Topbar Addon] Done. Dropdown rebuilt.")
 				end

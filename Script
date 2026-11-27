@@ -127,6 +127,7 @@ local MORE_GUIS_PICKS = {
     ["2006"] = { pending = "2006" },
     ["2005"] = { pending = "2005" },
     ["1989"] = { pending = "1989" }, -- (the Easter egg option: the Interactive Physics window, 1989 Gui.lua)
+    ["1988"] = { pending = "1988" }, -- (the second Easter egg option: the E Sprites joke GUI, 1988 Gui.lua)
     ["2023 new"] = { variant = "new" },
     ["2023 old"] = { variant = "old" },
 }
@@ -3074,6 +3075,7 @@ end
         ["2006"]       = "y2006",
         ["2005"]       = "y2005",
         ["1989"]       = "y2005", -- (the Interactive Physics window: like 2005, no bubbles or dialogs of ours)
+        ["1988"]       = "y2005", -- (the E Sprites joke GUI: it has its own bubbles and HUD)
     }
     local PENDING_VARIANTS = {
         ["2015early"] = "early2015",
@@ -3082,6 +3084,7 @@ end
         ["2006"]      = "y2006",
         ["2005"]      = "y2005",
         ["1989"]      = "y2005",
+        ["1988"]      = "y2005",
     }
     local confirmedVariant = nil     -- era of a More guis pick at the last Confirm, or nil
     local confirmedVariantName = nil
@@ -3863,49 +3866,98 @@ end
 -- Bloxy's "old sounds" swaps the character's sounds for its own (ParadoxStep, ParadoxJump, ParadoxDeath...) and
 -- removes Roblox's, so the death sound was Bloxy's (rbxassetid://17755696142), not the classic oof. The oof is
 -- Roblox's own default death sound again since 31 July 2025, and Roblox put it in the Creator Store ("Official OOF
--- Sound Effect", asset 79348298352567). It is loaded ahead and played here the moment you die (Bloxy's own death
--- sound kept quiet): swapping only the file sometimes played nothing, the oof not loaded yet when you died. If it
--- doesn't load, Roblox's own default death sound file is used instead (the oof again since then).
+-- Sound Effect", asset 79348298352567). It is loaded ahead and played here the moment you die. If it doesn't load,
+-- Roblox's own default death sound file is used instead (the oof again since then).
+-- (It used to play only when Bloxy's ParadoxDeath sound was sitting in the root part at the moment of death, and in
+-- some games, or when the sound pack put its sounds somewhere else, or only made that sound as you died, it never did:
+-- the user's "restore the oof". Now "old sounds" is known three ways: the answer Bloxy keeps in its settings file, any
+-- of its sounds (Paradox...) or Hammer stuff 2's old avatar sounds (Custom_...) in the character; any one is enough.
+-- The oof is played from the SoundService, so it still plays when the game removes the character the moment you die.)
 --========================================================
 task.spawn(function()
     local OOF = "rbxassetid://79348298352567"
     local OOF_FALLBACK = "rbxasset://sounds/uuhhh.mp3"
-    local player = game:GetService("Players").LocalPlayer
+    local Players = game:GetService("Players")
+    local player = Players.LocalPlayer
     if not player then return end
     local ContentProvider = game:GetService("ContentProvider")
+    local SoundService = game:GetService("SoundService")
+    local HttpService = game:GetService("HttpService")
     -- the oof, loaded ahead (a sound that isn't loaded yet when you die plays nothing)
     local oofSound = Instance.new("Sound")
     oofSound.Name = "BPOldOof"
     oofSound.SoundId = OOF
     oofSound.Volume = 0.65
-    oofSound.Parent = game:GetService("SoundService")
+    oofSound.Parent = SoundService
+    local oofFailed = false
     task.spawn(function()
         pcall(function() ContentProvider:PreloadAsync({ oofSound }) end)
         task.wait(4)
-        if not oofSound.IsLoaded then oofSound.SoundId = OOF_FALLBACK end
+        if not oofSound.IsLoaded then oofFailed = true oofSound.SoundId = OOF_FALLBACK end
     end)
-    local function useOof(sound)
+
+    local function isPackSound(inst)
+        if not inst:IsA("Sound") then return false end
+        local n = inst.Name
+        return string.sub(n, 1, 7) == "Paradox" or string.sub(n, 1, 7) == "Custom_"
+    end
+    local function oldSoundsOn(character)
+        -- 1. Bloxy's own answer to "old sounds", in its settings file
+        local okCfg, on = pcall(function()
+            if isfile and readfile and isfile("BloxyParadoxConfig.json") then
+                local cfg = HttpService:JSONDecode(readfile("BloxyParadoxConfig.json"))
+                return type(cfg) == "table" and type(cfg.Choices) == "table" and cfg.Choices.Sounds == true
+            end
+            return false
+        end)
+        if okCfg and on then return true end
+        -- 2. the sound pack itself in the character
+        for _, d in ipairs(character:GetDescendants()) do
+            if isPackSound(d) then return true end
+        end
+        return false
+    end
+    -- (Bloxy's own death sound is kept quiet: the oof is played instead, so it is never missed or doubled)
+    local function quietDeathSound(sound)
         if not (sound:IsA("Sound") and sound.Name == "ParadoxDeath") then return end
-        -- (Bloxy's own death sound is kept quiet: the oof below is played instead, so it is never missed or doubled)
         sound.SoundId = OOF
         sound.Volume = 0
+    end
+    local said = false
+    local function playOof(character)
+        for _, d in ipairs(character:GetDescendants()) do
+            if d:IsA("Sound") and (d.Name == "ParadoxDeath" or d.Name == "Died") then
+                pcall(function() d.Volume = 0 d:Stop() end)
+            end
+        end
+        pcall(function()
+            local s = oofSound:Clone()
+            if not oofSound.IsLoaded then s.SoundId = OOF_FALLBACK end
+            s.Parent = SoundService
+            s:Play()
+            game:GetService("Debris"):AddItem(s, 5)
+        end)
+        if not said then
+            said = true
+            print("[Loader] old sounds: the oof played" .. ((oofFailed or not oofSound.IsLoaded) and " (Roblox's own death sound file: the oof asset didn't load)" or ""))
+        end
     end
     local function watch(character)
         local root = character:WaitForChild("HumanoidRootPart", 10)
         local humanoid = character:WaitForChild("Humanoid", 10)
         if not (root and humanoid) then return end
-        for _, child in ipairs(root:GetChildren()) do pcall(useOof, child) end
-        root.ChildAdded:Connect(function(child) pcall(useOof, child) end)
-        -- the moment you die, with old sounds on (Bloxy's death sound is there): the oof, played here
-        humanoid.Died:Connect(function()
-            if not root:FindFirstChild("ParadoxDeath") then return end
-            pcall(function()
-                local s = oofSound:Clone()
-                s.Parent = root
-                s:Play()
-                game:GetService("Debris"):AddItem(s, 4)
-            end)
-        end)
+        for _, child in ipairs(root:GetChildren()) do pcall(quietDeathSound, child) end
+        root.ChildAdded:Connect(function(child) pcall(quietDeathSound, child) end)
+        local played = false
+        local function died()
+            if played then return end
+            if not oldSoundsOn(character) then return end
+            played = true
+            playOof(character)
+        end
+        humanoid.Died:Connect(died)
+        -- (and from the health, for a game that takes the health to nothing a different way)
+        humanoid.HealthChanged:Connect(function(health) if health <= 0 then died() end end)
     end
     if player.Character then task.spawn(watch, player.Character) end
     player.CharacterAdded:Connect(watch)
