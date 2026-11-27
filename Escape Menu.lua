@@ -593,6 +593,40 @@ do
 
     -- The menu can be built before the topbar is picked: what was seen is looked at again for a while.
     local seenViews, seenParents = setmetatable({}, { __mode = "k" }), setmetatable({}, { __mode = "k" })
+    -- (Addtion-Scripts) When the menu opens or fills in, it makes hundreds of labels at once, and each one used to be
+    -- looked at in the same frame (the lag when the escape menu pops up, and the Leave button answering late: the user's
+    -- 2017 and 2019 recordings). They are now looked at a few at a time, 20 a frame.
+    local labelQueue, labelHead, labelDraining = {}, 1, false
+    local function lookAtLabel(obj)
+        pcall(settingsRowLabel, obj)
+        if not isMenuWord(obj.Text) then return end
+        local button = buttonOf(obj)
+        if button and button.Parent then
+            seenParents[button.Parent] = true
+            pcall(padAround, button.Parent)
+            pcall(threeButtons, button.Parent)
+        end
+    end
+    local function queueLabel(obj)
+        labelQueue[#labelQueue + 1] = obj
+        if labelDraining then return end
+        labelDraining = true
+        task.spawn(function()
+            task.wait() -- (the menu names its parts after putting them in place: looked at a frame later)
+            while labelHead <= #labelQueue do
+                local n = 0
+                while labelHead <= #labelQueue and n < 20 do
+                    local item = labelQueue[labelHead]
+                    labelQueue[labelHead] = false
+                    labelHead = labelHead + 1
+                    n = n + 1
+                    if item and item.Parent then pcall(lookAtLabel, item) end
+                end
+                if labelHead <= #labelQueue then task.wait() end
+            end
+            labelQueue, labelHead, labelDraining = {}, 1, false
+        end)
+    end
     local seenHubs = setmetatable({}, { __mode = "k" }) -- the escape menus (what holds a HubBar)
     local hubLooked = setmetatable({}, { __mode = "k" }) -- when each menu was first and last looked through
     local function onAdded(obj)
@@ -616,16 +650,7 @@ do
             end)
         end
         if obj:IsA("TextLabel") or obj:IsA("TextButton") then
-            task.defer(function()
-                pcall(settingsRowLabel, obj)
-                if not isMenuWord(obj.Text) then return end
-                local button = buttonOf(obj)
-                if button and button.Parent then
-                    seenParents[button.Parent] = true
-                    pcall(padAround, button.Parent)
-                    pcall(threeButtons, button.Parent)
-                end
-            end)
+            queueLabel(obj)
         end
     end
     -- Bloxy builds its own GUIs' menu right at the topbar Confirm, before the loader has read the pick,
@@ -645,11 +670,13 @@ do
                 seen = { first = now, last = 0 }
                 hubLooked[hub] = seen
             end
-            local due = (now - seen.first < 60) or (now - seen.last >= 15)
+            -- (the first 20 seconds every recheck, then every 20 seconds: every 2 seconds for a whole minute was a frame drop
+            -- again and again while the menu was being used)
+            local due = (now - seen.first < 20) or (now - seen.last >= 20)
             if due then seen.last = now end
             if hub.Parent and due then
                 pcall(function()
-                    for _, d in ipairs(hub:GetDescendants()) do
+                    for i, d in ipairs(hub:GetDescendants()) do
                         if d:IsA("TextLabel") or d:IsA("TextButton") then pcall(settingsRowLabel, d) end
                         if (d:IsA("TextLabel") or d:IsA("TextButton")) and isMenuWord(d.Text) then
                             local button = buttonOf(d)
@@ -657,6 +684,7 @@ do
                                 seenParents[button.Parent] = true
                             end
                         end
+                        if i % 120 == 0 then task.wait() end -- (a slice a frame)
                     end
                 end)
             end
@@ -668,11 +696,18 @@ do
             end
         end
     end
-    getgenv().BPMenuRecheck = recheck
+    local rechecking = false
+    local function guardedRecheck()
+        if rechecking then return end
+        rechecking = true
+        pcall(recheck)
+        rechecking = false
+    end
+    getgenv().BPMenuRecheck = guardedRecheck
     task.spawn(function()
         while true do
             task.wait(2)
-            recheck()
+            guardedRecheck()
         end
     end)
 
