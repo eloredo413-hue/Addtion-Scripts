@@ -1220,19 +1220,36 @@ local function setup(list)
 	for _, pair in ipairs(list) do table.insert(out, { q = SQ[pair[1]], a = pair[2] }) end
 	return out
 end
--- (2013 and early 2014 are the same preset, as the user said: early 2014 is basically late 2013: the 2013 mobile GUI, with
--- the old health bar, health ESP, no leaderboard, mobile controls and the old thumbstick)
-local function preset2013(name)
-	return era { name = name, resetAll = true, resetOld = true, topbar = "2013 mobile", note = "the 2013 mobile GUI with the old health bar and no leaderboard (early 2014 is the same), 2009 materials with smooth plastic, remove lighting, no shadows, old moon, remove pro, classic face, part sounds, health ESP, game GUI hidden, mobile controls and the old thumbstick, Old physics + 2013 camera",
+-- 2013 and early 2014 are separate presets (the user said so): 2013 is the 2013 mobile GUI with the old health bar; early
+-- 2014 has the lighting and the rest of the hammer options of 2014, the old health bar OFF, and the setup's answers of 2013
+-- (the 2013 recording: animations 2007, old sounds, normal cursor, 2012 textures, no old mobile jump button, no 2006 body, the
+-- 2013 explosion, terrain and particles, the old physics with the 2013 camera). Every question is answered, so none is left as
+-- it was last time (an old "2006" animations answer left over made walking not animate).
+local ANSWERS_2013 = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "2007" }, { "sounds", "Yes" },
+	{ "mouse", "normal" }, { "textures", "2012 textures" }, { "mobileJump", "No" }, { "body2006", "No" }, { "forcefield", "normal" },
+	{ "explosion", "2013" }, { "terrain", "2013" }, { "particles", "2013" }, { "emotes", "No" } })
+local CHOICES_2013 = { SafeChat = false, Sounds = true, Mouse = "normal", Textures = "2012", MobileJump = false, Body2006 = false,
+	Forcefield = "normal", Emotes = false }
+local EXTRA_2014 = { is2014ShadowsEnabled = true, is2013DynamicEnabled = true, isOutlineEnabled = true, isClassicFaceEnabled = true,
+	isOldPartSoundsEnabled = true, isHealthESPEnabled = true, isRemoveLeaderboardEnabled = true, isHideGameGuiEnabled = true,
+	isOldThumbstickEnabled = true }
+local function preset2013()
+	return era { name = "2013", resetAll = true, resetOld = true, topbar = "2013 mobile", note = "the 2013 mobile GUI with the old health bar and no leaderboard, 2009 materials with smooth plastic, remove lighting, no shadows, old moon, remove pro, classic face, part sounds, health ESP, game GUI hidden, mobile controls and the old thumbstick, Old physics + 2013 camera",
 		material = "is2009MaterialsEnabled",
 		extra = { isSmoothPlasticEnabled = true, isRemoveLightingEnabled = true, isNoShadowsEnabled = true, isOldMoonEnabled = true,
 			isRemoveProEnabled = true, is2012ColorsEnabled = true, isClassicFaceEnabled = true, isOldPartSoundsEnabled = true,
 			isHealthESPEnabled = true, isHideGameGuiEnabled = true, isOldHealthBarEnabled = true, isRemoveLeaderboardEnabled = true,
 			isMobileControlsEnabled = true, isOldThumbstickEnabled = true, isOutlineEnabled = true, isOldDecalEnabled = false, isUGCRemoverEnabled = false,
 			isAllPlayersEnabled = false, isOldAvatarEnabled = false, is2006AvatarEnabled = false, is2008PlayersEnabled = false },
-		physicsCamera = "bothOld2013",
-		answers = setup({ { "safeChat", "No" }, { "emotes", "No" } }),
-		choices = { SafeChat = false, Emotes = false } }
+		physicsCamera = "bothOld2013", answers = ANSWERS_2013, choices = CHOICES_2013 }
+end
+local function presetEarly2014()
+	local extra = {}
+	for key, value in pairs(EXTRA_2014) do extra[key] = value end
+	extra.isOldHealthBarEnabled = false
+	return era { name = "2013 - early 2014", resetAll = true, topbar = "2013", note = "the lighting and hammer options of 2014 (iw legacy lighting with the 2014 era, 2014 shadows, 2013 dyn, outline, classic face, no leaderboard), the old health bar off, the setup answers of 2013",
+		lighting = { "isIWLegacyLightingEnabled", "isIWLighting2014Enabled" }, extra = extra,
+		physicsCamera = "bothOld2013", answers = ANSWERS_2013, choices = CHOICES_2013 }
 end
 local PRESETS = {
 	-- 2005 - 2008: from the user's videos of each (the hammer's options and the setup's answers as they gave them). No skybox in
@@ -1307,17 +1324,15 @@ local PRESETS = {
 		answers = setup({ { "backpack", "No" }, { "sounds", "Yes" }, { "body2006", "No" }, { "terrain", "none" },
 			{ "particles", "2010" }, { "emotes", "No" } }),
 		choices = { Backpack = "none", Sounds = true, Body2006 = false, Emotes = false } },
-	preset2013("2013"),
-	preset2013("2013 - early 2014"),
+	preset2013(),
+	presetEarly2014(),
 	-- 2014 - 2024, from the user's recordings of each. No skybox in any of them; classic face on in all of them to 2023;
 	-- the old physics step is only the 2013 camera in 2014, only the 2018 camera in 2015 - 2017, none from 2019
 	era { name = "2014", resetAll = true, topbar = "2014", note = "iw lighting with the 2014 era, 2014 shadows, 2013 dyn, outline, classic face, part sounds, game GUI hidden, old thumbstick, 2013 camera",
 		lighting = { "isIWLegacyLightingEnabled", "isIWLighting2014Enabled" },
-		extra = { is2014ShadowsEnabled = true, is2013DynamicEnabled = true, isOutlineEnabled = true, isClassicFaceEnabled = true,
-			isOldPartSoundsEnabled = true, isHealthESPEnabled = true, isRemoveLeaderboardEnabled = true, isHideGameGuiEnabled = true,
-			isOldThumbstickEnabled = true },
+		extra = EXTRA_2014,
 		physicsCamera = "camera2013",
-		answers = setup({ { "safeChat", "No" }, { "sounds", "Yes" }, { "mouse", "normal" }, { "mobileJump", "Yes" }, { "body2006", "No" },
+		answers = setup({ { "safeChat", "No" }, { "animations", "Normal" }, { "sounds", "Yes" }, { "mouse", "normal" }, { "mobileJump", "Yes" }, { "body2006", "No" },
 			{ "forcefield", "normal" }, { "explosion", "Normal" }, { "particles", "Normal" }, { "emotes", "No" } }),
 		choices = { SafeChat = false, Sounds = true, Mouse = "normal", MobileJump = true, Body2006 = false, Forcefield = "normal", Emotes = false } },
 	era { name = "early 2015", resetAll = true, topbar = "2015 early", note = "iw lighting with the 2015 era, outline, 2013 dyn, classic face, 2015 audio (no old sounds), slippery walk, game GUI hidden, 2018 camera",
