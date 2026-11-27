@@ -3036,7 +3036,31 @@ do
 					-- Update range-limited 3D baseplate studs locked to bp's OWN local stud coordinates!
 					local bp = getBaseplateUnder(refPos)
 					if bp then
-						hide2DStudTexturesOnPart(bp)
+						-- (Addtion-Scripts) the flat studs stay on the whole baseplate, so the studs go on as far as it does; the 3D ones
+						-- are only the ring round you, on top of them
+						if S.baseFlatShown ~= bp then
+							S.baseFlatShown = bp
+							for _, ch in ipairs(bp:GetChildren()) do
+								if (ch:IsA("Texture") or ch:IsA("Decal")) and ch:GetAttribute("Orig2DStudTrans") ~= nil then
+									ch.Transparency = ch:GetAttribute("Orig2DStudTrans")
+								end
+							end
+							if not S.CustomStudUrl then
+								pcall(function() bp.Material = Enum.Material.Plastic bp.TopSurface = Enum.SurfaceType.Studs end)
+							else
+								local tex = bp:FindFirstChild("Classic2005StudTexture")
+								if not tex then
+									tex = Instance.new("Texture")
+									tex.Name = "Classic2005StudTexture"
+									tex.Face = Enum.NormalId.Top
+									tex.StudsPerTileU = 1
+									tex.StudsPerTileV = 1
+									tex.Parent = bp
+								end
+								tex.Texture = S.CustomStudUrl
+								tex.Transparency = bp.Transparency
+							end
+						end
 						local bpCF = bp.CFrame
 						local relCam = bpCF:PointToObjectSpace(refPos)
 						local cellX = math.floor(relCam.X * 0.5 + 0.5) * 2
@@ -3053,13 +3077,35 @@ do
 							local idx = 0
 							local col = bp.Color
 							local trans = bp.Transparency
-							local bpLimit = math.min(rLimit, 75)
+							local bpLimit = math.min(rLimit, 40)
 							local r2Max = bpLimit * bpLimit
 							local ixMin = math.max(1, math.floor(relCam.X - bpLimit + midX))
 							local ixMax = math.min(sx, math.ceil(relCam.X + bpLimit + midX))
 							local izMin = math.max(1, math.floor(relCam.Z - bpLimit + midZ))
 							local izMax = math.min(sz, math.ceil(relCam.Z + bpLimit + midZ))
 
+							-- (Addtion-Scripts) ONE look for what sits on the baseplate round you, not one per stud (17,000 of them): a bare
+							-- baseplate finds nothing and no stud is asked about; with parts on it only the studs under them are
+							local sitting = {}
+							pcall(function()
+								local box = bpCF * CFrame.new(relCam.X, topY, relCam.Z)
+								for _, hitP in ipairs(Workspace:GetPartBoundsInBox(box, Vector3.new(bpLimit * 2 + 2, 6, bpLimit * 2 + 2))) do
+									if hitP ~= bp and not hitP:GetAttribute("Is2005Bump") and not hitP:GetAttribute("Is2005HandleArrow")
+										and hitP.Transparency < 0.92 then
+										table.insert(sitting, hitP)
+									end
+								end
+							end)
+							local function mayBeBlocked(w)
+								for k = 1, #sitting do
+									local q = sitting[k]
+									local rel = q.CFrame:PointToObjectSpace(w)
+									local h = q.Size * 0.5
+									if math.abs(rel.X) <= h.X + 0.4 and math.abs(rel.Y) <= h.Y + 0.2 and math.abs(rel.Z) <= h.Z + 0.4 then return true end
+								end
+								return false
+							end
+							local made = 0
 							for ix = ixMin, ixMax do
 								local lx = ix - midX
 								local dx = lx - relCam.X
@@ -3070,7 +3116,10 @@ do
 									if dx2 + dz * dz <= r2Max then
 										local lcf = CFrame.new(lx, topY, lz)
 										local wcf = bpCF * lcf
-										local blocked = isStudBlockedByOtherPart(bp, wcf)
+										local blocked = false
+										if #sitting > 0 and mayBeBlocked(wcf.Position) then blocked = isStudBlockedByOtherPart(bp, wcf) end
+										made = made + 1
+										if made % 900 == 0 then task.wait() end -- (a slice a frame, not 3,000 stud moves in one)
 										if not blocked then
 											idx = idx + 1
 											poolLocalCF[idx] = lcf
