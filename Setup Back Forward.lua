@@ -559,6 +559,21 @@ local function saveAnswers()
 	if #list > 0 then pcall(api.SetSetupAnswers, list) end
 end
 
+-- (Addtion-Scripts) Everything picked starts at the same moment, right after the last question (the GUI, the addons, each
+-- downloading and parsing its script), and the game stood still for seconds: the user's recording of the 2013 mobile
+-- loading screen shows its squares at 5 to 10 frames a second, jumping, then 55 to 59 once it was over. Each pick now
+-- starts after the game has drawn a few smooth frames since the one before (at most a third of a second each), so the
+-- loading screen keeps moving between them.
+local function breathe()
+	local deadline = os.clock() + 0.35
+	local smooth = 0
+	while os.clock() < deadline and smooth < 3 do
+		local ok, dt = pcall(function() return RunService.Heartbeat:Wait() end)
+		if not ok then task.wait(0.05) break end
+		if dt < 1 / 20 then smooth = smooth + 1 else smooth = 0 end
+	end
+end
+
 local function finish(why)
 	if not W.session then return end
 	W.session = false
@@ -579,7 +594,12 @@ local function finish(why)
 				local ok, err = pcall(orig, table.unpack(args, 1, args.n))
 				if ok then given = given + 1 else warn("[Setup Back/Forward] a pick didn't load: " .. tostring(err)) end
 			end
-			if isTextures(orig) then table.insert(lastOnes, give) else give() end
+			if isTextures(orig) then
+				table.insert(lastOnes, give)
+			else
+				give()
+				breathe()
+			end
 		end
 	end
 	-- the addons' picks and the loader's follow-up of the GUI, in the order they were first given
@@ -592,12 +612,20 @@ local function finish(why)
 				local ok, err = pcall(item.fn)
 				if not ok then warn("[Setup Back/Forward] \"" .. tostring(key) .. "\" didn't load: " .. tostring(err)) end
 			end
-			if key == "textures" then table.insert(lastOnes, run) else task.spawn(run) end
+			if key == "textures" then
+				table.insert(lastOnes, run)
+			else
+				task.spawn(run)
+				breathe()
+			end
 		end
 	end
 	if #lastOnes > 0 then
 		task.delay(TEXTURES_AFTER, function()
-			for _, fn in ipairs(lastOnes) do task.spawn(fn) end
+			for _, fn in ipairs(lastOnes) do
+				task.spawn(fn)
+				breathe()
+			end
 			print("[Setup Back/Forward] the textures load now, last")
 		end)
 	end

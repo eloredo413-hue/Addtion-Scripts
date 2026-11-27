@@ -67,7 +67,13 @@ do
 
 	-- (Addtion-Scripts) a download is tried twice (a phone's connection drops a request now and then), then the gist
 	local function fetchOnce(url)
+		-- (Addtion-Scripts) the loader's download (the executor's request(): the game keeps drawing meanwhile), else HttpGet
 		local ok, src = pcall(function()
+			local shared = getgenv and getgenv().BPDownload
+			if type(shared) == "function" then
+				local good, body = shared(url)
+				if good and type(body) == "string" then return body end
+			end
 			return game:HttpGet(url, true)
 		end)
 		if not ok then return nil, tostring(src) end

@@ -886,7 +886,7 @@ local function build2013(screenGui)
 		if not f then
 			f = create "Frame" {
 				Name = "LoadingSquare", BackgroundColor3 = SQUARES.color, BackgroundTransparency = 0, BorderSizePixel = 0,
-				AnchorPoint = Vector2.new(0.5, 0.5), ZIndex = 4, Parent = root,
+				AnchorPoint = Vector2.new(0, 0), ZIndex = 4, Parent = root,
 			}
 			squareFrames[i] = f
 		end
@@ -991,11 +991,17 @@ local function build2013(screenGui)
 		end
 		-- the squares
 		local list = squaresAt(os.clock() - shownAt)
+		-- (Addtion-Scripts) whole pixels only: a square centred on a fraction of a pixel, and growing by a fraction of one
+		-- each frame, had its edges drawn on half pixels that came and went (it shimmered and jumped: the user's "it
+		-- glitches"). Each square is put by its top left corner, with an even whole-pixel side, so it stays crisp and
+		-- its centre never moves from one half pixel to the next.)
+		local screenWidth = root.AbsoluteSize.X
+		local centreY = SQUARES.y * k
 		for i, sq in ipairs(list) do
 			local f = squareFrame(i)
-			local side = sq[2] * k
-			f.Position = UDim2.new(sq[1], 0, 0, SQUARES.y * k)
-			f.Size = UDim2.new(0, side, 0, side)
+			local side = math.max(2, 2 * math.floor(sq[2] * k / 2 + 0.5))
+			f.Position = UDim2.fromOffset(math.floor(sq[1] * screenWidth - side / 2 + 0.5), math.floor(centreY - side / 2 + 0.5))
+			f.Size = UDim2.fromOffset(side, side)
 			f.Visible = true
 		end
 		for i = #list + 1, #squareFrames do
