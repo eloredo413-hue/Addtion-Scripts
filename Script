@@ -815,6 +815,8 @@ end)
 local URL_OLD_GUI_FIX = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Old%20Gui%20Fix.lua"
 -- the old red disconnect bar for the 2015 - 2017 GUIs (Legacy Disconnect.lua in this repo, see evaluateAndLoad)
 local URL_LEGACY_DISCONNECT = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Legacy%20Disconnect.lua"
+local URL_MOVE_PADS = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Legacy%20Move%20Pads.lua"
+local movePadsOn = false
 -- the old loading screens of the 2014 / 2015 / 2016 GUIs, above the GUI (Old Loading Screen.lua, see evaluateAndLoad)
 local URL_OLD_LOADING = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Old%20Loading%20Screen.lua?v=" .. tostring(os.time())
 -- the 2016 purchase prompt for the same GUIs (Old Purchase Prompt.lua in this repo, see evaluateAndLoad)
@@ -3428,6 +3430,18 @@ end
                 legacyDisconnectOn = false
                 local stop = getgenv().LegacyDisconnectStop
                 if type(stop) == "function" then pcall(stop) end
+            end
+            -- (Addtion-Scripts) the 2015 - 2019 GUIs (early 2015 too): their Settings > Movement Mode dropdown picks Roblox's DPad or
+            -- Thumbpad (Legacy Move Pads.lua)
+            if year and year >= 2015 and year <= 2019 and not movePadsOn then
+                movePadsOn = true
+                task.spawn(function()
+                    local ok, why = loadUrl(URL_MOVE_PADS, "Legacy Move Pads")
+                    if not ok then
+                        movePadsOn = false
+                        warn("[Loader] Legacy Move Pads didn't start: " .. tostring(why))
+                    end
+                end)
             end
             -- OLD LOADING SCREENS: each GUI starts with its own loading screen, drawn above it (see loadingStyleFor).
             -- Once for each GUI picked.
