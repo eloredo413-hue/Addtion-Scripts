@@ -629,6 +629,7 @@ do
     end
     local seenHubs = setmetatable({}, { __mode = "k" }) -- the escape menus (what holds a HubBar)
     local hubLooked = setmetatable({}, { __mode = "k" }) -- when each menu was first and last looked through
+    local hubNamePending, hubNameScheduled = {}, false
     local function onAdded(obj)
         if obj.Name == "PageView" then
             seenViews[obj] = true
@@ -645,9 +646,20 @@ do
         -- the menu names its parts after putting them in place (Create sets properties in any order), so
         -- they are looked at again once that is done
         if obj:IsA("ImageLabel") or obj:IsA("Frame") then
-            task.defer(function()
-                if obj.Name == "HubBar" and obj.Parent then seenHubs[obj.Parent] = true end
-            end)
+            -- (Addtion-Scripts) one deferred pass for all the frames and images that came this frame, not one task each: the 2017
+            -- menu makes some hundreds of them the moment it is pushed, and a task each was part of the lag that pushing it
+            -- gave (the user's 2017 recording: it does not go down smoothly)
+            hubNamePending[#hubNamePending + 1] = obj
+            if not hubNameScheduled then
+                hubNameScheduled = true
+                task.defer(function()
+                    local list = hubNamePending
+                    hubNamePending, hubNameScheduled = {}, false
+                    for _, o in ipairs(list) do
+                        if o.Name == "HubBar" and o.Parent then seenHubs[o.Parent] = true end
+                    end
+                end)
+            end
         end
         if obj:IsA("TextLabel") or obj:IsA("TextButton") then
             queueLabel(obj)

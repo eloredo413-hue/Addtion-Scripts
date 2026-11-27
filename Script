@@ -854,32 +854,6 @@ local function patchQuickTextures(src)
         total = total + n
     end
     if total < 2 then warn("[Loader] Quick Texture load studs: its picks weren't found, so with < > on they load as soon as they are picked") end
-    -- (Addtion-Scripts) The 2012 studs: far away on a flat surface they all blended into a brighter sheen that looked like a
-    -- reflection: the stud picture is mostly bright highlight (72% of what it covers, against 23% dark), so every stud, shrunk
-    -- to a few pixels, adds a bit of light. The picture used is the same one with the highlight softer and the shadow
-    -- stronger, so that what the studs average to far away is the colour of the part itself (assets/stud2012.png, fetched
-    -- once into the executor's folder and shown with getcustomasset; the original picture is used if that isn't possible).
-    local patchedUri
-    src, patchedUri = replacePlain(src, "\t\tlocal function uri(id)\n\t\t\treturn \"rbxthumb://type=Asset&id=\"..id..\"&w=420&h=420\"\n\t\tend",
-        "\t\tlocal STUD_ID = \"16120867196\"\n"
-        .. "\t\tlocal customStud = nil\n"
-        .. "\t\tpcall(function()\n"
-        .. "\t\t\tif not (getcustomasset and writefile and isfile and readfile) then return end\n"
-        .. "\t\t\tlocal file = \"BP_Stud2012_v1.png\"\n"
-        .. "\t\t\tif not (isfile(file) and #readfile(file) > 1000) then\n"
-        .. "\t\t\t\tlocal url = \"https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/assets/stud2012.png\"\n"
-        .. "\t\t\t\tlocal shared = getgenv and getgenv().BPDownload\n"
-        .. "\t\t\t\tlocal good, body\n"
-        .. "\t\t\t\tif type(shared) == \"function\" then good, body = shared(url) else good, body = pcall(game.HttpGet, game, url) end\n"
-        .. "\t\t\t\tif good and type(body) == \"string\" and #body > 1000 and string.sub(body, 2, 4) == \"PNG\" then writefile(file, body) end\n"
-        .. "\t\t\tend\n"
-        .. "\t\t\tif isfile(file) then customStud = getcustomasset(file) end\n"
-        .. "\t\tend)\n"
-        .. "\t\tlocal function uri(id)\n"
-        .. "\t\t\tif id == STUD_ID and customStud then return customStud end\n"
-        .. "\t\t\treturn \"rbxthumb://type=Asset&id=\"..id..\"&w=420&h=420\"\n"
-        .. "\t\tend")
-    if patchedUri == 0 then warn("[Loader] Quick Texture load studs: the 2012 stud picture wasn't found, so the 2012 studs are as they were") end
     return src
 end
 for i, url in ipairs(mainAddons) do
@@ -3339,7 +3313,7 @@ end
     --   2015, 2016: the 2016 one ("2016")
     -- (2008 has its own in 2008 Gui.lua; 2005, 2010 and 2017 on have none of ours)
     --========================================================
-    local function loadingStyleFor(era, year)
+    local function loadingStyleFor(era, year, fromFlags)
         if era == "early2015" then return "2014" end
         if era == "y2006" then return nil end -- (the 2006 GUI's own loading screen)
         if era == "y2010" or era == "y2005" or era == "none" then return nil end
@@ -3351,7 +3325,10 @@ end
             -- one after the other. The setting is already in the config file by then, so that is what counts. The flags the
             -- hammer sets stay set in the executor between runs (early 2014 after 2013 showed regular 2013's older screen from
             -- the old flag): they are only used when the config doesn't say.
-            local cfg = readJsonFile("BloxyParadoxConfig.json")
+            -- (fromFlags: the hammer has just ticked or unticked the old health bar and set the flags, but has not saved the config
+            -- yet: the file still holds the OLD answer, which swapped the right loading screen for the other one a moment after
+            -- it went up: regular 2013 (old health bar on) showed its black box, then Powered By over it)
+            local cfg = (not fromFlags) and readJsonFile("BloxyParadoxConfig.json") or nil
             local oldBar
             if cfg ~= nil and cfg.isOldHealthBarEnabled ~= nil then
                 oldBar = cfg.isOldHealthBarEnabled == true
@@ -3393,7 +3370,7 @@ end
             local year = tonumber(string.match(pick, "(20%d%d)"))
             local showing = api.Style()
             if year ~= 2013 or (showing ~= "2013" and showing ~= "2011") then return end
-            local want = loadingStyleFor(env.BloxyEra, year)
+            local want = loadingStyleFor(env.BloxyEra, year, true)
             if want and want ~= showing then
                 print("[Loader] loading screen: the old health bar changed, the " .. want .. " one instead")
                 showLoadingScreen(want)
@@ -3464,6 +3441,58 @@ end
                 end
             else
                 loadingScreenKey = nil
+            end
+            -- EARLY 2015: A STRAY GREY BOX in the bottom right corner (the user's screenshot of it: about 105 x 60 pixels, light
+            -- grey (160, 163, 170) with a dark edge, half off the screen, just under the jump button). Nothing of ours draws
+            -- that, so it is looked for by what it looks like (a grey box touching the corner) a few times while everything
+            -- has loaded, hidden, and named in the console so the culprit can be found.
+            if year == 2015 and early and not getgenv().BPStrayBoxWatch then
+                getgenv().BPStrayBoxWatch = true
+                task.spawn(function()
+                    local Players = game:GetService("Players")
+                    local gone = setmetatable({}, { __mode = "k" })
+                    local function isGrey(c)
+                        return math.abs(c.R * 255 - 160) < 12 and math.abs(c.G * 255 - 163) < 12 and math.abs(c.B * 255 - 170) < 12
+                    end
+                    local function scan()
+                        local camera = workspace.CurrentCamera
+                        if not camera then return end
+                        local view = camera.ViewportSize
+                        local roots = {}
+                        local player = Players.LocalPlayer
+                        if player and player:FindFirstChildOfClass("PlayerGui") then table.insert(roots, player:FindFirstChildOfClass("PlayerGui")) end
+                        pcall(function() table.insert(roots, game:GetService("CoreGui")) end)
+                        local seen = 0
+                        for _, root in ipairs(roots) do
+                            for _, d in ipairs(root:GetDescendants()) do
+                                seen = seen + 1
+                                if seen % 400 == 0 then task.wait() end
+                                if d:IsA("GuiObject") and d.Visible and not gone[d] and d.BackgroundTransparency < 0.5 and isGrey(d.BackgroundColor3) then
+                                    local pos, size = d.AbsolutePosition, d.AbsoluteSize
+                                    if size.X > 0 and size.X <= view.X * 0.15 and size.Y <= view.Y * 0.25
+                                        and pos.X >= view.X * 0.85 and pos.Y >= view.Y * 0.85
+                                        and pos.X + size.X >= view.X * 0.97 and pos.Y + size.Y >= view.Y * 0.9 then
+                                        gone[d] = true
+                                        pcall(function() d.Visible = false end)
+                                        pcall(function()
+                                            d:GetPropertyChangedSignal("Visible"):Connect(function()
+                                                if d.Visible and gone[d] then d.Visible = false end
+                                            end)
+                                        end)
+                                        print("[Loader] early 2015: a stray grey box in the bottom right corner hidden: " .. d:GetFullName())
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    local last = 0
+                    for _, at in ipairs({ 5, 10, 18, 30, 60 }) do
+                        task.wait(at - last)
+                        last = at
+                        pcall(scan)
+                    end
+                    getgenv().BPStrayBoxWatch = nil
+                end)
             end
             -- OLD PURCHASE PROMPT: the 2013 - 2019 GUIs (the 2013 / 2014 GUIs and 2015 - 2019) get the 2016 purchase
             -- prompt in place of Roblox's modern one (Roblox's own comes back if it cannot run, see Old Purchase Prompt.lua)
@@ -3716,6 +3745,28 @@ end
         if not sg then return end
         task.wait(3)
         if confirmSeen or topbarQuestionShown(sg) then return end
+        -- (Addtion-Scripts) THE SETUP IS STILL BEING ANSWERED (a preset answers it by itself, quicker than the topbar question
+        -- stays on screen): the GUI's follow-up, its loading screen first, waits for the last question like everything else.
+        -- This check ran 3 s after Bloxy started, saw no topbar question and no Confirm, and put the 2011 loading screen up
+        -- in the middle of the setup's questions (the 2011 preset recording).
+        local function setupOn()
+            local wizard = getgenv().BPWizard
+            return type(wizard) == "table" and type(wizard.deferring) == "function" and wizard.deferring() == true
+        end
+        if setupOn() then
+            local wizard = getgenv().BPWizard
+            if type(wizard.later) == "function" then
+                wizard.later("loader: the GUI's follow-up", function()
+                    if confirmSeen then return end
+                    task.spawn(evaluateAndLoad)
+                    for _, delay in ipairs({ 0.5, 2, 4, 8 }) do
+                        task.delay(delay, function() if not confirmSeen then evaluateAndLoad() end end)
+                    end
+                end, true)
+            end
+            print("[Loader] the setup is still being answered: the GUI's follow-up waits for the last question")
+            return
+        end
         print("[Loader] Bloxy loaded its saved topbar without a Confirm: following it")
         -- a More guis pick put back at the start: its era (2015 early, 2008, 2006, 2005 save another year)
         if restoredTopbarPick and not confirmedVariant then
@@ -3725,7 +3776,7 @@ end
         end
         for _, delay in ipairs({ 0, 2, 4 }) do
             task.delay(delay, function()
-                if not confirmSeen then evaluateAndLoad() end
+                if not confirmSeen and not setupOn() then evaluateAndLoad() end
             end)
         end
     end)
