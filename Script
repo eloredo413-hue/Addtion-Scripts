@@ -854,6 +854,32 @@ local function patchQuickTextures(src)
         total = total + n
     end
     if total < 2 then warn("[Loader] Quick Texture load studs: its picks weren't found, so with < > on they load as soon as they are picked") end
+    -- (Addtion-Scripts) The 2012 studs: far away on a flat surface they all blended into a brighter sheen that looked like a
+    -- reflection: the stud picture is mostly bright highlight (72% of what it covers, against 23% dark), so every stud, shrunk
+    -- to a few pixels, adds a bit of light. The picture used is the same one with the highlight softer and the shadow
+    -- stronger, so that what the studs average to far away is the colour of the part itself (assets/stud2012.png, fetched
+    -- once into the executor's folder and shown with getcustomasset; the original picture is used if that isn't possible).
+    local patchedUri
+    src, patchedUri = replacePlain(src, "\t\tlocal function uri(id)\n\t\t\treturn \"rbxthumb://type=Asset&id=\"..id..\"&w=420&h=420\"\n\t\tend",
+        "\t\tlocal STUD_ID = \"16120867196\"\n"
+        .. "\t\tlocal customStud = nil\n"
+        .. "\t\tpcall(function()\n"
+        .. "\t\t\tif not (getcustomasset and writefile and isfile and readfile) then return end\n"
+        .. "\t\t\tlocal file = \"BP_Stud2012_v1.png\"\n"
+        .. "\t\t\tif not (isfile(file) and #readfile(file) > 1000) then\n"
+        .. "\t\t\t\tlocal url = \"https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/assets/stud2012.png\"\n"
+        .. "\t\t\t\tlocal shared = getgenv and getgenv().BPDownload\n"
+        .. "\t\t\t\tlocal good, body\n"
+        .. "\t\t\t\tif type(shared) == \"function\" then good, body = shared(url) else good, body = pcall(game.HttpGet, game, url) end\n"
+        .. "\t\t\t\tif good and type(body) == \"string\" and #body > 1000 and string.sub(body, 2, 4) == \"PNG\" then writefile(file, body) end\n"
+        .. "\t\t\tend\n"
+        .. "\t\t\tif isfile(file) then customStud = getcustomasset(file) end\n"
+        .. "\t\tend)\n"
+        .. "\t\tlocal function uri(id)\n"
+        .. "\t\t\tif id == STUD_ID and customStud then return customStud end\n"
+        .. "\t\t\treturn \"rbxthumb://type=Asset&id=\"..id..\"&w=420&h=420\"\n"
+        .. "\t\tend")
+    if patchedUri == 0 then warn("[Loader] Quick Texture load studs: the 2012 stud picture wasn't found, so the 2012 studs are as they were") end
     return src
 end
 for i, url in ipairs(mainAddons) do
