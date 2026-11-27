@@ -1225,9 +1225,12 @@ end
 -- (the 2013 recording: animations 2007, old sounds, normal cursor, 2012 textures, no old mobile jump button, no 2006 body, the
 -- 2013 explosion, terrain and particles, the old physics with the 2013 camera). Every question is answered, so none is left as
 -- it was last time (an old "2006" animations answer left over made walking not animate).
-local ANSWERS_2013 = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "2007" }, { "sounds", "Yes" },
-	{ "mouse", "normal" }, { "textures", "2012 textures" }, { "mobileJump", "No" }, { "body2006", "No" }, { "forcefield", "normal" },
-	{ "explosion", "2013" }, { "terrain", "2013" }, { "particles", "2013" }, { "emotes", "No" } })
+local function answers2013(textures)
+	return setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "2007" }, { "sounds", "Yes" },
+		{ "mouse", "normal" }, { "textures", textures }, { "mobileJump", "No" }, { "body2006", "No" }, { "forcefield", "normal" },
+		{ "explosion", "2013" }, { "terrain", "2013" }, { "particles", "2013" }, { "emotes", "No" } })
+end
+local ANSWERS_2013 = answers2013("2012 textures")
 local CHOICES_2013 = { SafeChat = false, Sounds = true, Mouse = "normal", Textures = "2012", MobileJump = false, Body2006 = false,
 	Forcefield = "normal", Emotes = false }
 local EXTRA_2014 = { is2014ShadowsEnabled = true, is2013DynamicEnabled = true, isOutlineEnabled = true, isClassicFaceEnabled = true,
@@ -1247,9 +1250,12 @@ local function presetEarly2014()
 	local extra = {}
 	for key, value in pairs(EXTRA_2014) do extra[key] = value end
 	extra.isOldHealthBarEnabled = false
-	return era { name = "2013 - early 2014", resetAll = true, topbar = "2013", note = "the lighting and hammer options of 2014 (iw legacy lighting with the 2014 era, 2014 shadows, 2013 dyn, outline, classic face, no leaderboard), the old health bar off, the setup answers of 2013",
+	return era { name = "2013 - early 2014", resetAll = true, topbar = "2013", note = "the lighting and hammer options of 2014 (iw legacy lighting with the 2014 era, 2014 shadows, 2013 dyn, outline, classic face, no leaderboard), the old health bar off, the setup answers of 2013 with the 2016 textures (studs)",
 		lighting = { "isIWLegacyLightingEnabled", "isIWLighting2014Enabled" }, extra = extra,
-		physicsCamera = "bothOld2013", answers = ANSWERS_2013, choices = CHOICES_2013 }
+		-- (and the 2016 studs: the textures question answered "2016 textures", as the user asked for early 2014)
+		physicsCamera = "bothOld2013", answers = answers2013("2016 textures"),
+		choices = { SafeChat = false, Sounds = true, Mouse = "normal", Textures = "2016", MobileJump = false, Body2006 = false,
+			Forcefield = "normal", Emotes = false } }
 end
 local PRESETS = {
 	-- 2005 - 2008: from the user's videos of each (the hammer's options and the setup's answers as they gave them). No skybox in
