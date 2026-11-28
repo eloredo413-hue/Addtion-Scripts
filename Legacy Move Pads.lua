@@ -246,7 +246,8 @@ local function buildThumbpad(parent)
 	end))
 	track(GuiService.MenuOpened:Connect(function() if touch then ended() end end))
 	frame.Parent = parent
-	return { frame = frame, stop = ended }
+	return { frame = frame, stop = ended, setHome = function(udim) home = udim if not touch then frame.Position = home end end,
+		size = padSize + 20 }
 end
 
 ----------------------------------------------------------------------------------------------------
@@ -284,21 +285,46 @@ local function ensureGui()
 end
 
 local api = {}
+-- where Roblox's thumbstick is (it is hidden, but its frame stays where it is): the Thumbpad rests there
+local function stickCenter()
+	local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+	local touchGui = pg and pg:FindFirstChild("TouchGui")
+	local controls = touchGui and touchGui:FindFirstChild("TouchControlFrame")
+	if not controls then return nil end
+	for _, name in ipairs({ "ThumbstickFrame", "DynamicThumbstickFrame" }) do
+		local f = controls:FindFirstChild(name)
+		if f and f:IsA("GuiObject") and f.AbsoluteSize.X > 0 then
+			return f.AbsolutePosition + f.AbsoluteSize / 2
+		end
+	end
+	return nil
+end
 function api.Set(newMode)
-	if newMode ~= "DPad" and newMode ~= "Thumbpad" then newMode = nil end
+	if newMode ~= "DPad" and newMode ~= "Thumbpad" and newMode ~= "ClickToMove" then newMode = nil end
 	if newMode == mode then return end
 	mode = newMode
 	moveVector = Vector3.new(0, 0, 0)
-	if mode then ensureGui() end
-	if dpad then dpad.stop() dpad.frame.Visible = false end
-	if thumbpad then thumbpad.stop() thumbpad.frame.Visible = false end
-	-- (the setting is Roblox's own: its control comes up for it. Ours is drawn only if Roblox's does not appear within a moment.)
+	if mode == "DPad" or mode == "Thumbpad" then ensureGui() end
+	if dpad then dpad.stop() dpad.frame.Visible = (mode == "DPad") end
+	if thumbpad then
+		thumbpad.stop()
+		if mode == "Thumbpad" then
+			-- (the same place as the thumbstick)
+			local c = stickCenter()
+			if c and gui then
+				local half = thumbpad.size / 2
+				thumbpad.setHome(UDim2.new(0, c.X - gui.AbsolutePosition.X - half, 0, c.Y - gui.AbsolutePosition.Y - half))
+			end
+		end
+		thumbpad.frame.Visible = (mode == "Thumbpad")
+	end
+	-- (tap to move: Roblox's own, with its own setting; nothing on screen but the jump button)
 	pcall(function()
 		local settings = UserSettings():GetService("UserGameSettings")
-		if mode then
+		if mode == "ClickToMove" then
 			if savedTouchMode == nil then savedTouchMode = settings.TouchMovementMode end
 			settingFromUs = true
-			settings.TouchMovementMode = Enum.TouchMovementMode[mode]
+			settings.TouchMovementMode = Enum.TouchMovementMode.ClickToMove
 			settingFromUs = false
 		elseif savedTouchMode ~= nil then
 			settingFromUs = true
@@ -307,28 +333,9 @@ function api.Set(newMode)
 			savedTouchMode = nil
 		end
 	end)
-	local myMode = mode
-	if mode then
-		task.delay(0.8, function()
-			if mode ~= myMode or not alive then return end
-			local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-			local tc = pg and pg:FindFirstChild("TouchGui") and pg.TouchGui:FindFirstChild("TouchControlFrame")
-			local native = tc and tc:FindFirstChild(myMode == "DPad" and "DPadFrame" or "ThumbpadFrame")
-			if native and native:IsA("GuiObject") and native.Visible then
-				nativeShown = true
-				setRobloxStick(false) -- (Roblox's own is running: nothing of ours)
-			else
-				nativeShown = false
-				if myMode == "DPad" and dpad then dpad.frame.Visible = true end
-				if myMode == "Thumbpad" and thumbpad then thumbpad.frame.Visible = true end
-				setRobloxStick(true)
-			end
-		end)
-	else
-		nativeShown = false
-		setRobloxStick(false)
-	end
-	print("[Legacy Move Pads] " .. tostring(mode or "off: Roblox's own controls"))
+	-- the thumbstick: out of the way while a pad or tap to move is on, back (as it was) otherwise
+	setRobloxStick(mode ~= nil)
+	print("[Legacy Move Pads] " .. tostring(mode or "off: Roblox's own thumbstick"))
 end
 function api.Mode() return mode end
 Env.BPMovePads = api
@@ -336,7 +343,8 @@ Env.BPMovePads = api
 -- the direction handed to the humanoid, after the controls' own (which are zero with the thumbstick hidden)
 local stepName = "BPMovePads" .. tostring(math.random(1, 1e9))
 RunService:BindToRenderStep(stepName, Enum.RenderPriority.Input.Value + 3, function()
-	if not mode or nativeShown then return end
+	if mode == "ClickToMove" then setRobloxStick(true) return end
+	if mode ~= "DPad" and mode ~= "Thumbpad" then return end
 	local char = LocalPlayer.Character
 	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
 	if not humanoid then return end
@@ -346,16 +354,17 @@ RunService:BindToRenderStep(stepName, Enum.RenderPriority.Input.Value + 3, funct
 		humanoid.Jump = true
 	end
 	-- (Roblox's controls may have put its own thumbstick back after a respawn)
-	if not nativeShown then setRobloxStick(true) end
+	setRobloxStick(true)
 end)
 
 ----------------------------------------------------------------------------------------------------
 -- The Settings menu's "Movement Mode" dropdown: what it shows picks the pad
 ----------------------------------------------------------------------------------------------------
 local MODE_TEXT = {
-	["dpad"] = "DPad", ["thumbpad"] = "Thumbpad",
-	["thumbstick"] = false, ["default (thumbstick)"] = false, ["dynamic thumbstick"] = false, ["click to move"] = false,
-	["tap to move"] = false, ["default (dynamic thumbstick)"] = false, ["classic"] = false,
+	["dpad"] = "DPad", ["thumbpad"] = "Thumbpad", ["click to move"] = "ClickToMove", ["tap to move"] = "ClickToMove",
+	["click-to-move"] = "ClickToMove", ["tap-to-move"] = "ClickToMove",
+	["thumbstick"] = false, ["default (thumbstick)"] = false, ["dynamic thumbstick"] = false,
+	["default (dynamic thumbstick)"] = false, ["classic"] = false,
 }
 local hooked = setmetatable({}, { __mode = "k" })
 local function rowHasMovementMode(label)
@@ -412,7 +421,7 @@ pcall(function()
 	track(settings:GetPropertyChangedSignal("TouchMovementMode"):Connect(function()
 		if settingFromUs then return end
 		local name = settings.TouchMovementMode.Name
-		if name == "DPad" or name == "Thumbpad" then api.Set(name) elseif mode then api.Set(nil) end
+		if name == "DPad" or name == "Thumbpad" or name == "ClickToMove" then api.Set(name) elseif mode then api.Set(nil) end
 	end))
 end)
 
