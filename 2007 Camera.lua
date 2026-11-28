@@ -2176,6 +2176,31 @@ do
 					end
 				end
 
+				-- (Addtion-Scripts) FIRST PERSON TURNS WITH YOU (the user's old-client video): in first person the view swings
+				-- left and right as your character turns (walking round with the stick), as the old client's did, on top of
+				-- any turning you do yourself. (In third person the camera is left as it is.)
+				do
+					local root = humanoid and humanoid.RootPart
+					local bodyLook = root and (root.CFrame.LookVector * XZ_VECTOR)
+					if bodyLook and bodyLook.Magnitude > 0.01 then
+						bodyLook = bodyLook.Unit
+						if self:IsInFirstPerson() and self.LastBodyLook then
+							local y = findAngleBetweenXZVectors(bodyLook, self.LastBodyLook)
+							-- (a teleport or respawn turns you in one go: not followed)
+							if IsFinite(y) and math.abs(y) > 0.0001 and math.abs(y) < 1.2 then
+								-- (at most the old turning keys' 120 degrees a second: walking is relative to the view, so
+								-- holding the stick sideways turns you round steadily, as the old clients did, never a spin)
+								local cap = math.rad(120) * math.min(0.1, timeDelta)
+								y = math.clamp(y, -cap, cap)
+								self.RotateInput = self.RotateInput + Vector2.new(y, 0)
+							end
+						end
+						self.LastBodyLook = bodyLook
+					else
+						self.LastBodyLook = nil
+					end
+				end
+
 				camera.Focus = CFrame_new(subjectPosition)
 				local newLookVector = self:RotateCamera(self:GetCameraLook(), self.RotateInput)
 				self.RotateInput = ZERO_VECTOR2
