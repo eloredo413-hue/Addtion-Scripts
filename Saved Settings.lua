@@ -1430,6 +1430,13 @@ for _, preset in ipairs(PRESETS) do
 	local year = tonumber(string.match(preset.name, "(%d%d%d%d)%s*$")) or tonumber(string.match(preset.name, "(%d%d%d%d)"))
 	preset.config.isAllPlayersEnabled = (year ~= nil and year <= ALL_PLAYERS_UP_TO)
 end
+-- Remove Pro: on for 2006 up to 2013 (the 2013 preset, not "2013 - early 2014"), as the user asked; 2005 and early 2014
+-- on keep it off
+local REMOVE_PRO_PRESETS = { ["2006"] = true, ["2007"] = true, ["2008"] = true, ["2010"] = true, ["2011"] = true,
+	["2012"] = true, ["2013"] = true }
+for _, preset in ipairs(PRESETS) do
+	preset.config.isRemoveProEnabled = REMOVE_PRO_PRESETS[preset.name] == true
+end
 -- Bloxy's own ids for its own years (More guis' added ones are kept in the topbar pick file instead)
 local BLOXY_TOPBAR_IDS = {
 	["2024"] = "2024", ["2024(fflags)"] = "2023_FFlags", ["2023(w.i.p)"] = "2023_WIP", ["2019"] = "2019", ["2017"] = "2017",
