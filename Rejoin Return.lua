@@ -110,6 +110,19 @@ pcall(function() Env.loadstring = hooked end)
 pcall(function() _G.loadstring = hooked end)
 
 task.spawn(function()
+	-- (what is queued for after a rejoin runs while the new server is still loading, on the teleport screen: Bloxy
+	-- waits until the game has loaded and the character is in it, so it shows right after the rejoin, the user asked)
+	pcall(function()
+		if not game:IsLoaded() then game.Loaded:Wait() end
+	end)
+	pcall(function()
+		local player = Players.LocalPlayer
+		while not player do task.wait() player = Players.LocalPlayer end
+		if not player.Character then player.CharacterAdded:Wait() end
+		local char = player.Character
+		if char then char:WaitForChild("HumanoidRootPart", 15) end
+	end)
+	task.wait(1)
 	local src = nil
 	pcall(function()
 		if isfile and readfile and isfile(BLOXY_FILE) then src = readfile(BLOXY_FILE) end
