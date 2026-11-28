@@ -3434,6 +3434,8 @@ end
             -- (Addtion-Scripts) the 2014 - 2019 GUIs (early 2015 too): their Settings > Movement Mode dropdown picks Roblox's DPad or
             -- Thumbpad (Legacy Move Pads.lua)
             -- (and the 2014 GUI, whose Settings menu has the same Movement Mode choices, the user found)
+            -- (tap to move's sphere is the 2015 - 2018 one: the 2019 GUI gets Roblox's modern dots and location icon instead)
+            getgenv().BPMovePadsNoSphere = (year ~= nil and year >= 2019)
             if year and year >= 2014 and year <= 2019 and not movePadsOn then
                 movePadsOn = true
                 task.spawn(function()

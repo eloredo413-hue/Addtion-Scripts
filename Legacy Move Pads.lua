@@ -462,6 +462,16 @@ local marker = nil
 local markerFor = nil   -- the waypoint of Roblox's the sphere sits on (it goes when that goes)
 local markerToken = 0
 local lastShownAt = -1
+-- (Addtion-Scripts) the sphere is the 2015 - 2018 one: by 2019 Roblox had taken it away, and its tap to move showed its
+-- own dots and location icon, so with the 2019 GUI (or later) Roblox's own markers are left as they are, no sphere.
+-- The loader says which GUI it is (getgenv().BPMovePadsNoSphere); without that, Bloxy's GUI pick is read.
+local function sphereOn()
+	local say = Env.BPMovePadsNoSphere
+	if say == true then return false elseif say == false then return true end
+	local pick = tostring(Env.BloxyTopbarPick or Env.BloxyTopbarRaw or "")
+	local year = tonumber(string.match(pick, "20%d%d") or "")
+	return not (year and year >= 2019)
+end
 local function clearMarker()
 	markerToken = markerToken + 1
 	markerFor = nil
@@ -517,7 +527,7 @@ end
 -- Roblox's display (Camera.ClickToMoveDisplay: TrailDot / EndWaypoint / FailureWaypoint parts, each drawn with an
 -- ImageHandleAdornment, the two icons with a BillboardGui)
 local function hideTheirs(d)
-	if not alive or mode ~= "ClickToMove" or d.Name == "BPTapMarker" then return end
+	if not alive or mode ~= "ClickToMove" or d.Name == "BPTapMarker" or not sphereOn() then return end
 	pcall(function()
 		if d:IsA("GuiBase3d") then d.Visible = false          -- the dots (ImageHandleAdornments) and any other adornment
 		elseif d:IsA("LayerCollector") then d.Enabled = false -- the location icon / failure icon
@@ -528,6 +538,11 @@ local function hideTheirs(d)
 end
 local function onTheirWaypoint(part)
 	if mode ~= "ClickToMove" or not part:IsA("BasePart") then return end
+	if not sphereOn() then
+		-- (2019: Roblox's own marker shows; a sphere left from before goes)
+		if marker and (part.Name == "EndWaypoint" or part.Name == "FailureWaypoint") then clearMarker() end
+		return
+	end
 	local failed = part.Name == "FailureWaypoint"
 	if part.Name ~= "EndWaypoint" and not failed then return end
 	-- (Roblox sets where it is just before it is put in; read it a moment later all the same)
@@ -568,7 +583,7 @@ end)
 -- (and anything Roblox changes back on its dots while they are up: a few parts, checked a few times a second)
 local recheckAt = 0
 track(RunService.Heartbeat:Connect(function()
-	if mode ~= "ClickToMove" then return end
+	if mode ~= "ClickToMove" or not sphereOn() then return end
 	local now = os.clock()
 	if now < recheckAt then return end
 	recheckAt = now + 0.2
@@ -616,7 +631,16 @@ track(UserInputService.TouchTap:Connect(function(positions, processed)
 		if mode ~= "ClickToMove" or lastShownAt >= tappedAt then return end
 		local hit = tapPoint(pos)
 		if not hit then return end
-		local sphere, token = showMarker(hit.Position, hit.Normal, false, nil)
+		-- (2019: no sphere, Roblox's own markers only; the walk there still happens)
+		local withSphere = sphereOn()
+		local sphere, token
+		if withSphere then
+			sphere, token = showMarker(hit.Position, hit.Normal, false, nil)
+		else
+			clearMarker()
+			lastShownAt = os.clock()
+			token = markerToken
+		end
 		local root = humanoid.RootPart
 		local reachable = true
 		if root then
@@ -629,7 +653,7 @@ track(UserInputService.TouchTap:Connect(function(positions, processed)
 		end
 		if token ~= markerToken or not alive then return end
 		if not reachable then
-			flickerRed(sphere, token)
+			if sphere then flickerRed(sphere, token) end
 			return
 		end
 		if humanoid.MoveDirection.Magnitude < 0.05 then
