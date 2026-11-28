@@ -354,7 +354,7 @@ RunService:BindToRenderStep(stepName, Enum.RenderPriority.Input.Value + 3, funct
 		humanoid.Jump = true
 	end
 	-- (Roblox's controls may have put its own thumbstick back after a respawn)
-	setRobloxStick(true)
+	if not nativeShown then setRobloxStick(true) end
 end)
 
 ----------------------------------------------------------------------------------------------------
