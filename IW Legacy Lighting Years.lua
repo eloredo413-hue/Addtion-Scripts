@@ -87,6 +87,10 @@ local Settings = {
 	                          -- a room's own lamps, indoor rooms can turn dull and grey
 	IndoorAmbient    = 0.4,   -- with Shadows on: the shade light indoors / under cover. Outdoors is 0.5; 0.5 here = no difference
 	Saturation       = 0,     -- extra colour strength added on top (old Roblox had none: 0)
+	GameColours      = true,  -- (Addtion-Scripts) the game's own colour stays: a tinted shade light (an orange or blue look),
+	                          -- its colour shift and the tint of its colour correction, at this lighting's strength and
+	                          -- shine (old Roblox lighting had those colours too). false = the plain grey light of old
+	GameColourStrength = 1,   -- how much of the game's colour is kept: 1 = all of it, 0.5 = half, 0 = none
 	Contrast         = 0,     -- extra contrast added on top (old Roblox had none: 0)
 	ToneBrightness   = 0.03,  -- extra brightness added to the whole picture (0 = none). Together with Contrast it spreads the
 	                          -- picture out: whites brighter, darks darker
@@ -283,6 +287,31 @@ end
 
 local function mul(c, m)
 	return Color3.new(c.R * m, c.G * m, c.B * m)
+end
+
+-- (Addtion-Scripts) THE GAME'S COLOURS. A colour's hue at the brightness of plain grey (its lightness taken out), so
+-- multiplying the plain grey light by it tints that light as the game tints its own without making it lighter or darker.
+-- Black, and colours that are nearly grey, give white (no tint); very strong colours are held to twice a channel.
+local function colourStrength()
+	if Settings.GameColours == false then return 0 end
+	return math.clamp(tonumber(Settings.GameColourStrength) or 1, 0, 1)
+end
+local function hueOf(c, strength)
+	strength = strength or colourStrength()
+	if typeof(c) ~= "Color3" or strength <= 0 then return Color3.new(1, 1, 1) end
+	local L = 0.3 * c.R + 0.59 * c.G + 0.11 * c.B
+	if L < 0.02 then return Color3.new(1, 1, 1) end
+	local r, g, b = c.R / L, c.G / L, c.B / L
+	local top = math.max(r, g, b)
+	if top > 2 then r, g, b = r * 2 / top, g * 2 / top, b * 2 / top end
+	if math.max(math.abs(r - 1), math.abs(g - 1), math.abs(b - 1)) < 0.04 then return Color3.new(1, 1, 1) end
+	return Color3.new(1 + (r - 1) * strength, 1 + (g - 1) * strength, 1 + (b - 1) * strength)
+end
+local function mulColour(a, b)
+	return Color3.new(a.R * b.R, a.G * b.G, a.B * b.B)
+end
+local function lerpColour(a, b, t)
+	return Color3.new(a.R + (b.R - a.R) * t, a.G + (b.G - a.G) * t, a.B + (b.B - a.B) * t)
 end
 
 -- Watches inst[Prop]. apply() runs on every change and when run() is called. The watcher is dropped while
@@ -1255,9 +1284,17 @@ local function setupLighting()
 	genv.LegacyLightingShadows = false
 	local flat = Color3.new(0.5, 0.5, 0.5)
 	setLighting("Brightness", 2 * sunScale)
-	setLighting("Ambient", mul(flat, shadeScale))
-	setLighting("ColorShift_Top", Color3.new())
-	setLighting("ColorShift_Bottom", Color3.new())
+	-- (Addtion-Scripts) the shade light keeps the game's colour (Clone Tycoon's orange look), and its colour shift stays
+	local keepTint = colourStrength() > 0
+	setLighting("Ambient", mulColour(mul(flat, shadeScale), hueOf(gameValues.Ambient)))
+	if keepTint and typeof(gameValues.ColorShift_Top) == "Color3" then
+		local k = colourStrength()
+		setLighting("ColorShift_Top", mul(gameValues.ColorShift_Top, k))
+		setLighting("ColorShift_Bottom", mul(typeof(gameValues.ColorShift_Bottom) == "Color3" and gameValues.ColorShift_Bottom or Color3.new(), k))
+	else
+		setLighting("ColorShift_Top", Color3.new())
+		setLighting("ColorShift_Bottom", Color3.new())
+	end
 	hold(Lighting, "EnvironmentDiffuseScale", 0)  -- 2019+: kept at 0 even if the game writes it again
 	hold(Lighting, "EnvironmentSpecularScale", 0)
 	local shadowsArmed = false -- (Addtion-Scripts) true while a change can only have come from the game
@@ -1271,7 +1308,7 @@ local function setupLighting()
 	end)
 	runShadows()
 	shadowsArmed = true
-	setLighting("OutdoorAmbient", mul(flat, shadeScale))
+	setLighting("OutdoorAmbient", mulColour(mul(flat, shadeScale), hueOf(gameValues.OutdoorAmbient)))
 	-- ClockTime is deliberately not touched: the game's own time of day (and its day/night cycle) stays in charge
 	setLighting("GeographicLatitude", 41.733)
 	hold(Lighting, "ExposureCompensation", exposure)
@@ -1439,6 +1476,27 @@ if type(gameEffects) ~= "table" then
 	genv.__LegacyLightingEffects = gameEffects
 end
 
+-- (Addtion-Scripts) the game's colour tint: its colour corrections are switched off (their contrast and glow are not
+-- the old look), but their tint goes into this lighting's own colour correction, and a thick coloured haze adds a little
+local legacyCC = nil
+local tintWatched = setmetatable({}, {__mode = "k"}) -- (this run's watchers: the records themselves outlive a run)
+local function gameTint()
+	local strength = colourStrength()
+	local tint = Color3.new(1, 1, 1)
+	if strength <= 0 then return tint end
+	for e, rec in pairs(gameEffects) do
+		if rec.Tint and rec.Enabled ~= false and e.Parent then
+			tint = mulColour(tint, lerpColour(Color3.new(1, 1, 1), rec.Tint, strength))
+		elseif rec.HazeColour and e.Parent and (rec.Density or 0) > 0.2 then
+			tint = mulColour(tint, lerpColour(Color3.new(1, 1, 1), hueOf(rec.HazeColour, 1), math.min(0.3, rec.Density * 0.4) * strength))
+		end
+	end
+	return Color3.new(math.clamp(tint.R, 0, 1), math.clamp(tint.G, 0, 1), math.clamp(tint.B, 0, 1))
+end
+local function applyGameTint()
+	if legacyCC and legacyCC.Parent then pcall(function() legacyCC.TintColor = gameTint() end) end
+end
+
 local function stripEffect(e)
 	if ownedSet[e] then return end
 	pcall(function()
@@ -1466,6 +1524,24 @@ local function stripEffect(e)
 			end
 		end
 	end)
+	-- (Addtion-Scripts) on its own, after: a colour that can't be read never keeps the effect from being switched off
+	pcall(function()
+		-- (Addtion-Scripts) the colour it gives the picture, noted (and followed when the game changes it)
+		local rec = gameEffects[e]
+		if rec and not tintWatched[e] then
+			if e:IsA("ColorCorrectionEffect") then
+				tintWatched[e] = true
+				rec.Tint = e.TintColor
+				guarded(e, "TintColor", function() rec.Tint = e.TintColor applyGameTint() end)
+				applyGameTint()
+			elseif e:IsA("Atmosphere") then
+				tintWatched[e] = true
+				rec.HazeColour = e.Color
+				guarded(e, "Color", function() rec.HazeColour = e.Color applyGameTint() end)
+				applyGameTint()
+			end
+		end
+	end)
 end
 
 local function stripAllEffects()
@@ -1482,11 +1558,14 @@ local function setupEffects()
 	cc.Saturation = tonumber(Settings.Saturation) or 0.2
 	cc.Brightness = tonumber(Settings.ToneBrightness) or 0
 	cc.TintColor = Color3.new(1, 1, 1)
+	legacyCC = cc
 	cc.Contrast = tonumber(Settings.Contrast) or 0.08
 	cc:SetAttribute("BPIWLegacyLighting", true) -- (Hammer stuff's other legacy lighting leaves these alone)
 	cc.Parent = Lighting
+	applyGameTint()
 	live.applyTone = function()
 		if stopped then return end
+		applyGameTint()
 		cc.Saturation = tonumber(Settings.Saturation) or 0.2
 		cc.Contrast = tonumber(Settings.Contrast) or 0.08
 		cc.Brightness = tonumber(Settings.ToneBrightness) or 0
