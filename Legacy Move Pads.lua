@@ -32,6 +32,7 @@ local mode = nil
 local moveVector = Vector3.new(0, 0, 0)
 local jumpRequested = false
 local gui, dpad, thumbpad = nil, nil, nil
+local savedTouchMode, settingFromUs, nativeShown = nil, false, false
 local hidden = {} -- Roblox's own thumbstick frames hidden while a pad is on: [frame] = was visible
 
 ----------------------------------------------------------------------------------------------------
@@ -289,9 +290,44 @@ function api.Set(newMode)
 	mode = newMode
 	moveVector = Vector3.new(0, 0, 0)
 	if mode then ensureGui() end
-	if dpad then dpad.stop() dpad.frame.Visible = (mode == "DPad") end
-	if thumbpad then thumbpad.stop() thumbpad.frame.Visible = (mode == "Thumbpad") end
-	setRobloxStick(mode ~= nil)
+	if dpad then dpad.stop() dpad.frame.Visible = false end
+	if thumbpad then thumbpad.stop() thumbpad.frame.Visible = false end
+	-- (the setting is Roblox's own: its control comes up for it. Ours is drawn only if Roblox's does not appear within a moment.)
+	pcall(function()
+		local settings = UserSettings():GetService("UserGameSettings")
+		if mode then
+			if savedTouchMode == nil then savedTouchMode = settings.TouchMovementMode end
+			settingFromUs = true
+			settings.TouchMovementMode = Enum.TouchMovementMode[mode]
+			settingFromUs = false
+		elseif savedTouchMode ~= nil then
+			settingFromUs = true
+			settings.TouchMovementMode = savedTouchMode
+			settingFromUs = false
+			savedTouchMode = nil
+		end
+	end)
+	local myMode = mode
+	if mode then
+		task.delay(0.8, function()
+			if mode ~= myMode or not alive then return end
+			local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+			local tc = pg and pg:FindFirstChild("TouchGui") and pg.TouchGui:FindFirstChild("TouchControlFrame")
+			local native = tc and tc:FindFirstChild(myMode == "DPad" and "DPadFrame" or "ThumbpadFrame")
+			if native and native:IsA("GuiObject") and native.Visible then
+				nativeShown = true
+				setRobloxStick(false) -- (Roblox's own is running: nothing of ours)
+			else
+				nativeShown = false
+				if myMode == "DPad" and dpad then dpad.frame.Visible = true end
+				if myMode == "Thumbpad" and thumbpad then thumbpad.frame.Visible = true end
+				setRobloxStick(true)
+			end
+		end)
+	else
+		nativeShown = false
+		setRobloxStick(false)
+	end
 	print("[Legacy Move Pads] " .. tostring(mode or "off: Roblox's own controls"))
 end
 function api.Mode() return mode end
@@ -300,7 +336,7 @@ Env.BPMovePads = api
 -- the direction handed to the humanoid, after the controls' own (which are zero with the thumbstick hidden)
 local stepName = "BPMovePads" .. tostring(math.random(1, 1e9))
 RunService:BindToRenderStep(stepName, Enum.RenderPriority.Input.Value + 3, function()
-	if not mode then return end
+	if not mode or nativeShown then return end
 	local char = LocalPlayer.Character
 	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
 	if not humanoid then return end
@@ -310,7 +346,7 @@ RunService:BindToRenderStep(stepName, Enum.RenderPriority.Input.Value + 3, funct
 		humanoid.Jump = true
 	end
 	-- (Roblox's controls may have put its own thumbstick back after a respawn)
-	setRobloxStick(true)
+	if not nativeShown then setRobloxStick(true) end
 end)
 
 ----------------------------------------------------------------------------------------------------
@@ -374,15 +410,108 @@ end
 pcall(function()
 	local settings = UserSettings():GetService("UserGameSettings")
 	track(settings:GetPropertyChangedSignal("TouchMovementMode"):Connect(function()
+		if settingFromUs then return end
 		local name = settings.TouchMovementMode.Name
 		if name == "DPad" or name == "Thumbpad" then api.Set(name) elseif mode then api.Set(nil) end
 	end))
+end)
+
+----------------------------------------------------------------------------------------------------
+-- TAP TO MOVE: a sphere where you tapped (white; red and flickering when there is nowhere to walk to), in place of
+-- Roblox's teardrop marker
+----------------------------------------------------------------------------------------------------
+local PathfindingService = game:GetService("PathfindingService")
+local marker = nil
+local markerToken = 0
+local function clearMarker()
+	markerToken = markerToken + 1
+	if marker then pcall(function() marker:Destroy() end) marker = nil end
+end
+local function showMarker(point, humanoid)
+	clearMarker()
+	local token = markerToken
+	local sphere = Instance.new("Part")
+	sphere.Name = "BPTapMarker"
+	sphere.Shape = Enum.PartType.Ball
+	sphere.Size = Vector3.new(1, 1, 1)
+	sphere.Material = Enum.Material.Neon
+	sphere.Color = Color3.fromRGB(255, 255, 255)
+	sphere.Anchored = true
+	sphere.CanCollide = false
+	sphere.CanQuery = false
+	sphere.CanTouch = false
+	sphere.CastShadow = false
+	sphere.Position = point + Vector3.new(0, 0.5, 0)
+	sphere.Parent = workspace.CurrentCamera or workspace
+	marker = sphere
+	task.spawn(function()
+		-- is there a way there?
+		local reachable = true
+		local root = humanoid.RootPart
+		if root then
+			local ok, status = pcall(function()
+				local path = PathfindingService:CreatePath()
+				path:ComputeAsync(root.Position, point)
+				return path.Status
+			end)
+			if ok and status ~= Enum.PathStatus.Success then reachable = false end
+		end
+		if token ~= markerToken or not alive then return end
+		if not reachable then
+			sphere.Color = Color3.fromRGB(255, 60, 40)
+			for i = 1, 8 do
+				sphere.Transparency = (i % 2 == 1) and 0.85 or 0
+				task.wait(0.1)
+				if token ~= markerToken then return end
+			end
+			sphere.Transparency = 0
+			if token == markerToken then clearMarker() end
+		end
+	end)
+end
+local hookedHumanoid = nil
+local function hookHumanoid(humanoid)
+	if hookedHumanoid == humanoid then return end
+	hookedHumanoid = humanoid
+	track(humanoid:GetPropertyChangedSignal("WalkToPoint"):Connect(function()
+		local point = humanoid.WalkToPoint
+		if point and point.Magnitude > 0 and humanoid.MoveDirection.Magnitude >= 0 then showMarker(point, humanoid) end
+	end))
+	track(humanoid.MoveToFinished:Connect(function() clearMarker() end))
+	track(humanoid.Died:Connect(clearMarker))
+end
+local function hookCharacter(char)
+	if not char then return end
+	local humanoid = char:FindFirstChildOfClass("Humanoid") or char:WaitForChild("Humanoid", 10)
+	if humanoid then hookHumanoid(humanoid) end
+end
+task.spawn(hookCharacter, LocalPlayer.Character)
+track(LocalPlayer.CharacterAdded:Connect(function(char) task.spawn(hookCharacter, char) end))
+-- Roblox's own marker (what it puts under the camera) is hidden
+local function hideTheirMarker(d)
+	if d.Name == "BPTapMarker" then return end
+	local n = string.lower(d.Name)
+	if string.find(n, "click", 1, true) or string.find(n, "marker", 1, true) or string.find(n, "waypoint", 1, true)
+		or string.find(n, "destination", 1, true) or string.find(n, "teardrop", 1, true) or string.find(n, "movedisplay", 1, true) then
+		pcall(function()
+			if d:IsA("BasePart") then d.Transparency = 1 d.LocalTransparencyModifier = 1
+			elseif d:IsA("BillboardGui") or d:IsA("ParticleEmitter") or d:IsA("Beam") then d.Enabled = false
+			elseif d:IsA("Decal") or d:IsA("Texture") then d.Transparency = 1 end
+		end)
+	end
+end
+task.spawn(function()
+	local cam = workspace.CurrentCamera
+	while alive and not cam do task.wait() cam = workspace.CurrentCamera end
+	if not cam then return end
+	track(cam.DescendantAdded:Connect(function(d) task.defer(function() if d.Parent then hideTheirMarker(d) end end) end))
 end)
 
 Env.BPMovePadsCleanup = function()
 	alive = false
 	pcall(function() RunService:UnbindFromRenderStep(stepName) end)
 	api.Set(nil)
+	clearMarker()
 	for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
 	table.clear(conns)
 	if gui then pcall(function() gui:Destroy() end) gui = nil end
