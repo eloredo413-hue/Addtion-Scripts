@@ -304,8 +304,8 @@ local function showMarker(point, humanoid)
 	local sphere = Instance.new("Part")
 	sphere.Name = "BPTapMarker"
 	sphere.Shape = Enum.PartType.Ball
-	sphere.Size = Vector3.new(1.2, 1.2, 1.2)
-	sphere.Material = Enum.Material.Neon
+	sphere.Size = Vector3.new(1, 1, 1)
+	sphere.Material = Enum.Material.SmoothPlastic
 	sphere.Color = Color3.fromRGB(255, 255, 255)
 	sphere.Anchored = true
 	sphere.CanCollide = false
@@ -346,27 +346,39 @@ local function myHumanoid()
 	local char = LocalPlayer.Character
 	return char and char:FindFirstChildOfClass("Humanoid")
 end
-local overGui = false
+local lastWalkAt = -1
 track(UserInputService.TouchTap:Connect(function(positions, processed)
 	if mode ~= "ClickToMove" or processed then return end
 	local pos = positions and positions[1]
 	local camera = workspace.CurrentCamera
 	local humanoid = myHumanoid()
 	if not (pos and camera and humanoid) then return end
-	local ray = camera:ViewportPointToRay(pos.X, pos.Y)
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { LocalPlayer.Character, marker }
-	local hit = workspace:Raycast(ray.Origin, ray.Direction * 500, params)
-	if hit then
-		humanoid:MoveTo(hit.Position)
-		showMarker(hit.Position, humanoid)
-	end
+	local tappedAt = os.clock()
+	-- (Roblox's own tap to move walks there and sets the point: the sphere follows that. If it did nothing, we walk there.)
+	task.delay(0.4, function()
+		if mode ~= "ClickToMove" or lastWalkAt >= tappedAt then return end
+		local ray = camera:ViewportPointToRay(pos.X, pos.Y)
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = { LocalPlayer.Character, marker }
+		local hit = workspace:Raycast(ray.Origin, ray.Direction * 500, params)
+		if hit then
+			humanoid:MoveTo(hit.Position)
+		end
+	end)
 end))
 local hookedHumanoid = nil
 local function hookHumanoid(humanoid)
 	if hookedHumanoid == humanoid then return end
 	hookedHumanoid = humanoid
+	track(humanoid:GetPropertyChangedSignal("WalkToPoint"):Connect(function()
+		if mode ~= "ClickToMove" then return end
+		local point = humanoid.WalkToPoint
+		if point and point.Magnitude > 0 then
+			lastWalkAt = os.clock()
+			showMarker(point, humanoid)
+		end
+	end))
 	track(humanoid.MoveToFinished:Connect(function() if mode == "ClickToMove" then clearMarker() end end))
 	track(humanoid.Died:Connect(clearMarker))
 end
@@ -438,8 +450,8 @@ local MODE_TEXT = {
 	["dpad"] = "DPad", ["thumbpad"] = "Thumbpad",
 	["click to move"] = "ClickToMove", ["tap to move"] = "ClickToMove", ["click-to-move"] = "ClickToMove",
 	["tap-to-move"] = "ClickToMove",
-	["thumbstick"] = false, ["default (thumbstick)"] = false, ["dynamic thumbstick"] = false,
-	["default (dynamic thumbstick)"] = false, ["default"] = false, ["classic"] = false,
+	["thumbstick"] = false, ["default (thumbstick)"] = false, ["dynamic thumbstick"] = false, ["dynamicthumbstick"] = false,
+	["default (dynamic thumbstick)"] = false, ["default (dynamicthumbstick)"] = false, ["default"] = false, ["classic"] = false,
 }
 local hooked = setmetatable({}, { __mode = "k" })
 local function rowHasMovementMode(label)
@@ -489,6 +501,17 @@ for _, holder in ipairs({ CoreGui, (gethui and gethui()) or nil }) do
 	end
 end
 
+-- (and Roblox's own setting, which its Settings menu sets: DPad, Thumbpad and ClickToMove pick ours; the rest, Roblox's thumbstick)
+pcall(function()
+	local settings = UserSettings():GetService("UserGameSettings")
+	track(settings:GetPropertyChangedSignal("TouchMovementMode"):Connect(function()
+		local name = settings.TouchMovementMode.Name
+		if name == "DPad" or name == "Thumbpad" or name == "ClickToMove" then api.Set(name) else api.Set(nil) end
+	end))
+	local name = settings.TouchMovementMode.Name
+	if name == "DPad" or name == "Thumbpad" or name == "ClickToMove" then task.defer(api.Set, name) end
+end)
+
 Env.BPMovePadsCleanup = function()
 	alive = false
 	pcall(function() RunService:UnbindFromRenderStep(stepName) end)
@@ -500,6 +523,27 @@ Env.BPMovePadsCleanup = function()
 	if gui then pcall(function() gui:Destroy() end) gui = nil end
 	Env.BPMovePads = nil
 end
+-- Roblox's own tap to move marker (its teardrop, rings, waypoints): hidden while tap to move is on
+local function hideTheirs(d)
+	if not alive or mode ~= "ClickToMove" then return end
+	pcall(function()
+		if d.Name == "BPTapMarker" then return end
+		if d:IsA("BasePart") then d.Transparency = 1 d.LocalTransparencyModifier = 1
+		elseif d:IsA("BillboardGui") or d:IsA("ParticleEmitter") or d:IsA("Beam") or d:IsA("Trail") then d.Enabled = false
+		elseif d:IsA("Decal") or d:IsA("Texture") then d.Transparency = 1
+		elseif d:IsA("SelectionBox") or d:IsA("Highlight") then d.Visible = false end
+	end)
+end
+task.spawn(function()
+	local cam = workspace.CurrentCamera
+	while alive and not cam do task.wait() cam = workspace.CurrentCamera end
+	if not cam then return end
+	track(cam.DescendantAdded:Connect(function(d) task.defer(function() if d.Parent then hideTheirs(d) end end) end))
+	track(RunService.Heartbeat:Connect(function()
+		if mode ~= "ClickToMove" then return end
+		for _, d in ipairs(cam:GetDescendants()) do hideTheirs(d) end
+	end))
+end)
 -- (the thumbstick's place is learned while it is still on screen)
 task.spawn(function()
 	for _ = 1, 20 do
