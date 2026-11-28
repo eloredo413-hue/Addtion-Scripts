@@ -188,87 +188,52 @@ local scriptToRun = "local SHOW_STATUS = " .. tostring(SHOW_STATUS) .. "\n"
                 print("[2021] Movement Mode: the modern choices (no DPad / Thumbpad)")
             end
         end
-        -- THE MENU'S < > SELECTOR (what the 2019 menu has on phones): landing on DPad or Thumbpad, the same arrow is pressed
-        -- again, so they are passed over; the arrow last pressed says which way (right if none was)
-        local lastDir = setmetatable({}, { __mode = "k" }) -- row -> "left" / "right"
-        local hookedArrows = setmetatable({}, { __mode = "k" })
-        local function arrowsOf(row)
-            local list = {}
-            for _, d in ipairs(row:GetDescendants()) do
-                if d:IsA("ImageButton") and d.Visible then table.insert(list, d) end
-            end
-            table.sort(list, function(a, c) return a.AbsolutePosition.X < c.AbsolutePosition.X end)
-            if #list < 2 then return nil, nil end
-            return list[1], list[#list]
-        end
-        local function press(btn)
-            if type(firesignal) == "function" then
-                if pcall(firesignal, btn.MouseButton1Click) then return true end
-                if pcall(firesignal, btn.Activated) then return true end
-            end
-            if type(getconnections) == "function" then
-                local ok = pcall(function()
-                    local list = getconnections(btn.MouseButton1Click)
-                    if #list == 0 then list = getconnections(btn.Activated) end
-                    if #list == 0 then error("none") end
-                    for _, c in ipairs(list) do if c.Fire then c:Fire() elseif c.Function then c.Function() end end
-                end)
-                if ok then return true end
-            end
-            return false
-        end
-        local movementRows = setmetatable({}, { __mode = "k" })
-        local waitUntil = setmetatable({}, { __mode = "k" })
-        -- the choice showing now: of the selector's choice labels, the visible one nearest the middle of its arrows
-        local function currentChoice(row, left, right)
-            local mid = (left.AbsolutePosition.X + right.AbsolutePosition.X + right.AbsoluteSize.X) / 2
-            local best, bestD = nil, math.huge
-            for _, d in ipairs(row:GetDescendants()) do
-                if d:IsA("TextLabel") and d.Visible and d.Text ~= ""
-                    and not string.find(lower(d.Text), "movement mode", 1, true) then
-                    local c = d.AbsolutePosition.X + d.AbsoluteSize.X / 2
-                    local dist = math.abs(c - mid)
-                    if dist < bestD then best, bestD = d, dist end
-                end
-            end
-            return best
-        end
-        local function checkRow(row)
-            if not row.Parent then movementRows[row] = nil return end
-            local left, right = arrowsOf(row)
-            if not (left and right) then return end
-            for _, b in ipairs({ left, right }) do
-                if not hookedArrows[b] then
-                    hookedArrows[b] = true
-                    local dir = (b == left) and "left" or "right"
-                    b.MouseButton1Down:Connect(function() lastDir[row] = dir end)
-                    b.Activated:Connect(function() lastDir[row] = dir end)
-                end
-            end
-            if os.clock() < (waitUntil[row] or 0) then return end
-            local cur = currentChoice(row, left, right)
-            if cur and OLD[lower(cur.Text)] then
-                waitUntil[row] = os.clock() + 0.35 -- (the choices slide; the next look after that)
-                press((lastDir[row] == "left") and left or right)
-            end
-        end
-        local function skipOld(row)
-            if not movementRows[row] then print("[2021] Movement Mode: DPad / Thumbpad passed over (the modern choices only)") end
-            movementRows[row] = true
-            checkRow(row)
-        end
-        task.spawn(function()
-            while true do
-                task.wait(0.15)
-                for row in pairs(movementRows) do pcall(checkRow, row) end
-            end
+        -- THE MENU'S < > SELECTOR (what the 2019 menu has on phones): its choices are the movement modes Roblox lists; here
+        -- that list is the modern one, so DPad and Thumbpad are never among them (not skipped over: not there at all).
+        -- Only in this GUI: the 2019 GUI has its own file. The hook on every call to the game's objects is taken off
+        -- again once the menu has made its Movement Mode row (or after two minutes), so nothing is slowed for long.
+        local MODERN = {}
+        pcall(function()
+            local T = Enum.TouchMovementMode
+            MODERN = { T.Default, T.Thumbstick, T.DynamicThumbstick, T.ClickToMove }
         end)
+        local function modernList() local t = {} for i, v in ipairs(MODERN) do t[i] = v end return t end
+        local unhookGame = nil
+        pcall(function()
+            if not (hookmetamethod and getnamecallmethod) then return end
+            local wrap = newcclosure or function(f) return f end
+            local old
+            old = hookmetamethod(game, "__namecall", wrap(function(self, ...)
+                if getnamecallmethod() == "GetRegisteredTouchMovementModes" then return modernList() end
+                return old(self, ...)
+            end))
+            unhookGame = function() pcall(hookmetamethod, game, "__namecall", old) unhookGame = nil end
+        end)
+        pcall(function()
+            if not (hookmetamethod and getnamecallmethod) then return end
+            local wrap = newcclosure or function(f) return f end
+            local T = Enum.TouchMovementMode
+            local old
+            old = hookmetamethod(T, "__namecall", wrap(function(self, ...)
+                if self == T and getnamecallmethod() == "GetEnumItems" then return modernList() end
+                return old(self, ...)
+            end))
+        end)
+        task.delay(120, function() if unhookGame then unhookGame() end end)
+        local movementRows = setmetatable({}, { __mode = "k" })
+        local function skipOld(row)
+            if movementRows[row] then return end
+            movementRows[row] = true
+            -- (the row is made: the game-wide hook can go a moment later)
+            task.delay(5, function() if unhookGame then unhookGame() end end)
+        end
         -- the shown choice (the box with the arrow) says the modern default too
         local function fixLabel(l)
             if not (l:IsA("TextLabel") or l:IsA("TextButton")) then return end
             local new = RENAME[lower(l.Text)]
             if (OLD[lower(l.Text)] or new) and l:IsA("TextLabel") and l.Parent and not l.Parent:IsA("ScrollingFrame")
                 and not movementRows[l.Parent] and not movementRows[l.Parent.Parent] then
+                -- (DPad / Thumbpad still shown: an executor without the hook; the label is renamed below at least)
                 local row, found = l.Parent, false
                 for _ = 1, 4 do
                     if not row then break end
