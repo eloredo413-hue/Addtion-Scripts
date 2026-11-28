@@ -2180,29 +2180,23 @@ do
 				-- left and right as your character turns (walking round with the stick), as the old client's did, on top of
 				-- any turning you do yourself. (In third person the camera is left as it is.)
 				do
-					-- (the user's second video: in first person, dragging the screen sideways does nothing; only your
-					-- character's turning turns the view. Looking up and down by dragging stays.)
-					if self:IsInFirstPerson() and self.RotateInput.X ~= 0 then
-						self.RotateInput = Vector2.new(0, self.RotateInput.Y)
-					end
-					local root = humanoid and humanoid.RootPart
-					local bodyLook = root and (root.CFrame.LookVector * XZ_VECTOR)
-					if bodyLook and bodyLook.Magnitude > 0.01 then
-						bodyLook = bodyLook.Unit
-						if self:IsInFirstPerson() and self.LastBodyLook then
-							local y = findAngleBetweenXZVectors(bodyLook, self.LastBodyLook)
-							-- (a teleport or respawn turns you in one go: not followed)
-							if IsFinite(y) and math.abs(y) > 0.0001 and math.abs(y) < 1.2 then
-								-- (at most the old turning keys' 120 degrees a second: walking is relative to the view, so
-								-- holding the stick sideways turns you round steadily, as the old clients did, never a spin)
-								local cap = math.rad(120) * math.min(0.1, timeDelta)
-								y = math.clamp(y, -cap, cap)
-								self.RotateInput = self.RotateInput + Vector2.new(y, 0)
+					-- (dragging the screen turns the view any way in first person too, up, down, sideways and right round
+					-- behind you, the user asked.) Walking turns you as the old turning keys did: the stick pushed to the side
+					-- swings the view round that way steadily (up to 180 degrees a second, less on a slant), straight ahead
+					-- or back doesn't turn it. It goes by the stick, not by the body, so turning the view by hand while you
+					-- walk never feeds back into a spin.
+					if self:IsInFirstPerson() and humanoid then
+						local move = humanoid.MoveDirection * XZ_VECTOR
+						local look = self:GetCameraLook() * XZ_VECTOR
+						if move.Magnitude > 0.05 and look.Magnitude > 0.01 then
+							local y = findAngleBetweenXZVectors(move.Unit, look.Unit)
+							if IsFinite(y) and math.abs(y) > 0.05 and math.abs(y) < 2.6 then
+								local dt = math.min(0.1, timeDelta)
+								local rate = math.rad(180) * math.sin(math.abs(y)) * math.min(1, move.Magnitude)
+								local step = math.min(math.abs(y), rate * dt)
+								self.RotateInput = self.RotateInput + Vector2.new((y > 0) and step or -step, 0)
 							end
 						end
-						self.LastBodyLook = bodyLook
-					else
-						self.LastBodyLook = nil
 					end
 				end
 
