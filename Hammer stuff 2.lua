@@ -81,6 +81,7 @@ task.spawn(function()
 		isMobileControlsEnabled = config.isMobileControlsEnabled or false,
 		isOldThumbstickEnabled  = config.isOldThumbstickEnabled or false,
 		isIWLegacyLightingEnabled = config.isIWLegacyLightingEnabled or false, -- (the dropdown's "normal")
+		isIWGameColoursEnabled  = config.isIWGameColoursEnabled ~= false, -- (on unless unticked: the game's colours kept)
 		isIWLighting2014Enabled = config.isIWLighting2014Enabled or false,
 		isIWLighting2015Enabled = config.isIWLighting2015Enabled or false,
 		isIWLighting2016Enabled = config.isIWLighting2016Enabled or false,
@@ -4251,6 +4252,7 @@ task.spawn(function()
 		local sources = {}
 		local wanted, running = nil, nil -- "normal", a year, "iw+" and a year (both ticked), or nil
 		local busy = false
+		local redo = false -- (the one running is started again: "keep game colors" was ticked or unticked)
 		local function stopIt()
 			local stop = genv.LegacyLightingStop
 			if type(stop) == "function" then pcall(stop) end
@@ -4273,6 +4275,7 @@ task.spawn(function()
 				end
 				genv.BPIWLightingYear = year
 				genv.BPIWLightingOverhaul = overhaul or nil
+				genv.BPIWGameColours = state.isIWGameColoursEnabled ~= false
 				fn()
 			end)
 			genv.BPIWLightingYear = nil
@@ -4288,7 +4291,8 @@ task.spawn(function()
 			busy = true
 			task.spawn(function()
 				local failed = {}
-				while wanted ~= running and not (wanted ~= nil and failed[wanted]) do
+				while (wanted ~= running or redo) and not (wanted ~= nil and failed[wanted]) do
+					redo = false
 					if running then stopIt() end
 					local target = wanted
 					if target then
@@ -4325,6 +4329,15 @@ task.spawn(function()
 		actions.syncIWLighting = sync
 		actions.applyIWLegacyLighting = sync
 		actions.restoreIWLegacyLighting = sync
+		-- "keep game colors": the lighting reads it when it starts, so the one running is started again with it
+		local function coloursChanged()
+			genv.BPIWGameColours = state.isIWGameColoursEnabled ~= false
+			wanted = desired()
+			if wanted ~= nil then redo = true end
+			follow()
+		end
+		actions.applyIWGameColours = coloursChanged
+		actions.restoreIWGameColours = coloursChanged
 		for _, year in ipairs(IW_YEARS) do
 			actions["applyIWLighting" .. year] = sync
 			actions["restoreIWLighting" .. year] = sync
@@ -5619,6 +5632,18 @@ task.spawn(function()
 		onEnable      = actions.applyIWLegacyLighting,
 		onDisable     = actions.restoreIWLegacyLighting,
 		helpText      = "The iw legacy lighting, only on your screen: an overhaul of the game's look, brighter light with darker colors like the old Voxel look, the game's bloom / atmosphere / sun rays off, terrain darkened, no 3D clouds or grass blades. The game's time of day keeps going. Works with classic faces, and can be on together with legacy lighting. Can be on together with a lighting era: then the era's look is used with this overhaul (colors darkened, light boosted). Untick to put the game back as it was (lighting, effects, colors, terrain)."
+	})
+
+	createAddonRow({
+		containerName = "IWGameColoursContainer",
+		checkboxName  = "IWGameColoursCheckbox",
+		helpName      = "IWGameColoursHelpButton",
+		label         = "keep game colors",
+		yPos          = startY,
+		stateKey      = "isIWGameColoursEnabled",
+		onEnable      = actions.applyIWGameColours,
+		onDisable     = actions.restoreIWGameColours,
+		helpText      = "For iw legacy lighting and the lighting eras. Ticked (the default): a game with colored lighting, like the orange look of Clone Tycoon, keeps its color (its tinted light, color shift and color tint) with the old lighting's brightness and shine, as real old Roblox lighting did. Unticked: the plain grey light of old, whatever color the game's lighting has. Changing it restarts the lighting that is on, so it shows at once."
 	})
 
 	createDropdown({

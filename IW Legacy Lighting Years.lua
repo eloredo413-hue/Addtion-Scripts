@@ -147,6 +147,17 @@ local Settings = {
 	                          -- Each restart rescans the whole map. {} = never restart
 }
 
+-- (Addtion-Scripts) Hammer stuff's "keep game colors" tick (getgenv().BPIWGameColours): false = the plain grey light of
+-- old, true = the game's own colours kept; not set = GameColours above
+do
+	local g = (getgenv and getgenv()) or _G
+	if g.BPIWGameColours == false then
+		Settings.GameColours = false
+	elseif g.BPIWGameColours == true then
+		Settings.GameColours = true
+	end
+end
+
 -- (Addtion-Scripts) THE YEAR: what each year script changes from the Settings above (see the top of this file)
 local YEARS = {
 	["2014"] = {NoGlass = true, NoGuiLighting = true, NoLitParticles = true, NoTrails = true, NoBeams = true},
