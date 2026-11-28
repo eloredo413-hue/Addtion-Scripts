@@ -2180,6 +2180,11 @@ do
 				-- left and right as your character turns (walking round with the stick), as the old client's did, on top of
 				-- any turning you do yourself. (In third person the camera is left as it is.)
 				do
+					-- (the user's second video: in first person, dragging the screen sideways does nothing; only your
+					-- character's turning turns the view. Looking up and down by dragging stays.)
+					if self:IsInFirstPerson() and self.RotateInput.X ~= 0 then
+						self.RotateInput = Vector2.new(0, self.RotateInput.Y)
+					end
 					local root = humanoid and humanoid.RootPart
 					local bodyLook = root and (root.CFrame.LookVector * XZ_VECTOR)
 					if bodyLook and bodyLook.Magnitude > 0.01 then

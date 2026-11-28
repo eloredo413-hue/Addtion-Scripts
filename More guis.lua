@@ -187,13 +187,15 @@ do
 		return code
 	end
 
-	-- (Addtion-Scripts) BLOXY'S 2008 R6 ANIMATIONS WITHOUT A RESET. Its script broke your joints, set your character to
-	-- nothing (on your screen only) and waited for a new one, then broke that one's joints too, and only animated the
-	-- character that came after. Where the reset didn't really happen, you were left in limbo, unable to move (the
-	-- user). Now nothing is reset: the animation runs on the character you have, straight away (its Animate script
-	-- switched off and its playing animations stopped, as the script did for a new one), and on every one after.
+	-- (Addtion-Scripts) BLOXY'S 2008 R6 ANIMATIONS, WITH A REAL RESET. They only animate a fresh character (on the one you
+	-- have they stay frozen, the user found), so the script resets you first. Its reset only broke your joints and set
+	-- your character to nothing on your screen, then waited for a new one: where the game didn't respawn you for that,
+	-- you were left in limbo, unable to move (the user: "it wasn't actually resetting you"). Now it resets you the way
+	-- Roblox's own reset button does (health to 0, the Dead state; the executor's kill signal where it has one), once,
+	-- and animates the character that comes next and every one after. If no new character comes within 12 seconds, the
+	-- one you have is animated instead of leaving you stuck.
 	local ANIM2008_SIG = "--this is mostly patched btw"
-	local function noReset2008(code)
+	local function realReset2008(code)
 		if not code:find(ANIM2008_SIG, 1, true) then return code end
 		local resetAt = code:find("LocalPlayer.Character:BreakJoints()", 1, true)
 		local connectStart, connectEnd = code:find("LocalPlayer.CharacterAdded:Connect(function(c)", 1, true)
@@ -222,13 +224,32 @@ end)
 			body = body:sub(1, b) .. stopTracks .. body:sub(b + 1)
 			lastEnd = lastEnd + #stopTracks
 		end
+		local resetCode = [[
+-- (Addtion-Scripts) a real reset, as Roblox's own reset button does it, then the next character is animated
+local __BPAnimated = false
+LocalPlayer.CharacterAdded:Connect(function(c) __BPAnimated = true task.spawn(__BP2008Anim, c) end)
+do
+	local char = LocalPlayer.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if hum then
+		pcall(function() hum.Health = 0 end)
+		pcall(function() hum:ChangeState(Enum.HumanoidStateType.Dead) end)
+	end
+	pcall(function() if replicatesignal then replicatesignal(LocalPlayer.Kill) end end)
+	task.delay(12, function()
+		if not __BPAnimated and LocalPlayer.Character then
+			__BPAnimated = true
+			warn("[Hooks] 2008 animations: the game didn't respawn you: animating the character you have")
+			__BP2008Anim(LocalPlayer.Character)
+		end
+	end)
+end
+]]
 		local fixed = code:sub(1, resetAt - 1)
-			.. "-- (Addtion-Scripts: no reset; the character you have is animated)\n"
 			.. "local function __BP2008Anim(c)" .. body:sub(1, lastEnd - 1) .. "end\n"
-			.. "LocalPlayer.CharacterAdded:Connect(function(c) task.spawn(__BP2008Anim, c) end)\n"
-			.. "if LocalPlayer.Character then task.spawn(__BP2008Anim, LocalPlayer.Character) end\n"
+			.. resetCode
 			.. body:sub(lastEnd + 4)
-		print("[Hooks] Bloxy's 2008 animations: on your character as it is, no reset")
+		print("[Hooks] Bloxy's 2008 animations: one real reset, then animated")
 		return fixed
 	end
 
@@ -249,7 +270,7 @@ end)
 			return function() end
 		end
 		code = ownLegacy(code)
-		code = noReset2008(code)
+		code = realReset2008(code)
 
 		local pending = getgenv().BP_PendingTopbar
 		local variant = getgenv().BP_2023Variant
