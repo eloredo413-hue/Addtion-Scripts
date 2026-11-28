@@ -217,7 +217,18 @@ local function buildOldStick(gui, withJump)
 		moveCenter = function(position)
 			held = true
 			local origin = gui.AbsolutePosition
-			frame.Position = UDim2.new(0, position.X - origin.X - size / 2, 0, position.Y - origin.Y - size / 2)
+			-- (Addtion-Scripts) never out of the screen: the ring stays whole on it, however far the thumb goes
+			local area = gui.AbsoluteSize
+			local x = math.clamp(position.X - origin.X - size / 2, 0, math.max(0, area.X - size))
+			local y = math.clamp(position.Y - origin.Y - size / 2, 0, math.max(0, area.Y - size))
+			frame.Position = UDim2.new(0, x, 0, y)
+		end,
+		-- (Addtion-Scripts) where its middle is when it rests (Legacy Move Pads puts its Thumbpad there)
+		restCenter = function()
+			local origin = gui.AbsolutePosition
+			local area = gui.AbsoluteSize
+			local p = restPosition
+			return Vector2.new(origin.X + p.X.Scale * area.X + p.X.Offset + size / 2, origin.Y + p.Y.Scale * area.Y + p.Y.Offset + size / 2)
 		end,
 	}
 end
@@ -528,6 +539,7 @@ end
 ----------------------------------------------------------------------------------------------------
 -- putting the controls on screen
 ----------------------------------------------------------------------------------------------------
+local suspended = false -- (Addtion-Scripts: see api.Suspend)
 local function guiHolder()
 	local holder = CoreGui
 	pcall(function()
@@ -559,8 +571,10 @@ local function showLook()
 	if controlsOn then look.jump = build2013Jump(gui) end
 
 	track(lookConns, look.stick.frame.InputBegan:Connect(function(input)
+		if suspended then return end
 		if input.UserInputType == Enum.UserInputType.Touch and not moveTouchObject then grabStick(input) end
 	end))
+	look.stick.frame.Visible = not suspended
 
 	if look.jump then
 		local jump = look.jump
@@ -638,6 +652,26 @@ end
 
 local api = {}
 
+-- (Addtion-Scripts) SUSPENDED: while the Settings menu's Movement Mode is a DPad, the Thumbpad or tap to move (Legacy
+-- Move Pads.lua), the stick (old thumbstick or 2013 joystick) is hidden and takes no touches, so it doesn't stay on the
+-- screen beside them (the user); it comes back when the Movement Mode is a thumbstick again.
+function api.Suspend(on)
+	on = on == true
+	if suspended == on then return end
+	suspended = on
+	releaseStick()
+	if look and look.stick and look.stick.frame then pcall(function() look.stick.frame.Visible = not on end) end
+end
+function api.IsSuspended() return suspended end
+function api.StickCenter()
+	local stick = look and look.stick
+	if stick and stick.restCenter then
+		local ok, c = pcall(stick.restCenter)
+		if ok then return c end
+	end
+	return nil
+end
+
 -- controls: the 2013 joystick and jump button; oldThumbstick: the draggable stick (in place of either joystick)
 function api.Set(controlsWanted, oldStickWanted)
 	controlsWanted = controlsWanted == true
@@ -682,6 +716,10 @@ function api.Style()
 end
 
 genv.BPMobileControls = api
+pcall(function()
+	local pads = genv.BPMovePads
+	if type(pads) == "table" and type(pads.Mode) == "function" and pads.Mode() ~= nil then api.Suspend(true) end
+end)
 do
 	local want = genv.BPMobileControlsWant
 	if type(want) == "table" then

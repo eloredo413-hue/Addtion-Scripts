@@ -3431,9 +3431,10 @@ end
                 local stop = getgenv().LegacyDisconnectStop
                 if type(stop) == "function" then pcall(stop) end
             end
-            -- (Addtion-Scripts) the 2015 - 2019 GUIs (early 2015 too): their Settings > Movement Mode dropdown picks Roblox's DPad or
+            -- (Addtion-Scripts) the 2014 - 2019 GUIs (early 2015 too): their Settings > Movement Mode dropdown picks Roblox's DPad or
             -- Thumbpad (Legacy Move Pads.lua)
-            if year and year >= 2015 and year <= 2019 and not movePadsOn then
+            -- (and the 2014 GUI, whose Settings menu has the same Movement Mode choices, the user found)
+            if year and year >= 2014 and year <= 2019 and not movePadsOn then
                 movePadsOn = true
                 task.spawn(function()
                     local ok, why = loadUrl(URL_MOVE_PADS, "Legacy Move Pads")
