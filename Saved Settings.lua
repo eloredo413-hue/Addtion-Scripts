@@ -840,9 +840,14 @@ local function answerSetup(answers, files, name, firstWait)
 			local frame, title = currentQuestion(isAnswered)
 			if not frame then
 				if os.clock() - idleSince > ((given == 0) and (firstWait or 20) or 12) then break end
-				task.wait(0.25)
-			elseif frame == lastFrame and title == lastTitle and os.clock() - lastAt < 1.2 then
+				task.wait(0.1) -- (was 0.25: the next question is answered sooner, the user asked)
+			elseif frame == lastFrame and title == lastTitle and os.clock() - lastAt < 1.2
+				and not (queues[title] and #queues[title] > 0) then
 				task.wait(0.1) -- (just answered: it is on its way out)
+			elseif frame == lastFrame and title == lastTitle and os.clock() - lastAt < 0.08 then
+				-- (more taps on the same question, like the physics / camera step's dropdowns: a short breath only.
+				-- Each of those used to wait 1.2 s, as if the question were leaving: the step took about 7 s)
+				task.wait(0.03)
 			else
 				-- its answers: recorded ones first, then (once) the saved settings'. The physics step from the
 				-- saved settings first: its recorded taps depend on what its dropdown showed back then.
@@ -884,6 +889,10 @@ local function answerSetup(answers, files, name, firstWait)
 				local btn, text = nil, nil
 				while queue and #queue > 0 and not btn and not tookOver do
 					local candidate = queue[1]
+					-- (the animations step: an answer for the other kind of avatar is given as its match here at once.
+					-- The 2015 - 2017 presets' "Modern R6" / "Old R15" on the R6 step used to be looked for 3 s, then
+					-- given up for the neutral answer: the stutter at the R6 animations the user saw)
+					if rig then candidate = animForRig(candidate, rig) end
 					-- More guis may still be adding its topbars to the list: those get longer
 					local deadline = os.clock() + ((isTopbar and candidate ~= "confirm") and 40 or 3)
 					repeat
@@ -915,7 +924,9 @@ local function answerSetup(answers, files, name, firstWait)
 					end
 				end
 				if tookOver then stopReason = "you answered the setup yourself: the rest of it is up to you" break end
-				task.wait(0.2) -- (it has just slid in; was 0.35: the presets go faster, the user asked)
+				-- (it has just slid in; was 0.35: the presets go faster, the user asked. A second tap on the same question
+				-- doesn't wait for that)
+				if frame == lastFrame and title == lastTitle then task.wait(0.05) else task.wait(0.2) end
 				if tookOver then stopReason = "you answered the setup yourself: the rest of it is up to you" break end
 				-- still the same question and button (an addon may have just turned it into its own step, like the
 				-- Particles addon does with "old particles"): else looked at again
@@ -948,7 +959,11 @@ local function answerSetup(answers, files, name, firstWait)
 					-- < > on, nothing loads until the last question, so only a short breath: the presets go faster)
 					local w = Env.BPWizard
 					local deferring = type(w) == "table" and type(w.deferring) == "function" and w.deferring()
-					if deferring then settle(0.4, 3) else settle(2) end
+					-- (a tap with more to come on the same question, like opening a dropdown or picking in it, loads
+					-- nothing: no wait for the game there)
+					if queues[title] and #queues[title] > 0 then
+						-- nothing
+					elseif deferring then settle(0.4, 3) else settle(2) end
 				else
 					-- (its answer is put back for when it comes again)
 					queues[title] = queues[title] or {}
