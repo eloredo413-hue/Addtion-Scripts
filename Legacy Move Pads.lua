@@ -60,7 +60,32 @@ local function noteStickCenter()
 		end
 	end
 end
+-- Every jump button that isn't the DPad's own (Roblox's, Bloxy's old mobile one, Mobile Controls'): hidden while the DPad
+-- is on, since the DPad's middle is the jump button (as in Roblox's own DPad). Found by name as they come in.
+local jumpButtons = setmetatable({}, { __mode = "k" })
+local function noteJump(d)
+	if d.Name == "JumpButton" and d:IsA("GuiObject") and not (gui and d:IsDescendantOf(gui)) then
+		jumpButtons[d] = true
+	end
+end
+local function hideJumps()
+	for b in pairs(jumpButtons) do
+		if b.Parent and b.Visible and not (gui and b:IsDescendantOf(gui)) then
+			if hidden[b] == nil then hidden[b] = true end
+			b.Visible = false
+		end
+	end
+end
+
 local function hideRoblox(hide)
+	if not hide then
+		for f, was in pairs(hidden) do
+			if f.Parent then pcall(function() f.Visible = was end) end
+			hidden[f] = nil
+		end
+	elseif mode == "DPad" then
+		hideJumps()
+	end
 	local controls = touchFrames()
 	if not controls then return end
 	if hide then
@@ -80,10 +105,6 @@ local function hideRoblox(hide)
 			end
 		end
 	else
-		for f, was in pairs(hidden) do
-			if f.Parent then pcall(function() f.Visible = was end) end
-			hidden[f] = nil
-		end
 		-- (and the one the player's own setting shows is shown, whatever it was found as)
 		pcall(function()
 			local settings = UserSettings():GetService("UserGameSettings")
@@ -416,25 +437,34 @@ local function myHumanoid()
 	local char = LocalPlayer.Character
 	return char and char:FindFirstChildOfClass("Humanoid")
 end
+-- No way there: Roblox's 2015 tap to move (its ControlScript's ClickToMove, FlashRed) switched the sphere's colour every
+-- 0.13 s and took it away after a second; here it switches between red and 2006's black (BrickColor "Black", the dark
+-- blue-grey 2006 black, not pure black), as the user asked.
+local FLASH_RED = Color3.fromRGB(255, 0, 0)      -- BrickColor "Really red"
+local FLASH_BLACK = Color3.fromRGB(27, 42, 53)   -- BrickColor "Black" (2006)
+local FLASH_STEP = 0.13
+local FLASH_FOR = 1
 local function flickerRed(sphere, token)
-	sphere.Color = Color3.fromRGB(255, 60, 40)
-	for i = 1, 8 do
-		sphere.Transparency = (i % 2 == 1) and 0.85 or 0
-		task.wait(0.1)
+	local start = os.clock()
+	local red = true
+	while os.clock() - start < FLASH_FOR do
+		sphere.Color = red and FLASH_RED or FLASH_BLACK
+		red = not red
+		task.wait(FLASH_STEP)
 		if token ~= markerToken then return end
 	end
 	if token == markerToken then clearMarker() end
 end
--- point: on the ground; normal: which way the ground faces there
-local function showMarker(point, normal, failed, waypoint)
+-- point: on the ground. Like Roblox's 2015 one (CreateDestinationIndicator: a 2 x 2 x 2 white ball made at the tapped
+-- point itself), the sphere's middle is the spot, so it is half in the ground.
+local function showMarker(point, _normal, failed, waypoint)
 	clearMarker()
 	lastShownAt = os.clock()
 	local token = markerToken
-	normal = (normal and normal.Magnitude > 0.5) and normal.Unit or Vector3.new(0, 1, 0)
 	local sphere = Instance.new("Part")
 	sphere.Name = "BPTapMarker"
 	sphere.Shape = Enum.PartType.Ball
-	sphere.Size = Vector3.new(1, 1, 1)
+	sphere.Size = Vector3.new(2, 2, 2)
 	sphere.Material = Enum.Material.SmoothPlastic
 	sphere.Color = Color3.fromRGB(255, 255, 255)
 	sphere.Anchored = true
@@ -442,7 +472,7 @@ local function showMarker(point, normal, failed, waypoint)
 	sphere.CanQuery = false
 	sphere.CanTouch = false
 	sphere.CastShadow = false
-	sphere.CFrame = CFrame.new(point + normal * 0.5)
+	sphere.CFrame = CFrame.new(point)
 	sphere.Parent = workspace
 	marker = sphere
 	markerFor = waypoint
@@ -605,7 +635,8 @@ function api.Set(newMode)
 	moveVector = Vector3.new(0, 0, 0)
 	clearMarker()
 	if mode == "DPad" or mode == "Thumbpad" then ensureGui() end
-	hideRoblox(mode ~= nil)
+	hideRoblox(false)
+	if mode ~= nil then hideRoblox(true) end
 	if dpad then dpad.stop() dpad.frame.Visible = (mode == "DPad") end
 	if thumbpad then thumbpad.stop() thumbpad.frame.Visible = (mode == "Thumbpad") end
 	if mode == "Thumbpad" and lastStickCenter then thumbpad.setCenter(lastStickCenter) end
@@ -707,6 +738,26 @@ Env.BPMovePadsCleanup = function()
 	table.clear(conns)
 	if gui then pcall(function() gui:Destroy() end) gui = nil end
 	Env.BPMovePads = nil
+end
+-- (jump buttons, wherever they are made: noted by name as they come, and once at the start, a bit at a time)
+local jumpHolders = {}
+table.insert(jumpHolders, LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui", 10) or CoreGui)
+table.insert(jumpHolders, CoreGui)
+pcall(function() if gethui then local h = gethui() if h and h ~= CoreGui then table.insert(jumpHolders, h) end end end)
+for _, holder in ipairs(jumpHolders) do
+	if holder then
+		track(holder.DescendantAdded:Connect(function(d)
+			if d.Name == "JumpButton" then task.defer(function() if d.Parent then pcall(noteJump, d) end end) end
+		end))
+		task.spawn(function()
+			local ok, all = pcall(function() return holder:GetDescendants() end)
+			if not ok then return end
+			for i, d in ipairs(all) do
+				if d.Name == "JumpButton" then pcall(noteJump, d) end
+				if i % 400 == 0 then task.wait() end
+			end
+		end)
+	end
 end
 -- (the thumbstick's place is learned while it is still on screen)
 task.spawn(function()

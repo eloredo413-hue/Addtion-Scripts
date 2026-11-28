@@ -1071,6 +1071,32 @@ local function headOverride()
 	return nil
 end
 
+-- HOW BIG THE CLASSIC HEAD IS: as big as the game makes the character's head. Some games make characters smaller (the
+-- model scaled down, the avatar's head scale turned down, or the parts resized by the game), and a full-size classic head
+-- on those looked far too big. The size comes from, smallest first:
+--   * the character's scale (Model:GetScale, what games that scale characters with ScaleTo change),
+--   * on R15, the avatar's HeadScale,
+--   * the real head's own size, when it is clearly smaller than a normal head (R6: 1 stud tall; R15: about 1.2)
+-- (a big stylised head never makes the classic head bigger than normal)
+local NORMAL_HEAD_HEIGHT_R6, NORMAL_HEAD_HEIGHT_R15 = 1, 1.2
+local function headSizeFactor(character, head)
+	local factor = 1
+	pcall(function()
+		local s = character:GetScale()
+		if type(s) == "number" and s > 0 then factor = s end
+	end)
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local isR15 = humanoid and humanoid.RigType == Enum.HumanoidRigType.R15
+	if isR15 then
+		local hs = humanoid:FindFirstChild("HeadScale")
+		if hs and hs:IsA("NumberValue") and hs.Value > 0 then factor = factor * hs.Value end
+	end
+	local normal = isR15 and NORMAL_HEAD_HEIGHT_R15 or NORMAL_HEAD_HEIGHT_R6
+	local byOwnSize = head.Size.Y / normal
+	if byOwnSize < 0.85 and byOwnSize < factor then factor = byOwnSize end
+	return math.clamp(factor, 0.2, 1)
+end
+
 local generation = setmetatable({}, { __mode = "k" }) -- character -> number of the latest refresh
 local lastReport = setmetatable({}, { __mode = "k" })
 
@@ -1112,9 +1138,10 @@ local function apply(player, character)
 		st.headTransparency = head.Transparency
 		head.Transparency = 1
 
+		local factor = headSizeFactor(character, head)
 		local fake = Instance.new("Part")
 		fake.Name = OUR_HEAD
-		fake.Size = Vector3.new(2, 1, 1)
+		fake.Size = Vector3.new(2, 1, 1) * factor -- (the plain head mesh grows and shrinks with its part)
 		st.skin = headSkinColor(character, head)
 		fake.Color = st.skin
 		fake.Material = bodyMaterial(character)
@@ -1135,12 +1162,14 @@ local function apply(player, character)
 				mesh.MeshType = Enum.MeshType.Head
 			end
 			mesh.Scale = typeof(override.scale) == "Vector3" and override.scale or HEAD_SCALE
+			-- (a model's mesh keeps its own size whatever its part's size: scaled by hand)
+			if mesh.MeshType == Enum.MeshType.FileMesh then mesh.Scale = mesh.Scale * factor end
 		elseif shape and shape.mesh then
 			-- the classic model of its shape (Roundy, Blockhead, ...)
 			mesh.MeshType = Enum.MeshType.FileMesh
 			mesh.MeshId = "rbxassetid://" .. tostring(shape.mesh)
 			mesh.TextureId = ""
-			mesh.Scale = shape.scale or Vector3.new(1, 1, 1)
+			mesh.Scale = (shape.scale or Vector3.new(1, 1, 1)) * factor
 		else
 			mesh.MeshType = Enum.MeshType.Head
 			mesh.Scale = HEAD_SCALE
@@ -1149,9 +1178,15 @@ local function apply(player, character)
 
 		makeFaceDecal(texture).Parent = fake
 
+		-- (a smaller classic head sits on the neck, not floating in the middle of the real head)
+		local fakeHeight = 1.25 * factor
+		local drop = math.max(0, (head.Size.Y - fakeHeight) / 2)
+		st.offset = CFrame.new(0, -drop, 0)
+		fake.CFrame = head.CFrame * st.offset
 		local weld = Instance.new("Weld")
 		weld.Part0 = head
 		weld.Part1 = fake
+		weld.C0 = st.offset
 		weld.Parent = fake
 
 		fake.Parent = character
@@ -1230,6 +1265,10 @@ local function watchCharacter(player, character, conns)
 			end
 		end)
 		table.insert(conns, headConn)
+		-- (the game resizing the head, or the character: the classic head follows)
+		table.insert(conns, head:GetPropertyChangedSignal("Size"):Connect(function()
+			if states[character] and states[character].fake then scheduleApply(player, character, 0.5) end
+		end))
 	end
 	watchHead(character:FindFirstChild("Head"))
 
@@ -1297,8 +1336,9 @@ function api.Start()
 				if fake.LocalTransparencyModifier ~= head.LocalTransparencyModifier then
 					fake.LocalTransparencyModifier = head.LocalTransparencyModifier
 				end
-				if not st.weld.Parent or (fake.Position - head.Position).Magnitude > 0.5 then
-					fake.CFrame = head.CFrame
+				local where = st.offset and (head.CFrame * st.offset) or head.CFrame
+				if not st.weld.Parent or (fake.Position - where.Position).Magnitude > 0.5 then
+					fake.CFrame = where
 				end
 			end
 		end
