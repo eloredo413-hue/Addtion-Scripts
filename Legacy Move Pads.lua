@@ -48,6 +48,7 @@ local function touchFrames()
 	return touchGui and touchGui:FindFirstChild("TouchControlFrame")
 end
 local STICK_NAMES = { "ThumbstickFrame", "DynamicThumbstickFrame" }
+local wantedStick -- (below)
 local PAD_NAMES = { "ThumbpadFrame", "DPadFrame" }
 local function noteStickCenter()
 	local controls = touchFrames()
@@ -75,6 +76,23 @@ local function hideJumps()
 			b.Visible = false
 		end
 	end
+end
+
+-- (Addtion-Scripts) which of Roblox's two sticks is meant to be on: the game's own choice if it makes one, else the
+-- player's setting. "Default" on a touch screen is the dynamic thumbstick (it used to be taken for the plain one here,
+-- and both showed at once, the user found).
+function wantedStick()
+	local mode = nil
+	pcall(function()
+		local dev = LocalPlayer.DevTouchMovementMode.Name
+		if dev ~= "UserChoice" then mode = dev end
+	end)
+	if not mode then
+		pcall(function() mode = UserSettings():GetService("UserGameSettings").TouchMovementMode.Name end)
+	end
+	if mode == "Thumbstick" then return "ThumbstickFrame" end
+	if mode == "DynamicThumbstick" or mode == "Default" then return "DynamicThumbstickFrame" end
+	return nil
 end
 
 local function hideRoblox(hide)
@@ -105,14 +123,14 @@ local function hideRoblox(hide)
 			end
 		end
 	else
-		-- (and the one the player's own setting shows is shown, whatever it was found as)
+		-- (and only the stick that is meant to be on shows: the other one is hidden, so the two never show together)
 		pcall(function()
-			local settings = UserSettings():GetService("UserGameSettings")
-			local name = settings.TouchMovementMode.Name
-			local wanted = (name == "DynamicThumbstick") and "DynamicThumbstickFrame"
-				or ((name == "Default" or name == "Thumbstick") and "ThumbstickFrame" or nil)
-			local f = wanted and controls:FindFirstChild(wanted)
-			if f and f:IsA("GuiObject") and not f.Visible then f.Visible = true end
+			local wanted = wantedStick()
+			if not wanted then return end
+			for _, name in ipairs(STICK_NAMES) do
+				local f = controls:FindFirstChild(name)
+				if f and f:IsA("GuiObject") then f.Visible = (name == wanted) end
+			end
 		end)
 	end
 end
@@ -646,8 +664,27 @@ function api.Mode() return mode end
 Env.BPMovePads = api
 
 local stepName = "BPMovePads" .. tostring(math.random(1, 1e9))
+-- (Addtion-Scripts) THE TWO STICKS NEVER TOGETHER: with the dynamic thumbstick on, the plain one sometimes showed beside
+-- it (the user, in the 2017 GUI and older ones). A few times a second, if both are showing, the one not meant to be on is
+-- hidden.
+local nextStickCheck = 0
+local function oneStickOnly()
+	local now = os.clock()
+	if now < nextStickCheck then return end
+	nextStickCheck = now + 0.5
+	local controls = touchFrames()
+	if not controls then return end
+	local plain, dynamic = controls:FindFirstChild("ThumbstickFrame"), controls:FindFirstChild("DynamicThumbstickFrame")
+	if not (plain and dynamic and plain:IsA("GuiObject") and dynamic:IsA("GuiObject")) then return end
+	if plain.Visible and dynamic.Visible then
+		local wanted = wantedStick()
+		if wanted == "DynamicThumbstickFrame" then plain.Visible = false
+		elseif wanted == "ThumbstickFrame" then dynamic.Visible = false end
+	end
+end
+
 RunService:BindToRenderStep(stepName, Enum.RenderPriority.Input.Value + 3, function()
-	if mode == nil then return end
+	if mode == nil then oneStickOnly() return end
 	if mode == "ClickToMove" then hideRoblox(true) return end
 	local humanoid = myHumanoid()
 	if not humanoid then return end

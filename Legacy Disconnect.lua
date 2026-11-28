@@ -81,6 +81,33 @@ local function hidePrompts()
 	end)
 end
 
+-- (Addtion-Scripts) ONLY ONE RED BAR: the 2014 GUI (which the 2015 and 2016 GUIs are built on) brings Roblox's 2016
+-- loading script, and that has its own red disconnect bar (its ErrorFrame), which showed as well: two bars, one on top
+-- of the other (the user). While this one shows, any other GUI's ErrorFrame is kept hidden, and given back after.
+local hiddenBars = setmetatable({}, { __mode = "k" })
+local function hideOtherBars()
+	local containers = { CoreGui }
+	pcall(function() if gethui then local h = gethui() if h and h ~= CoreGui then table.insert(containers, h) end end end)
+	pcall(function()
+		local pg = Players.LocalPlayer and Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
+		if pg then table.insert(containers, pg) end
+	end)
+	for _, container in ipairs(containers) do
+		pcall(function()
+			for _, d in ipairs(container:GetDescendants()) do
+				if d.Name == "ErrorFrame" and d:IsA("GuiObject") and not d:IsDescendantOf(DisconnectGui) and d.Visible then
+					if hiddenBars[d] == nil then hiddenBars[d] = true end
+					d.Visible = false
+				end
+			end
+		end)
+	end
+end
+local function showOtherBars()
+	-- (their own scripts hide them again once the message is gone; only the ones still meant to show come back)
+	for bar in pairs(hiddenBars) do hiddenBars[bar] = nil end
+end
+
 local function update()
 	if stopped then return end
 	local got, message = pcall(function() return GuiService:GetErrorMessage() end)
@@ -90,8 +117,12 @@ local function update()
 	ErrorFrame.Visible = disconnected
 	if disconnected then
 		hidePrompts()
+		hideOtherBars()
+		-- (the other GUI may show its bar just after this, in its own handler of the same change)
+		task.defer(function() if disconnected and not stopped then hideOtherBars() end end)
 	else
 		showPrompts()
+		showOtherBars()
 	end
 end
 
@@ -112,6 +143,7 @@ table.insert(conns, RunService.RenderStepped:Connect(function()
 	if os.clock() - lastScan < 0.25 then return end
 	lastScan = os.clock()
 	hidePrompts()
+	hideOtherBars()
 	-- you can still move: the controls on, the character not frozen, anchored or stood still by the disconnect
 	pcall(function()
 		local player = Players.LocalPlayer
