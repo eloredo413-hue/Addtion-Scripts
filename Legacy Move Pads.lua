@@ -51,6 +51,14 @@ local STICK_NAMES = { "ThumbstickFrame", "DynamicThumbstickFrame" }
 local wantedStick -- (below)
 local PAD_NAMES = { "ThumbpadFrame", "DPadFrame" }
 local function noteStickCenter()
+	-- (Addtion-Scripts) the old thumbstick (Mobile Controls.lua) takes the thumbstick's place when it is on: its place
+	pcall(function()
+		local mc = Env.BPMobileControls
+		if type(mc) == "table" and type(mc.StickCenter) == "function" then
+			local c = mc.StickCenter()
+			if typeof(c) == "Vector2" then lastStickCenter = c end
+		end
+	end)
 	local controls = touchFrames()
 	if not controls then return end
 	for _, name in ipairs(STICK_NAMES) do
@@ -420,7 +428,15 @@ local function buildThumbpad(parent)
 		frame = frame, stop = ended,
 		setCenter = function(c)
 			if not gui then return end
-			frame.Position = UDim2.new(0, c.X - gui.AbsolutePosition.X - size / 2, 0, c.Y - gui.AbsolutePosition.Y - size / 2)
+			-- (never out of the screen: the pad stays whole on it)
+			local area = gui.AbsoluteSize
+			local x = c.X - gui.AbsolutePosition.X - size / 2
+			local y = c.Y - gui.AbsolutePosition.Y - size / 2
+			if area.X > size and area.Y > size then
+				x = math.clamp(x, 0, area.X - size)
+				y = math.clamp(y, 0, area.Y - size)
+			end
+			frame.Position = UDim2.new(0, x, 0, y)
 		end,
 	}
 end
@@ -653,6 +669,12 @@ function api.Set(newMode)
 	moveVector = Vector3.new(0, 0, 0)
 	clearMarker()
 	if mode == "DPad" or mode == "Thumbpad" then ensureGui() end
+	-- (Addtion-Scripts) the old thumbstick / 2013 joystick (Mobile Controls.lua) steps aside while a pad or tap to move is on
+	pcall(function()
+		local mc = Env.BPMobileControls
+		if type(mc) == "table" and type(mc.Suspend) == "function" then mc.Suspend(mode ~= nil) end
+	end)
+	if mode ~= nil then noteStickCenter() end
 	hideRoblox(false)
 	if mode ~= nil then hideRoblox(true) end
 	if dpad then dpad.stop() dpad.frame.Visible = (mode == "DPad") end
@@ -702,7 +724,7 @@ end)
 local MODE_TEXT = {
 	["dpad"] = "DPad", ["thumbpad"] = "Thumbpad",
 	["click to move"] = "ClickToMove", ["tap to move"] = "ClickToMove", ["click-to-move"] = "ClickToMove",
-	["tap-to-move"] = "ClickToMove",
+	["tap-to-move"] = "ClickToMove", ["clicktomove"] = "ClickToMove",
 	["thumbstick"] = false, ["default (thumbstick)"] = false, ["dynamic thumbstick"] = false, ["dynamicthumbstick"] = false,
 	["default (dynamic thumbstick)"] = false, ["default (dynamicthumbstick)"] = false, ["default"] = false, ["classic"] = false,
 }
