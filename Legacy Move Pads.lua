@@ -386,6 +386,20 @@ end))
 -- the mode
 ----------------------------------------------------------------------------------------------------
 local api = {}
+-- where Roblox's thumbstick is (it is hidden, but its frame stays where it is): the Thumbpad rests there
+local function stickCenter()
+	local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+	local touchGui = pg and pg:FindFirstChild("TouchGui")
+	local controls = touchGui and touchGui:FindFirstChild("TouchControlFrame")
+	if not controls then return nil end
+	for _, name in ipairs({ "ThumbstickFrame", "DynamicThumbstickFrame" }) do
+		local f = controls:FindFirstChild(name)
+		if f and f:IsA("GuiObject") and f.AbsoluteSize.X > 0 then
+			return f.AbsolutePosition + f.AbsoluteSize / 2
+		end
+	end
+	return nil
+end
 function api.Set(newMode)
 	if newMode ~= "DPad" and newMode ~= "Thumbpad" and newMode ~= "ClickToMove" then newMode = nil end
 	if newMode == mode then return end
