@@ -187,6 +187,51 @@ do
 		return code
 	end
 
+	-- (Addtion-Scripts) BLOXY'S 2008 R6 ANIMATIONS WITHOUT A RESET. Its script broke your joints, set your character to
+	-- nothing (on your screen only) and waited for a new one, then broke that one's joints too, and only animated the
+	-- character that came after. Where the reset didn't really happen, you were left in limbo, unable to move (the
+	-- user). Now nothing is reset: the animation runs on the character you have, straight away (its Animate script
+	-- switched off and its playing animations stopped, as the script did for a new one), and on every one after.
+	local ANIM2008_SIG = "--this is mostly patched btw"
+	local function noReset2008(code)
+		if not code:find(ANIM2008_SIG, 1, true) then return code end
+		local resetAt = code:find("LocalPlayer.Character:BreakJoints()", 1, true)
+		local connectStart, connectEnd = code:find("LocalPlayer.CharacterAdded:Connect(function(c)", 1, true)
+		if not (resetAt and connectStart and resetAt < connectStart) then return code end
+		local body = code:sub(connectEnd + 1)
+		-- the handler's own end: the last "end)" of the script
+		local lastEnd = nil
+		local from = 1
+		while true do
+			local a = body:find("end)", from, true)
+			if not a then break end
+			lastEnd, from = a, a + 4
+		end
+		if not lastEnd then return code end
+		local stopTracks = [[
+
+pcall(function()
+	local hum = Char:FindFirstChildOfClass("Humanoid")
+	local animator = hum and hum:FindFirstChildOfClass("Animator")
+	if animator then for _, t in ipairs(animator:GetPlayingAnimationTracks()) do t:Stop(0) end end
+end)
+]]
+		local disableLine = 'waitForChild(Char, "Animate").Disabled = true'
+		local a, b = body:find(disableLine, 1, true)
+		if a and a < lastEnd then
+			body = body:sub(1, b) .. stopTracks .. body:sub(b + 1)
+			lastEnd = lastEnd + #stopTracks
+		end
+		local fixed = code:sub(1, resetAt - 1)
+			.. "-- (Addtion-Scripts: no reset; the character you have is animated)\n"
+			.. "local function __BP2008Anim(c)" .. body:sub(1, lastEnd - 1) .. "end\n"
+			.. "LocalPlayer.CharacterAdded:Connect(function(c) task.spawn(__BP2008Anim, c) end)\n"
+			.. "if LocalPlayer.Character then task.spawn(__BP2008Anim, LocalPlayer.Character) end\n"
+			.. body:sub(lastEnd + 4)
+		print("[Hooks] Bloxy's 2008 animations: on your character as it is, no reset")
+		return fixed
+	end
+
 	local heldSaid = false
 	local function patched(code, name)
 		if type(code) ~= "string" then
@@ -204,6 +249,7 @@ do
 			return function() end
 		end
 		code = ownLegacy(code)
+		code = noReset2008(code)
 
 		local pending = getgenv().BP_PendingTopbar
 		local variant = getgenv().BP_2023Variant

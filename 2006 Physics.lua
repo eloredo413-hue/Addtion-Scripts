@@ -181,6 +181,9 @@ local CLIMB_WOBBLE_HZ = 2.2     -- how fast it rocks
 local CLIMB_BOB = 0.22          -- the climb speed bobs this share up and down
 local CLIMB_BOB_HZ = 2.6
 local CLIMB_WOBBLE_TORQUE = 6000 -- how hard the rocking is pushed (a loose push: the body sways, it isn't held still)
+-- (Addtion-Scripts) ON ROBLOX'S OWN TRUSSES AND LADDERS (the user's video of an old client): the stick moves you left and
+-- right along the truss too, at this speed, wobbling the same way; going up and down stays Roblox's own
+local TRUSS_SIDE_SPEED = 12
 local function startClimbingFWM(o)
     -- o: character, humanoid, rootPart, torso, isR15, hipBase() (R15: the body's own hip height), timePeriod,
     -- canStart() (FWM: not gliding, not tripped)
@@ -208,6 +211,7 @@ local function startClimbingFWM(o)
     gyro.P = 2500
     gyro.D = 220
     local climbing, facing, lastGrab, blockedFor, dropping, alive = false, nil, 0, 0, false, true
+    local trussFacing = nil -- (Addtion-Scripts) the way you faced when Roblox's own climbing took you (sideways on trusses)
     local releasedAt = nil -- when the stick was let go on Roblox's own ladders and trusses
 
     local function flatLook()
@@ -319,6 +323,35 @@ local function startClimbingFWM(o)
             end
         else
             releasedAt = nil
+        end
+        -- (Addtion-Scripts) Roblox's own truss / ladder climbing: left and right along it with the stick, and the wobble
+        local robloxClimb = (not climbing) and humanoid:GetState() == Enum.HumanoidStateType.Climbing
+        if robloxClimb then
+            trussFacing = trussFacing or flatLook()
+            local push = md * XZ
+            local side = push - trussFacing * push:Dot(trussFacing)
+            if md.Magnitude >= 0.1 and side.Magnitude > 0.05 then
+                -- (only a stick that points sideways: straight at it, Roblox climbs you as it does)
+                lift.Velocity = side * TRUSS_SIDE_SPEED
+                wobbleT = wobbleT + dt
+                local amount = math.rad(CLIMB_WOBBLE_DEG) * math.clamp(0.5 + side.Magnitude / 2, 0.5, 1)
+                local w = wobbleT * CLIMB_WOBBLE_HZ * 2 * math.pi
+                gyro.CFrame = CFrame.lookAt(rootPart.Position, rootPart.Position + trussFacing)
+                    * CFrame.Angles(amount * 0.6 * math.sin(w * 0.7 + 1.3), 0, amount * math.sin(w))
+                if lift.Parent ~= torso then lift.Parent = torso end
+                if gyro.Parent ~= torso then gyro.Parent = torso end
+            else
+                lift.Parent = nil
+                gyro.Parent = nil
+            end
+            return
+        elseif trussFacing then
+            trussFacing = nil
+            if not climbing then
+                lift.Parent = nil
+                gyro.Parent = nil
+                wobbleT = 0
+            end
         end
         if not climbing then
             -- (improved) only while you walk into it and it holds you back, and not trim on a wall
