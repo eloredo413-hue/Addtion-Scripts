@@ -15,7 +15,7 @@
 	  * classic shirts, pants and T-shirts stay (they are clothes, not UGC items).
 
 	HOW IT'S FAST: anything looked up before (in any game) is remembered in a file, so it's done at once; new players
-	are looked at 0.2 s after they come in; up to four searches / loads go at the same time.
+	are looked at 0.2 s after they come in; up to three searches go at the same time (loads one at a time).
 	HOW IT KEEPS FROM LAGGING: what everyone wears is looked up in batches (one catalog request for up to 50 items,
 	AvatarEditorService:GetBatchItemDetailsAsync), not one item at a time; each item is looked up only once. Nothing
 	runs every frame: one worker does the lookups, the catalog searches and the loading, one thing at a time with a
@@ -24,6 +24,9 @@
 	used to happen for every player in the same frame (the moment this started, and again every 10 seconds): a big drop
 	that came back. Now one player is looked at, and one player's things taken off, per pass of the worker (0.03 s
 	apart), your own character first, and the re-look at everyone is one player a second.
+	SMOOTHER: the heavy steps (reading an outfit, loading a Roblox item, taking UGC off) wait for the game to be running
+	smoothly first (up to 1.5 s), each load has a short rest after it, the animations inside animation packs are kept in the
+	file too (no pack loaded twice, in any game), and the re-look at everyone is one player every 3 seconds.
 	Run again to start over; getgenv().__UGCRemoverCleanup() puts everything back.
 ]]
 
@@ -42,6 +45,8 @@ local BATCH = 50                   -- items per catalog request
 local BUSY_PAUSE = 0.03            -- seconds between two pieces of work
 local IDLE_PAUSE = 0.1             -- seconds between looks when there's nothing to do
 local JOBS_AT_ONCE = 3             -- searches going at the same time (loads still go one at a time)
+local LOAD_REST = 0.2              -- seconds of rest after each item is loaded (loading is what stutters most)
+local RELOOK_EVERY = 3             -- seconds between two re-looks (one player each) for changed outfits
 local CACHE_FILE = "BPUGCRemoverCache.json" -- (what was looked up, kept for next time: known items are instant)
 
 local alive = true
@@ -74,13 +79,30 @@ pcall(function()
 		for id, v in pairs(saved.closest or {}) do
 			closestCache[tonumber(id)] = (type(v) == "table") and { id = tonumber(v[1]), name = tostring(v[2] or "") } or false
 		end
+		-- (the animations inside an animation pack: known, the pack needn't be loaded again)
+		for id, v in pairs(saved.anims or {}) do
+			if type(v) == "table" then
+				local list = {}
+				for _, a in ipairs(v) do
+					if type(a) == "table" and tonumber(a[1]) then table.insert(list, { id = tonumber(a[1]), slot = a[2] ~= "" and a[2] or nil }) end
+				end
+				animPackCache[tonumber(id)] = (#list > 0) and list or false
+			end
+		end
 	end
 end)
 local function saveCache()
 	if not (writefile and cacheDirty) then return end
 	cacheDirty = false
 	pcall(function()
-		local out = { info = {}, closest = {} }
+		local out = { info = {}, closest = {}, anims = {} }
+		for id, v in pairs(animPackCache) do
+			if v then
+				local list = {}
+				for _, a in ipairs(v) do table.insert(list, { a.id, a.slot or "" }) end
+				out.anims[tostring(id)] = list
+			end
+		end
 		for id, v in pairs(info) do
 			if not v.unknown then out.info[tostring(id)] = { v.name, v.roblox } end
 		end
@@ -95,6 +117,28 @@ local function connect(signal, fn)
 	local c = signal:Connect(fn)
 	table.insert(conns, c)
 	return c
+end
+
+-- RUNNING SMOOTHER: the heavy steps (reading a player's outfit, loading a Roblox item, taking a player's UGC off) wait
+-- for a moment when the game is running smoothly (the last frames quick), up to a second and a half, so they don't land
+-- on top of something else heavy (a player joining, the map loading, the GUI starting) and stack into a stutter.
+local RunService = game:GetService("RunService")
+-- ("smoothly" is against this device's own usual frame time, so a phone that always runs at 30 FPS isn't kept waiting)
+local frameTime, usualFrame = 1 / 60, 1 / 60
+connect(RunService.Heartbeat, function(dt)
+	dt = math.min(dt, 0.5)
+	frameTime = frameTime + (dt - frameTime) * 0.2     -- the last few frames
+	usualFrame = usualFrame + (dt - usualFrame) * 0.01 -- the usual
+end)
+local SMOOTH_WAIT_MAX = 1.5
+local function smoothNow()
+	return frameTime <= usualFrame * 1.35 + 0.004
+end
+local function whenSmooth()
+	local start = os.clock()
+	while alive and not smoothNow() and os.clock() - start < SMOOTH_WAIT_MAX do
+		task.wait(0.1)
+	end
 end
 
 local function localCharacter()
@@ -301,12 +345,13 @@ local function loadModel(assetId)
 	-- (one load at a time, and a frame's rest after each: loading is what makes the game stutter)
 	while loadingNow and alive do task.wait() end
 	loadingNow = true
+	whenSmooth()
 	local model
 	pcall(function()
 		local objs = game:GetObjects("rbxassetid://" .. tostring(assetId))
 		model = objs and objs[1]
 	end)
-	task.wait()
+	task.wait(LOAD_REST)
 	loadingNow = false
 	return model
 end
@@ -891,6 +936,7 @@ local function worker()
 				inScanQueue[character] = nil
 				busy = true
 				if alive and character.Parent then
+					whenSmooth()
 					local ok, err = pcall(scan, character)
 					if not ok then warn("[UGC Remover] " .. tostring(err)) end
 				end
@@ -941,6 +987,7 @@ local function worker()
 			end
 			if pick then
 				waiting[pick] = nil
+				whenSmooth()
 				local ok, err = pcall(apply, pick, pickItems)
 				if not ok then warn("[UGC Remover] " .. tostring(err)) end
 				busy = true
@@ -1012,12 +1059,12 @@ end
 for _, player in ipairs(Players:GetPlayers()) do watchPlayer(player) end
 connect(Players.PlayerAdded, watchPlayer)
 task.spawn(worker)
--- (live: everyone looked at again, one player a second, for outfits changed without anything new being put on; what
+-- (live: everyone looked at again, one player every few seconds, for outfits changed without anything new being put on; what
 -- was looked up before costs nothing)
 task.spawn(function()
 	local turn = 0
 	while alive do
-		task.wait(1)
+		task.wait(RELOOK_EVERY)
 		if not alive then break end
 		local list = Players:GetPlayers()
 		if #list > 0 then
