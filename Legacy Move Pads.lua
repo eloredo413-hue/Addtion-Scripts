@@ -708,6 +708,27 @@ Env.BPMovePadsCleanup = function()
 	if gui then pcall(function() gui:Destroy() end) gui = nil end
 	Env.BPMovePads = nil
 end
+-- Roblox's own tap to move marker (its teardrop, rings, waypoints): hidden while tap to move is on
+local function hideTheirs(d)
+	if not alive or mode ~= "ClickToMove" then return end
+	pcall(function()
+		if d.Name == "BPTapMarker" then return end
+		if d:IsA("BasePart") then d.Transparency = 1 d.LocalTransparencyModifier = 1
+		elseif d:IsA("BillboardGui") or d:IsA("ParticleEmitter") or d:IsA("Beam") or d:IsA("Trail") then d.Enabled = false
+		elseif d:IsA("Decal") or d:IsA("Texture") then d.Transparency = 1
+		elseif d:IsA("SelectionBox") or d:IsA("Highlight") then d.Visible = false end
+	end)
+end
+task.spawn(function()
+	local cam = workspace.CurrentCamera
+	while alive and not cam do task.wait() cam = workspace.CurrentCamera end
+	if not cam then return end
+	track(cam.DescendantAdded:Connect(function(d) task.defer(function() if d.Parent then hideTheirs(d) end end) end))
+	track(RunService.Heartbeat:Connect(function()
+		if mode ~= "ClickToMove" then return end
+		for _, d in ipairs(cam:GetDescendants()) do hideTheirs(d) end
+	end))
+end)
 -- (the thumbstick's place is learned while it is still on screen)
 task.spawn(function()
 	for _ = 1, 20 do
