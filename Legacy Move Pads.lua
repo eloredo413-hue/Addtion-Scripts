@@ -2,11 +2,13 @@
 -- LEGACY MOVE PADS (Addtion-Scripts)
 -- Roblox's DPad and Thumbpad touch controls (their ControlScript's DPad.lua and Thumbpad.lua) and tap to move, for the
 -- 2015 - 2019 GUIs, whose Settings menu has a "Movement Mode" dropdown that did nothing. What the dropdown shows picks:
---   * DPad: eight directions on a round pad, the middle is the jump button. Drawn here (its own arrows), at the thumbstick's place.
---   * Thumbpad: the same ring as the thumbstick's, fixed where the thumbstick is: put your thumb on it and push the way you
---     want to go (the pad itself stays put); the arrow that way lights up.
---   * Click to Move / Tap to Move: nothing on screen but the jump button; tap the ground to walk there (a sphere shows where;
---     it goes red and flickers when there is no way there).
+--   * DPad: Roblox's own DPad (its pictures, size and place): eight directions, the middle is the jump button.
+--   * Thumbpad: Roblox's own Thumbpad (the thumbstick's ring with four arrows; the arrow you push towards grows), fixed
+--     where the thumbstick is: put your thumb on it and push the way you want to go (the pad itself stays put).
+--   * Click to Move / Tap to Move: nothing on screen but the jump button; tap the ground and Roblox's own tap to move
+--     walks you there. Its location icon and path dots are hidden; a smooth plastic sphere sits exactly where the
+--     location icon would be (red and flickering when there is no way there).
+--   (If the client no longer has Roblox's DPad pictures, the arrows are drawn as text.)
 --   * anything else (Default, Thumbstick, Dynamic Thumbstick): Roblox's own thumbstick, back as it was.
 -- By hand: getgenv().BPMovePads.Set("DPad" / "Thumbpad" / "ClickToMove" / nil), .Mode()
 --========================================================
@@ -17,6 +19,7 @@ local RunService = game:GetService("RunService")
 local GuiService = game:GetService("GuiService")
 local CoreGui = game:GetService("CoreGui")
 local PathfindingService = game:GetService("PathfindingService")
+local ContentProvider = game:GetService("ContentProvider")
 
 local Env = (getgenv and getgenv()) or _G
 if type(Env.BPMovePadsCleanup) == "function" then pcall(Env.BPMovePadsCleanup) end
@@ -94,170 +97,275 @@ local function hideRoblox(hide)
 end
 
 ----------------------------------------------------------------------------------------------------
--- the pads, drawn here
+-- the pads: Roblox's own (their DPad.lua and Thumbpad.lua: the same pictures, sizes and arrows)
 ----------------------------------------------------------------------------------------------------
-local ARROW_LIT = Color3.fromRGB(255, 255, 255)
-local ARROW_DIM = Color3.fromRGB(190, 190, 190)
-
-local function ring(parent, size)
-	local outer = Instance.new("ImageLabel")
-	outer.Name = "OuterImage"
-	outer.Image = TOUCH_SHEET
-	outer.ImageRectOffset = Vector2.new(0, 0)
-	outer.ImageRectSize = Vector2.new(220, 220)
-	outer.BackgroundTransparency = 1
-	outer.Size = UDim2.new(0, size, 0, size)
-	outer.Parent = parent
-	return outer
-end
-local function arrowLabel(parent, glyph, position, size)
+local DPAD_SHEET = "rbxasset://textures/ui/DPadSheet.png"
+-- (if the client no longer has DPadSheet.png, its arrows are drawn as text instead, so the pads never go blank)
+local dpadSheetMissing = false
+local sheetUsers = {} -- [ImageLabel] = { glyph, round }
+local function textArrow(image, glyph, round)
+	if image:FindFirstChild("BPArrowText") then return end
+	image.Image = ""
+	if round then
+		image.BackgroundColor3 = Color3.fromRGB(190, 190, 190)
+		image.BackgroundTransparency = 0.45
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(1, 0)
+		corner.Parent = image
+		return
+	end
 	local l = Instance.new("TextLabel")
+	l.Name = "BPArrowText"
 	l.BackgroundTransparency = 1
 	l.Text = glyph
-	l.TextColor3 = ARROW_DIM
-	l.TextTransparency = 0.15
+	l.TextColor3 = image.ImageColor3
+	l.TextTransparency = 0.1
 	l.Font = Enum.Font.SourceSansBold
 	l.TextScaled = true
-	l.AnchorPoint = Vector2.new(0.5, 0.5)
-	l.Position = position
-	l.Size = size
-	l.Active = false
-	l.Parent = parent
-	return l
+	l.Size = UDim2.new(1, 0, 1, 0)
+	l.Parent = image
 end
+local function sheetImage(image, glyph, round)
+	sheetUsers[image] = { glyph, round }
+	if dpadSheetMissing then textArrow(image, glyph, round) end
+end
+task.spawn(function()
+	local ok = pcall(function()
+		ContentProvider:PreloadAsync({ DPAD_SHEET }, function(_, status)
+			if status ~= Enum.AssetFetchStatus.Success then dpadSheetMissing = true end
+		end)
+	end)
+	if not ok then return end
+	if dpadSheetMissing then
+		warn("[Legacy Move Pads] this client has no DPadSheet.png: the arrows are drawn as text")
+		for image, how in pairs(sheetUsers) do pcall(textArrow, image, how[1], how[2]) end
+	end
+end)
 
--- DPad: eight directions; the middle jumps
+-- DPad (DPad.lua): eight directions, the middle jumps; where Roblox put it
 local COMPASS_DIR = {
-	Vector3.new(1, 0, 0), Vector3.new(1, 0, 1).Unit, Vector3.new(0, 0, 1), Vector3.new(-1, 0, 1).Unit,
-	Vector3.new(-1, 0, 0), Vector3.new(-1, 0, -1).Unit, Vector3.new(0, 0, -1), Vector3.new(1, 0, -1).Unit,
+	Vector3.new(1, 0, 0),			-- E
+	Vector3.new(1, 0, 1).Unit,		-- SE
+	Vector3.new(0, 0, 1),			-- S
+	Vector3.new(-1, 0, 1).Unit,		-- SW
+	Vector3.new(-1, 0, 0),			-- W
+	Vector3.new(-1, 0, -1).Unit,	-- NW
+	Vector3.new(0, 0, -1),			-- N
+	Vector3.new(1, 0, -1).Unit,		-- NE
 }
 local function buildDPad(parent)
-	local SIZE = 192
 	local frame = Instance.new("Frame")
 	frame.Name = "DPadFrame"
 	frame.Active = true
 	frame.Visible = false
-	frame.Size = UDim2.new(0, SIZE, 0, SIZE)
-	frame.Position = UDim2.new(0, 10, 1, -SIZE - 20)
+	frame.Size = UDim2.new(0, 192, 0, 192)
+	frame.Position = UDim2.new(0, 10, 1, -230)
 	frame.BackgroundTransparency = 1
 	frame.Parent = parent
-	ring(frame, SIZE)
-	local fwd = arrowLabel(frame, "▲", UDim2.new(0.5, 0, 0.14, 0), UDim2.new(0, 44, 0, 44))
-	local back = arrowLabel(frame, "▼", UDim2.new(0.5, 0, 0.86, 0), UDim2.new(0, 44, 0, 44))
-	local left = arrowLabel(frame, "◀", UDim2.new(0.14, 0, 0.5, 0), UDim2.new(0, 44, 0, 44))
-	local right = arrowLabel(frame, "▶", UDim2.new(0.86, 0, 0.5, 0), UDim2.new(0, 44, 0, 44))
-	local jumpBtn = Instance.new("TextButton")
-	jumpBtn.Name = "JumpButton"
-	jumpBtn.AnchorPoint = Vector2.new(0.5, 0.5)
-	jumpBtn.Position = UDim2.new(0.5, 0, 0.5, 0)
-	jumpBtn.Size = UDim2.new(0, 56, 0, 56)
-	jumpBtn.BackgroundColor3 = Color3.fromRGB(170, 170, 170)
-	jumpBtn.BackgroundTransparency = 0.5
-	jumpBtn.Text = ""
-	jumpBtn.AutoButtonColor = false
-	jumpBtn.Parent = frame
-	local corner = Instance.new("UICorner") corner.CornerRadius = UDim.new(1, 0) corner.Parent = jumpBtn
-	local lights = { [1] = right, [3] = back, [5] = left, [7] = fwd }
-	local function light(octant)
-		for _, l in ipairs({ fwd, back, left, right }) do l.TextColor3 = ARROW_DIM end
-		if not octant then return end
-		-- (the diagonals light the two arrows beside them)
-		if lights[octant] then lights[octant].TextColor3 = ARROW_LIT
-		elseif octant == 2 then right.TextColor3 = ARROW_LIT back.TextColor3 = ARROW_LIT
-		elseif octant == 4 then left.TextColor3 = ARROW_LIT back.TextColor3 = ARROW_LIT
-		elseif octant == 6 then left.TextColor3 = ARROW_LIT fwd.TextColor3 = ARROW_LIT
-		elseif octant == 8 then right.TextColor3 = ARROW_LIT fwd.TextColor3 = ARROW_LIT end
+
+	local function createArrowLabel(name, position, size, rectOffset, rectSize, glyph, round)
+		local image = Instance.new("ImageLabel")
+		image.Name = name
+		image.Image = DPAD_SHEET
+		image.ImageRectOffset = rectOffset
+		image.ImageRectSize = rectSize
+		image.BackgroundTransparency = 1
+		image.Size = size
+		image.Position = position
+		image.Parent = frame
+		sheetImage(image, glyph, round)
+		return image
 	end
-	local touch = nil
-	local function center()
-		return Vector2.new(frame.AbsolutePosition.X + frame.AbsoluteSize.X / 2, frame.AbsolutePosition.Y + frame.AbsoluteSize.Y / 2)
-	end
-	local function normalize(pos)
-		local c = center()
-		local d = Vector2.new(pos.X - c.X, pos.Y - c.Y)
-		if d.Magnitude > jumpBtn.AbsoluteSize.X / 2 then
-			local angle = math.atan2(d.Y, d.X)
-			local octant = (math.floor(8 * angle / (2 * math.pi) + 8.5) % 8) + 1
-			moveVector = COMPASS_DIR[octant]
-			light(octant)
-		end
-	end
-	local function ended()
-		touch = nil
-		moveVector = Vector3.new(0, 0, 0)
-		light(nil)
-	end
+	local smArrowSize = UDim2.new(0, 23, 0, 23)
+	local lgArrowSize = UDim2.new(0, 64, 0, 64)
+	local smImgOffset = Vector2.new(46, 46)
+	local lgImgOffset = Vector2.new(128, 128)
+	createArrowLabel("BackButton", UDim2.new(0.5, -32, 1, -64), lgArrowSize, Vector2.new(0, 0), lgImgOffset, "▼")
+	createArrowLabel("ForwardButton", UDim2.new(0.5, -32, 0, 0), lgArrowSize, Vector2.new(0, 258), lgImgOffset, "▲")
+	createArrowLabel("LeftButton", UDim2.new(0, 0, 0.5, -32), lgArrowSize, Vector2.new(129, 129), lgImgOffset, "◀")
+	createArrowLabel("RightButton", UDim2.new(1, -64, 0.5, -32), lgArrowSize, Vector2.new(0, 129), lgImgOffset, "▶")
+	local jumpBtn = createArrowLabel("JumpButton", UDim2.new(0.5, -32, 0.5, -32), lgArrowSize, Vector2.new(129, 0), lgImgOffset, "", true)
+	local flBtn = createArrowLabel("ForwardLeftButton", UDim2.new(0, 35, 0, 35), smArrowSize, Vector2.new(129, 258), smImgOffset, "◤")
+	local frBtn = createArrowLabel("ForwardRightButton", UDim2.new(1, -55, 0, 35), smArrowSize, Vector2.new(176, 258), smImgOffset, "◥")
+	flBtn.Visible = false
+	frBtn.Visible = false
+
 	track(jumpBtn.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
 			jumpRequested = true
 		end
 	end))
+
+	local touch = nil
+	local function center()
+		return Vector2.new(frame.AbsolutePosition.X + frame.AbsoluteSize.X / 2, frame.AbsolutePosition.Y + frame.AbsoluteSize.Y / 2)
+	end
+	local function normalizeDirection(pos)
+		local jumpRadius = jumpBtn.AbsoluteSize.X / 2
+		local c = center()
+		local d = Vector2.new(pos.X - c.X, pos.Y - c.Y)
+		if d.Magnitude > jumpRadius then
+			local angle = math.atan2(d.Y, d.X)
+			local octant = (math.floor(8 * angle / (2 * math.pi) + 8.5) % 8) + 1
+			moveVector = COMPASS_DIR[octant]
+		end
+		if not flBtn.Visible and moveVector == COMPASS_DIR[7] then
+			flBtn.Visible = true
+			frBtn.Visible = true
+		end
+	end
+	local function ended()
+		touch = nil
+		flBtn.Visible = false
+		frBtn.Visible = false
+		moveVector = Vector3.new(0, 0, 0)
+	end
 	track(frame.InputBegan:Connect(function(input)
 		if touch or (input.UserInputType ~= Enum.UserInputType.Touch and input.UserInputType ~= Enum.UserInputType.MouseButton1) then return end
 		touch = input
-		normalize(input.Position)
+		normalizeDirection(input.Position)
 	end))
 	track(frame.InputChanged:Connect(function(input)
-		if input == touch then normalize(input.Position) end
+		if input == touch then normalizeDirection(input.Position) end
 	end))
 	track(frame.InputEnded:Connect(function(input)
 		if input == touch then ended() end
 	end))
 	track(GuiService.MenuOpened:Connect(function() if touch then ended() end end))
-	return {
-		frame = frame, stop = ended, size = SIZE,
-		setCenter = function(c)
-			if not gui then return end
-			frame.Position = UDim2.new(0, c.X - gui.AbsolutePosition.X - SIZE / 2, 0, c.Y - gui.AbsolutePosition.Y - SIZE / 2)
-		end,
-	}
+	return { frame = frame, stop = ended }
 end
 
--- Thumbpad: fixed where the thumbstick is; push the way you want to go from its middle (the pad itself never moves)
+-- Thumbpad (Thumbpad.lua): the thumbstick's ring with four arrows; the arrow you push towards grows.
+-- It stays where the thumbstick is (Roblox's own jumped to your thumb; this one's base never moves).
 local function buildThumbpad(parent)
-	local small = math.min(parent.AbsoluteSize.X, parent.AbsoluteSize.Y) <= 500
-	local SIZE = small and 90 or 120
+	local minAxis = math.min(parent.AbsoluteSize.X, parent.AbsoluteSize.Y)
+	local isSmallScreen = minAxis <= 500
+	local thumbpadSize = isSmallScreen and 70 or 120
+	local position = isSmallScreen and UDim2.new(0, thumbpadSize * 1.25, 1, -thumbpadSize - 20)
+		or UDim2.new(0, thumbpadSize / 2 - 10, 1, -thumbpadSize * 1.75 - 10)
+
 	local frame = Instance.new("Frame")
 	frame.Name = "ThumbpadFrame"
 	frame.Visible = false
 	frame.Active = true
-	frame.Size = UDim2.new(0, SIZE, 0, SIZE)
-	frame.Position = UDim2.new(0, 30, 1, -SIZE - 30)
+	frame.Size = UDim2.new(0, thumbpadSize + 20, 0, thumbpadSize + 20)
+	frame.Position = position
 	frame.BackgroundTransparency = 1
 	frame.Parent = parent
-	ring(frame, SIZE)
-	local fwd = arrowLabel(frame, "▲", UDim2.new(0.5, 0, 0.16, 0), UDim2.new(0, SIZE * 0.26, 0, SIZE * 0.26))
-	local back = arrowLabel(frame, "▼", UDim2.new(0.5, 0, 0.84, 0), UDim2.new(0, SIZE * 0.26, 0, SIZE * 0.26))
-	local left = arrowLabel(frame, "◀", UDim2.new(0.16, 0, 0.5, 0), UDim2.new(0, SIZE * 0.26, 0, SIZE * 0.26))
-	local right = arrowLabel(frame, "▶", UDim2.new(0.84, 0, 0.5, 0), UDim2.new(0, SIZE * 0.26, 0, SIZE * 0.26))
+
+	local outerImage = Instance.new("ImageLabel")
+	outerImage.Name = "OuterImage"
+	outerImage.Image = TOUCH_SHEET
+	outerImage.ImageRectOffset = Vector2.new(0, 0)
+	outerImage.ImageRectSize = Vector2.new(220, 220)
+	outerImage.BackgroundTransparency = 1
+	outerImage.Size = UDim2.new(0, thumbpadSize, 0, thumbpadSize)
+	outerImage.Position = UDim2.new(0, 10, 0, 10)
+	outerImage.Parent = frame
+
+	local function createArrowLabel(name, pos, size, rectOffset, rectSize, glyph)
+		local image = Instance.new("ImageLabel")
+		image.Name = name
+		image.Image = DPAD_SHEET
+		image.ImageRectOffset = rectOffset
+		image.ImageRectSize = rectSize
+		image.BackgroundTransparency = 1
+		image.ImageColor3 = Color3.new(190 / 255, 190 / 255, 190 / 255)
+		image.Size = size
+		image.Position = pos
+		image.Parent = outerImage
+		sheetImage(image, glyph)
+		return image
+	end
+	local smArrowSize = isSmallScreen and UDim2.new(0, 32, 0, 32) or UDim2.new(0, 64, 0, 64)
+	local lgArrowSize = UDim2.new(0, smArrowSize.X.Offset * 2, 0, smArrowSize.Y.Offset * 2)
+	local imgRectSize = Vector2.new(110, 110)
+	local smImgOffset = isSmallScreen and -4 or -9
+	local lgImgOffset = isSmallScreen and -28 or -55
+	local dArrow = createArrowLabel("DownArrow", UDim2.new(0.5, -smArrowSize.X.Offset / 2, 1, lgImgOffset), smArrowSize, Vector2.new(8, 8), imgRectSize, "▼")
+	local uArrow = createArrowLabel("UpArrow", UDim2.new(0.5, -smArrowSize.X.Offset / 2, 0, smImgOffset), smArrowSize, Vector2.new(8, 266), imgRectSize, "▲")
+	local lArrow = createArrowLabel("LeftArrow", UDim2.new(0, smImgOffset, 0.5, -smArrowSize.Y.Offset / 2), smArrowSize, Vector2.new(137, 137), imgRectSize, "◀")
+	local rArrow = createArrowLabel("RightArrow", UDim2.new(1, lgImgOffset, 0.5, -smArrowSize.Y.Offset / 2), smArrowSize, Vector2.new(8, 137), imgRectSize, "▶")
+
+	local function doTween(guiObject, endSize, endPosition)
+		pcall(function()
+			guiObject:TweenSizeAndPosition(endSize, endPosition, Enum.EasingDirection.InOut, Enum.EasingStyle.Linear, 0.15, true)
+		end)
+	end
+	local function restArrows()
+		doTween(dArrow, smArrowSize, UDim2.new(0.5, -smArrowSize.X.Offset / 2, 1, lgImgOffset))
+		doTween(uArrow, smArrowSize, UDim2.new(0.5, -smArrowSize.X.Offset / 2, 0, smImgOffset))
+		doTween(lArrow, smArrowSize, UDim2.new(0, smImgOffset, 0.5, -smArrowSize.Y.Offset / 2))
+		doTween(rArrow, smArrowSize, UDim2.new(1, lgImgOffset, 0.5, -smArrowSize.Y.Offset / 2))
+	end
+
 	local touch = nil
 	local deadZone = 0.1
-	local function center()
+	local isRight, isLeft, isUp, isDown = false, false, false, false
+	local vForward = Vector3.new(0, 0, -1)
+	local vRight = Vector3.new(1, 0, 0)
+	local function padOrigin()
 		return Vector2.new(frame.AbsolutePosition.X + frame.AbsoluteSize.X / 2, frame.AbsolutePosition.Y + frame.AbsoluteSize.Y / 2)
 	end
 	local function doMove(pos)
-		local delta = (Vector2.new(pos.X, pos.Y) - center()) / (SIZE / 2)
-		local magnitude = delta.Magnitude
-		if magnitude < deadZone then
+		local delta = Vector2.new(pos.X, pos.Y) - padOrigin()
+		local v = delta / (thumbpadSize / 2)
+		local magnitude = v.Magnitude
+		if magnitude < deadZone or magnitude == 0 then
 			moveVector = Vector3.new(0, 0, 0)
 		else
-			local dir = delta.Unit
-			moveVector = Vector3.new(dir.X, 0, dir.Y)
+			local u = v.Unit
+			moveVector = Vector3.new(u.X, 0, u.Y).Unit
 		end
-		local f = moveVector:Dot(Vector3.new(0, 0, -1))
-		local r = moveVector:Dot(Vector3.new(1, 0, 0))
-		fwd.TextColor3 = f > 0.5 and ARROW_LIT or ARROW_DIM
-		back.TextColor3 = f < -0.5 and ARROW_LIT or ARROW_DIM
-		right.TextColor3 = r > 0.5 and ARROW_LIT or ARROW_DIM
-		left.TextColor3 = r < -0.5 and ARROW_LIT or ARROW_DIM
+		local forwardDot = moveVector:Dot(vForward)
+		local rightDot = moveVector:Dot(vRight)
+		if forwardDot > 0.5 then
+			if not isUp then
+				isUp, isDown = true, false
+				doTween(uArrow, lgArrowSize, UDim2.new(0.5, -smArrowSize.X.Offset, 0, smImgOffset - smArrowSize.Y.Offset * 1.5))
+				doTween(dArrow, smArrowSize, UDim2.new(0.5, -smArrowSize.X.Offset / 2, 1, lgImgOffset))
+			end
+		elseif forwardDot < -0.5 then
+			if not isDown then
+				isDown, isUp = true, false
+				doTween(dArrow, lgArrowSize, UDim2.new(0.5, -smArrowSize.X.Offset, 1, lgImgOffset + smArrowSize.Y.Offset / 2))
+				doTween(uArrow, smArrowSize, UDim2.new(0.5, -smArrowSize.X.Offset / 2, 0, smImgOffset))
+			end
+		elseif isUp or isDown then
+			isUp, isDown = false, false
+			doTween(dArrow, smArrowSize, UDim2.new(0.5, -smArrowSize.X.Offset / 2, 1, lgImgOffset))
+			doTween(uArrow, smArrowSize, UDim2.new(0.5, -smArrowSize.X.Offset / 2, 0, smImgOffset))
+		end
+		if rightDot > 0.5 then
+			if not isRight then
+				isRight, isLeft = true, false
+				doTween(rArrow, lgArrowSize, UDim2.new(1, lgImgOffset + smArrowSize.X.Offset / 2, 0.5, -smArrowSize.Y.Offset))
+				doTween(lArrow, smArrowSize, UDim2.new(0, smImgOffset, 0.5, -smArrowSize.Y.Offset / 2))
+			end
+		elseif rightDot < -0.5 then
+			if not isLeft then
+				isLeft, isRight = true, false
+				doTween(lArrow, lgArrowSize, UDim2.new(0, smImgOffset - smArrowSize.X.Offset * 1.5, 0.5, -smArrowSize.Y.Offset))
+				doTween(rArrow, smArrowSize, UDim2.new(1, lgImgOffset, 0.5, -smArrowSize.Y.Offset / 2))
+			end
+		elseif isLeft or isRight then
+			isRight, isLeft = false, false
+			doTween(lArrow, smArrowSize, UDim2.new(0, smImgOffset, 0.5, -smArrowSize.Y.Offset / 2))
+			doTween(rArrow, smArrowSize, UDim2.new(1, lgImgOffset, 0.5, -smArrowSize.Y.Offset / 2))
+		end
 	end
 	local function ended()
 		moveVector = Vector3.new(0, 0, 0)
 		touch = nil
-		for _, l in ipairs({ fwd, back, left, right }) do l.TextColor3 = ARROW_DIM end
+		isUp, isDown, isLeft, isRight = false, false, false, false
+		restArrows()
 	end
 	track(frame.InputBegan:Connect(function(input)
-		if touch or (input.UserInputType ~= Enum.UserInputType.Touch and input.UserInputType ~= Enum.UserInputType.MouseButton1) then return end
+		-- (a touch that started elsewhere and slid onto the pad is not a new touch)
+		if touch or (input.UserInputType ~= Enum.UserInputType.Touch and input.UserInputType ~= Enum.UserInputType.MouseButton1)
+			or input.UserInputState ~= Enum.UserInputState.Begin then
+			return
+		end
 		touch = input
 		doMove(input.Position)
 	end))
@@ -268,11 +376,12 @@ local function buildThumbpad(parent)
 		if input == touch then ended() end
 	end))
 	track(GuiService.MenuOpened:Connect(function() if touch then ended() end end))
+	local size = thumbpadSize + 20
 	return {
-		frame = frame, stop = ended, size = SIZE,
+		frame = frame, stop = ended,
 		setCenter = function(c)
 			if not gui then return end
-			frame.Position = UDim2.new(0, c.X - gui.AbsolutePosition.X - SIZE / 2, 0, c.Y - gui.AbsolutePosition.Y - SIZE / 2)
+			frame.Position = UDim2.new(0, c.X - gui.AbsolutePosition.X - size / 2, 0, c.Y - gui.AbsolutePosition.Y - size / 2)
 		end,
 	}
 end
@@ -290,17 +399,38 @@ local function ensureGui()
 end
 
 ----------------------------------------------------------------------------------------------------
--- TAP TO MOVE (our own): a tap on the ground walks there; a sphere shows where
+-- TAP TO MOVE: Roblox's own tap to move walks you there; what it draws (its location icon, the dots of the path,
+-- the failure icon) is hidden, and a smooth plastic sphere sits exactly where its location icon would be. If no path
+-- can be made the sphere goes red and flickers. (If Roblox draws nothing, the tap's own spot is used.)
 ----------------------------------------------------------------------------------------------------
 local marker = nil
+local markerFor = nil   -- the waypoint of Roblox's the sphere sits on (it goes when that goes)
 local markerToken = 0
+local lastShownAt = -1
 local function clearMarker()
 	markerToken = markerToken + 1
+	markerFor = nil
 	if marker then pcall(function() marker:Destroy() end) marker = nil end
 end
-local function showMarker(point, humanoid)
+local function myHumanoid()
+	local char = LocalPlayer.Character
+	return char and char:FindFirstChildOfClass("Humanoid")
+end
+local function flickerRed(sphere, token)
+	sphere.Color = Color3.fromRGB(255, 60, 40)
+	for i = 1, 8 do
+		sphere.Transparency = (i % 2 == 1) and 0.85 or 0
+		task.wait(0.1)
+		if token ~= markerToken then return end
+	end
+	if token == markerToken then clearMarker() end
+end
+-- point: on the ground; normal: which way the ground faces there
+local function showMarker(point, normal, failed, waypoint)
 	clearMarker()
+	lastShownAt = os.clock()
 	local token = markerToken
+	normal = (normal and normal.Magnitude > 0.5) and normal.Unit or Vector3.new(0, 1, 0)
 	local sphere = Instance.new("Part")
 	sphere.Name = "BPTapMarker"
 	sphere.Shape = Enum.PartType.Ball
@@ -312,74 +442,143 @@ local function showMarker(point, humanoid)
 	sphere.CanQuery = false
 	sphere.CanTouch = false
 	sphere.CastShadow = false
-	sphere.Position = point + Vector3.new(0, 0.6, 0)
+	sphere.CFrame = CFrame.new(point + normal * 0.5)
 	sphere.Parent = workspace
 	marker = sphere
-	task.spawn(function()
-		local reachable = true
+	markerFor = waypoint
+	if failed then task.spawn(flickerRed, sphere, token) end
+	return sphere, token
+end
+
+-- Roblox's display (Camera.ClickToMoveDisplay: TrailDot / EndWaypoint / FailureWaypoint parts, each drawn with an
+-- ImageHandleAdornment, the two icons with a BillboardGui)
+local function hideTheirs(d)
+	if not alive or mode ~= "ClickToMove" or d.Name == "BPTapMarker" then return end
+	pcall(function()
+		if d:IsA("GuiBase3d") then d.Visible = false          -- the dots (ImageHandleAdornments) and any other adornment
+		elseif d:IsA("LayerCollector") then d.Enabled = false -- the location icon / failure icon
+		elseif d:IsA("BasePart") then d.LocalTransparencyModifier = 1
+		elseif d:IsA("Decal") or d:IsA("Texture") then d.Transparency = 1
+		elseif d:IsA("ParticleEmitter") or d:IsA("Beam") or d:IsA("Trail") then d.Enabled = false end
+	end)
+end
+local function onTheirWaypoint(part)
+	if mode ~= "ClickToMove" or not part:IsA("BasePart") then return end
+	local failed = part.Name == "FailureWaypoint"
+	if part.Name ~= "EndWaypoint" and not failed then return end
+	-- (Roblox sets where it is just before it is put in; read it a moment later all the same)
+	task.defer(function()
+		if mode ~= "ClickToMove" or not part.Parent then return end
+		local cf = part.CFrame
+		showMarker(cf.Position, cf.LookVector, failed, (not failed) and part or nil)
+	end)
+end
+local watchedDisplay = setmetatable({}, { __mode = "k" })
+local function watchDisplay(model)
+	if watchedDisplay[model] then return end
+	watchedDisplay[model] = true
+	for _, d in ipairs(model:GetDescendants()) do hideTheirs(d) end
+	track(model.DescendantAdded:Connect(function(d)
+		hideTheirs(d) -- at once, so they never show for a frame
+		if d.Parent == model then onTheirWaypoint(d) end
+	end))
+	track(model.ChildRemoved:Connect(function(d)
+		-- arrived (or a new tap): Roblox takes its location icon away, and the sphere goes with it
+		if d == markerFor then clearMarker() end
+	end))
+end
+local function watchCamera(cam)
+	if not cam then return end
+	local existing = cam:FindFirstChild("ClickToMoveDisplay")
+	if existing then watchDisplay(existing) end
+	track(cam.ChildAdded:Connect(function(c)
+		if c.Name == "ClickToMoveDisplay" then watchDisplay(c) end
+	end))
+end
+task.spawn(function()
+	local cam = workspace.CurrentCamera
+	while alive and not cam do task.wait() cam = workspace.CurrentCamera end
+	watchCamera(cam)
+	track(workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function() watchCamera(workspace.CurrentCamera) end))
+end)
+-- (and anything Roblox changes back on its dots while they are up: a few parts, checked a few times a second)
+local recheckAt = 0
+track(RunService.Heartbeat:Connect(function()
+	if mode ~= "ClickToMove" then return end
+	local now = os.clock()
+	if now < recheckAt then return end
+	recheckAt = now + 0.2
+	local cam = workspace.CurrentCamera
+	local model = cam and cam:FindFirstChild("ClickToMoveDisplay")
+	if model then
+		watchDisplay(model)
+		for _, d in ipairs(model:GetDescendants()) do
+			if (d:IsA("GuiBase3d") and d.Visible) or (d:IsA("LayerCollector") and d.Enabled) then hideTheirs(d) end
+		end
+	end
+end))
+
+-- A tap Roblox drew nothing for: the sphere goes where the tap points (Roblox's own way of finding that spot), and if
+-- the character isn't walking there, it is walked there.
+local function tapPoint(pos)
+	local camera = workspace.CurrentCamera
+	if not camera then return nil end
+	local ray = camera:ScreenPointToRay(pos.X, pos.Y)
+	local ignore = { camera, LocalPlayer.Character, marker }
+	for _ = 1, 8 do
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = ignore
+		local hit = workspace:Raycast(ray.Origin, ray.Direction * 1000, params)
+		if not hit then return nil end
+		-- (like Roblox's: see-through things you can walk through don't stop the tap)
+		if hit.Instance.CanCollide then
+			-- (a tap on another player is not a place to walk to)
+			local model = hit.Instance:FindFirstAncestorOfClass("Model")
+			if model and model:FindFirstChildOfClass("Humanoid") then return nil end
+			return hit
+		end
+		table.insert(ignore, hit.Instance)
+	end
+	return nil
+end
+track(UserInputService.TouchTap:Connect(function(positions, processed)
+	if mode ~= "ClickToMove" or processed then return end
+	local pos = positions and positions[1]
+	local humanoid = myHumanoid()
+	if not (pos and humanoid) then return end
+	local tappedAt = os.clock()
+	task.delay(0.35, function()
+		if mode ~= "ClickToMove" or lastShownAt >= tappedAt then return end
+		local hit = tapPoint(pos)
+		if not hit then return end
+		local sphere, token = showMarker(hit.Position, hit.Normal, false, nil)
 		local root = humanoid.RootPart
+		local reachable = true
 		if root then
 			local ok, status = pcall(function()
 				local path = PathfindingService:CreatePath()
-				path:ComputeAsync(root.Position, point)
+				path:ComputeAsync(root.Position, hit.Position)
 				return path.Status
 			end)
 			if ok and status ~= Enum.PathStatus.Success then reachable = false end
 		end
 		if token ~= markerToken or not alive then return end
 		if not reachable then
-			sphere.Color = Color3.fromRGB(255, 60, 40)
-			for i = 1, 8 do
-				sphere.Transparency = (i % 2 == 1) and 0.85 or 0
-				task.wait(0.1)
-				if token ~= markerToken then return end
-			end
-			sphere.Transparency = 0
-			if token == markerToken then
-				clearMarker()
-				pcall(function() humanoid:Move(Vector3.new(0, 0, 0)) humanoid:MoveTo(root.Position) end)
-			end
+			flickerRed(sphere, token)
+			return
 		end
-	end)
-end
-local function myHumanoid()
-	local char = LocalPlayer.Character
-	return char and char:FindFirstChildOfClass("Humanoid")
-end
-local lastWalkAt = -1
-track(UserInputService.TouchTap:Connect(function(positions, processed)
-	if mode ~= "ClickToMove" or processed then return end
-	local pos = positions and positions[1]
-	local camera = workspace.CurrentCamera
-	local humanoid = myHumanoid()
-	if not (pos and camera and humanoid) then return end
-	local tappedAt = os.clock()
-	-- (Roblox's own tap to move walks there and sets the point: the sphere follows that. If it did nothing, we walk there.)
-	task.delay(0.4, function()
-		if mode ~= "ClickToMove" or lastWalkAt >= tappedAt then return end
-		local ray = camera:ViewportPointToRay(pos.X, pos.Y)
-		local params = RaycastParams.new()
-		params.FilterType = Enum.RaycastFilterType.Exclude
-		params.FilterDescendantsInstances = { LocalPlayer.Character, marker }
-		local hit = workspace:Raycast(ray.Origin, ray.Direction * 500, params)
-		if hit then
-			humanoid:MoveTo(hit.Position)
+		if humanoid.MoveDirection.Magnitude < 0.05 then
+			pcall(function() humanoid:MoveTo(hit.Position) end)
+			local done
+			done = humanoid.MoveToFinished:Connect(function()
+				done:Disconnect()
+				if token == markerToken then clearMarker() end
+			end)
 		end
 	end)
 end))
-local hookedHumanoid = nil
 local function hookHumanoid(humanoid)
-	if hookedHumanoid == humanoid then return end
-	hookedHumanoid = humanoid
-	track(humanoid:GetPropertyChangedSignal("WalkToPoint"):Connect(function()
-		if mode ~= "ClickToMove" then return end
-		local point = humanoid.WalkToPoint
-		if point and point.Magnitude > 0 then
-			lastWalkAt = os.clock()
-			showMarker(point, humanoid)
-		end
-	end))
-	track(humanoid.MoveToFinished:Connect(function() if mode == "ClickToMove" then clearMarker() end end))
 	track(humanoid.Died:Connect(clearMarker))
 end
 task.spawn(function()
@@ -388,6 +587,7 @@ task.spawn(function()
 	if h then hookHumanoid(h) end
 end)
 track(LocalPlayer.CharacterAdded:Connect(function(char)
+	clearMarker()
 	task.spawn(function()
 		local h = char:WaitForChild("Humanoid", 10)
 		if h then hookHumanoid(h) end
@@ -398,20 +598,6 @@ end))
 -- the mode
 ----------------------------------------------------------------------------------------------------
 local api = {}
--- where Roblox's thumbstick is (it is hidden, but its frame stays where it is): the Thumbpad rests there
-local function stickCenter()
-	local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-	local touchGui = pg and pg:FindFirstChild("TouchGui")
-	local controls = touchGui and touchGui:FindFirstChild("TouchControlFrame")
-	if not controls then return nil end
-	for _, name in ipairs({ "ThumbstickFrame", "DynamicThumbstickFrame" }) do
-		local f = controls:FindFirstChild(name)
-		if f and f:IsA("GuiObject") and f.AbsoluteSize.X > 0 then
-			return f.AbsolutePosition + f.AbsoluteSize / 2
-		end
-	end
-	return nil
-end
 function api.Set(newMode)
 	if newMode ~= "DPad" and newMode ~= "Thumbpad" and newMode ~= "ClickToMove" then newMode = nil end
 	if newMode == mode then return end
@@ -423,7 +609,6 @@ function api.Set(newMode)
 	if dpad then dpad.stop() dpad.frame.Visible = (mode == "DPad") end
 	if thumbpad then thumbpad.stop() thumbpad.frame.Visible = (mode == "Thumbpad") end
 	if mode == "Thumbpad" and lastStickCenter then thumbpad.setCenter(lastStickCenter) end
-	if mode == "DPad" and lastStickCenter then dpad.setCenter(lastStickCenter) end
 	print("[Legacy Move Pads] " .. tostring(mode or "off: Roblox's own thumbstick"))
 end
 function api.Mode() return mode end
@@ -523,27 +708,6 @@ Env.BPMovePadsCleanup = function()
 	if gui then pcall(function() gui:Destroy() end) gui = nil end
 	Env.BPMovePads = nil
 end
--- Roblox's own tap to move marker (its teardrop, rings, waypoints): hidden while tap to move is on
-local function hideTheirs(d)
-	if not alive or mode ~= "ClickToMove" then return end
-	pcall(function()
-		if d.Name == "BPTapMarker" then return end
-		if d:IsA("BasePart") then d.Transparency = 1 d.LocalTransparencyModifier = 1
-		elseif d:IsA("BillboardGui") or d:IsA("ParticleEmitter") or d:IsA("Beam") or d:IsA("Trail") then d.Enabled = false
-		elseif d:IsA("Decal") or d:IsA("Texture") then d.Transparency = 1
-		elseif d:IsA("SelectionBox") or d:IsA("Highlight") then d.Visible = false end
-	end)
-end
-task.spawn(function()
-	local cam = workspace.CurrentCamera
-	while alive and not cam do task.wait() cam = workspace.CurrentCamera end
-	if not cam then return end
-	track(cam.DescendantAdded:Connect(function(d) task.defer(function() if d.Parent then hideTheirs(d) end end) end))
-	track(RunService.Heartbeat:Connect(function()
-		if mode ~= "ClickToMove" then return end
-		for _, d in ipairs(cam:GetDescendants()) do hideTheirs(d) end
-	end))
-end)
 -- (the thumbstick's place is learned while it is still on screen)
 task.spawn(function()
 	for _ = 1, 20 do
