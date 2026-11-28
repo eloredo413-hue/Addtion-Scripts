@@ -8,8 +8,9 @@
 --     game has it, instead of being waited for forever.
 --   * StarterPlayerScripts.Camera: the Retro camera (Main, Popper, Opacity) that does the actual camera work, as in
 --     Retro Studio: every frame it takes over from the CameraScript's update ("cameraRenderUpdate"). That is the zoom:
---     the camera glides to the new distance, never closer than 1 stud, your character half see-through closer than
---     6 studs and hidden closer than 2, and a tick for each step. Changed here: in first person you are not turned
+--     the camera glides to the new distance, never closer than 1 stud, and a tick for each step. (Addtion-Scripts: your
+--     character is not made see-through on the way in, as in the user's 2007 recording; in first person, closer than
+--     2 studs, only your head and what is on it is hidden, so you see your body when you look down.) Changed here: in first person you are not turned
 --     to face where you look (that is the 2013 camera's), and it follows behind you while the camera is Follow (the
 --     CameraScript keeps it Follow; in Retro Studio a teleport setting says so).
 -- This is the original Retro camera, not the 2013 Camera's copy (that one is changed for 2013: its own first-person
@@ -2203,6 +2204,7 @@ do
 
 
 	-- [[ MODULE: OPACITY ]]
+	local IsHeadThing
 	local Opacity = {}
 	do
 		local LastUpdate = tick()
@@ -2223,6 +2225,36 @@ do
 				return not HasToolAncestor(part)
 			end
 			return false
+		end
+
+		-- (Addtion-Scripts) the head and what sits on it: the Head, its face, hats / hair / face accessories (welded to the
+		-- head or on a head attachment) and Classic Face's classic head
+		local HEAD_ATTACHMENTS = { HatAttachment = true, HairAttachment = true, FaceFrontAttachment = true, FaceCenterAttachment = true }
+		local headThing = setmetatable({}, { __mode = "k" })
+		function IsHeadThing(object)
+			local known = headThing[object]
+			if known ~= nil then return known end
+			local result = false
+			pcall(function()
+				local character = object:FindFirstAncestorWhichIsA("Model")
+				local head = character and character:FindFirstChild("Head")
+				if object == head or (head and object.Parent == head) then
+					result = true
+				elseif object.Name == "ClassicHead" or (object.Parent and object.Parent.Name == "ClassicHead") then
+					result = true
+				else
+					local accessory = object:FindFirstAncestorWhichIsA("Accoutrement")
+					local handle = accessory and accessory:FindFirstChild("Handle")
+					if handle then
+						for _, d in ipairs(handle:GetChildren()) do
+							if d:IsA("Attachment") and HEAD_ATTACHMENTS[d.Name] then result = true break end
+							if d:IsA("JointInstance") and head and (d.Part0 == head or d.Part1 == head) then result = true break end
+						end
+					end
+				end
+			end)
+			headThing[object] = result
+			return result
 		end
 
 		local function TeardownTransparency()
@@ -2322,18 +2354,19 @@ do
 					else transparency = 0 end
 				end
 
-				if TransparencyDirty or LastTransparency ~= transparency then
+				-- (Addtion-Scripts) as in the user's 2007 recording: the body never turns see-through as the camera comes
+				-- close (it goes right up to the head), and in first person only the head and what is on it (face, hats,
+				-- hair, Classic Face's classic head) are hidden: looking down you see your own body and arms
+				local firstPerson = transparency >= 1
+				if TransparencyDirty or LastTransparency ~= firstPerson then
 					for child in pairs(CachedParts) do
 						if child:IsA("BasePart") or child:IsA("Decal") then
-							if child.ClassName == "Decal" then
-								child.LocalTransparencyModifier = math.floor(transparency)
-							else
-								child.LocalTransparencyModifier = transparency
-							end
+							local hide = firstPerson and IsHeadThing(child)
+							child.LocalTransparencyModifier = hide and 1 or 0
 						end
 					end
 					TransparencyDirty = false
-					LastTransparency = transparency
+					LastTransparency = firstPerson
 				end
 			end
 			LastUpdate = now

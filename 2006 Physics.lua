@@ -167,11 +167,26 @@ local CLIMB_START_TIME = 0.15   -- ...for this long (seconds)
 local CLIMB_START_FACING = 0.6  -- ...with the stick pointing where you face (at the part)
 local CLIMB_CHEST = 2           -- (improved) studs above the climbing box: the chest box, where a wall shows up as big
 local CLIMB_GRACE = 0.25        -- (improved) seconds a climb holds on across a gap between two rungs
+-- (Addtion-Scripts) THE WOBBLY OLD-CLIENT FEEL (the user: "keep the easy climbing, but wobbly like actual old clients,
+-- you can move anywhere"). The climb still starts as easily, but while on it:
+--   * the stick moves you any way, sideways and away too (it used to be held to the wall), and your sideways speed is
+--     only lightly held back (it was cut by a fifth every frame, which pinned you in place),
+--   * you turn after the stick, loosely, instead of staying locked to the way you grabbed,
+--   * the body rocks and tilts a little as you go (more while moving), and the climb speed bobs a little,
+--     as the old physics did, instead of gliding up at one perfectly even speed
+local CLIMB_SIDE_KEEP = 0.95    -- share of the sideways speed kept each 1/60 s while on a rung (was 0.8 a frame)
+local CLIMB_TURN_RATE = 3       -- radians a second you turn after the stick while climbing
+local CLIMB_WOBBLE_DEG = 7      -- how far the body rocks and tilts while climbing and moving (half that when still)
+local CLIMB_WOBBLE_HZ = 2.2     -- how fast it rocks
+local CLIMB_BOB = 0.22          -- the climb speed bobs this share up and down
+local CLIMB_BOB_HZ = 2.6
+local CLIMB_WOBBLE_TORQUE = 6000 -- how hard the rocking is pushed (a loose push: the body sways, it isn't held still)
 local function startClimbingFWM(o)
     -- o: character, humanoid, rootPart, torso, isR15, hipBase() (R15: the body's own hip height), timePeriod,
     -- canStart() (FWM: not gliding, not tripped)
     local character, humanoid, rootPart, torso, isR15 = o.character, o.humanoid, o.rootPart, o.torso, o.isR15
     local damp = (o.timePeriod <= 14) and 0.8 or 0.4
+    local wobbleT = 0 -- (Addtion-Scripts) the time on the climb, for the rocking and the bob
     -- (Addtion-Scripts) let go of the stick and you drop: FWM's up to era 14, and asked for here too (o.dropOnRelease),
     -- as ladders didn't hold you until June 2014
     local dropOnRelease = o.dropOnRelease or o.timePeriod <= 14
@@ -188,9 +203,10 @@ local function startClimbingFWM(o)
     lift.P = 1000
     local gyro = Instance.new("BodyGyro") -- FWM's ClimbGyro
     gyro.Name = "ClimbGyro"
-    gyro.MaxTorque = Vector3.new(0, math.huge, 0)
-    gyro.P = 4000
-    gyro.D = 200
+    -- (Addtion-Scripts) a loose hold on the tilt too, for the old rocking (the turning stays firm: no spinning)
+    gyro.MaxTorque = Vector3.new(CLIMB_WOBBLE_TORQUE, math.huge, CLIMB_WOBBLE_TORQUE)
+    gyro.P = 2500
+    gyro.D = 220
     local climbing, facing, lastGrab, blockedFor, dropping, alive = false, nil, 0, 0, false, true
     local releasedAt = nil -- when the stick was let go on Roblox's own ladders and trusses
 
@@ -244,6 +260,7 @@ local function startClimbingFWM(o)
     end
     local function endClimb()
         climbing, facing = false, nil
+        wobbleT = 0
         lift.Parent = nil
         gyro.Parent = nil
         if BPGenv.BPClimbing then BPGenv.BPClimbing = nil end
@@ -328,28 +345,46 @@ local function startClimbingFWM(o)
             local v = rootPart.AssemblyLinearVelocity
             -- (Addtion-Scripts) the climb speed is eased to, not set each frame: the kick every frame, off and on between rungs,
             -- made the climb hop (the user: climbing a bit more smooth)
-            local easeUp = 1 - math.exp(-14 * dt)
-            rootPart.AssemblyLinearVelocity = v * (XZ * damp) + Vector3.new(0, v.Y + (CLIMB_KICK - v.Y) * easeUp, 0)
+            local easeUp = 1 - math.exp(-9 * dt)
+            -- (the wobbly feel: the speed bobs a little, and sideways you keep most of your speed)
+            local kick = CLIMB_KICK * (1 + CLIMB_BOB * math.sin(wobbleT * CLIMB_BOB_HZ * 2 * math.pi))
+            local keep = CLIMB_SIDE_KEEP ^ (dt * 60)
+            rootPart.AssemblyLinearVelocity = v * (XZ * keep) + Vector3.new(0, v.Y + (kick - v.Y) * easeUp, 0)
         elseif now - lastGrab > CLIMB_GRACE then
             endClimb()
             return
         else
             -- (a gap between two rungs, inside the grace: the climb carries on at its speed instead of stalling)
             local v = rootPart.AssemblyLinearVelocity
-            rootPart.AssemblyLinearVelocity = Vector3.new(v.X * damp, v.Y + (CLIMB_KICK - v.Y) * (1 - math.exp(-8 * dt)), v.Z * damp)
+            local keep = CLIMB_SIDE_KEEP ^ (dt * 60)
+            rootPart.AssemblyLinearVelocity = Vector3.new(v.X * keep, v.Y + (CLIMB_KICK - v.Y) * (1 - math.exp(-8 * dt)), v.Z * keep)
         end
         -- FWM's handleClimbing, every frame of the climb
+        wobbleT = wobbleT + dt
         if md.Magnitude < 0.1 then
             if dropOnRelease then drop() return end
             lift.Parent = nil
             gyro.Parent = nil
         else
-            -- along the stick, never away from the wall; facing the way you grabbed
+            -- (Addtion-Scripts) the wobbly old feel: the stick moves you any way (sideways, up, away), and you turn
+            -- after it loosely instead of staying locked to the way you grabbed
             local push = md * XZ
-            local into = push:Dot(facing)
-            if into < 0 then push = push - facing * into end
             lift.Velocity = push * CLIMB_PUSH
+            if push.Magnitude > 0.01 then
+                local want = push.Unit
+                local cosA = math.clamp(facing:Dot(want), -1, 1)
+                local angle = math.acos(cosA)
+                local step = math.min(angle, CLIMB_TURN_RATE * dt)
+                if angle > 1e-3 then
+                    local sideSign = (facing:Cross(want).Y >= 0) and 1 or -1
+                    facing = (CFrame.Angles(0, sideSign * step, 0) * facing).Unit
+                end
+            end
+            -- the body rocks and tilts a little as you climb (more while you move)
+            local amount = math.rad(CLIMB_WOBBLE_DEG) * math.clamp(0.5 + (rootPart.AssemblyLinearVelocity * XZ).Magnitude / 16, 0.5, 1)
+            local w = wobbleT * CLIMB_WOBBLE_HZ * 2 * math.pi
             gyro.CFrame = CFrame.lookAt(rootPart.Position, rootPart.Position + facing)
+                * CFrame.Angles(amount * 0.6 * math.sin(w * 0.7 + 1.3), 0, amount * math.sin(w))
             if lift.Parent ~= torso then lift.Parent = torso end
             if gyro.Parent ~= torso then gyro.Parent = torso end
         end

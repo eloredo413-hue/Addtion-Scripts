@@ -359,10 +359,10 @@ end
 -- After a press that loads something (a GUI, an addon), the game stutters for a moment: the next press waits
 -- until it runs smoothly again (a few smooth frames in a row; at most maxWait seconds), so the loads don't
 -- pile up into one long freeze (or a crash).
-local function settle(maxWait)
+local function settle(maxWait, frames)
 	local deadline = os.clock() + (maxWait or 3)
 	local smooth = 0
-	while os.clock() < deadline and smooth < 5 do
+	while os.clock() < deadline and smooth < (frames or 5) do
 		local ok, dt = pcall(function() return RunService.Heartbeat:Wait() end)
 		if not ok then task.wait(0.1) break end
 		if dt < 1 / 15 then smooth = smooth + 1 else smooth = 0 end
@@ -842,7 +842,7 @@ local function answerSetup(answers, files, name, firstWait)
 				if os.clock() - idleSince > ((given == 0) and (firstWait or 20) or 12) then break end
 				task.wait(0.25)
 			elseif frame == lastFrame and title == lastTitle and os.clock() - lastAt < 1.2 then
-				task.wait(0.2) -- (just answered: it is on its way out)
+				task.wait(0.1) -- (just answered: it is on its way out)
 			else
 				-- its answers: recorded ones first, then (once) the saved settings'. The physics step from the
 				-- saved settings first: its recorded taps depend on what its dropdown showed back then.
@@ -915,7 +915,7 @@ local function answerSetup(answers, files, name, firstWait)
 					end
 				end
 				if tookOver then stopReason = "you answered the setup yourself: the rest of it is up to you" break end
-				task.wait(0.35) -- (it has just slid in)
+				task.wait(0.2) -- (it has just slid in; was 0.35: the presets go faster, the user asked)
 				if tookOver then stopReason = "you answered the setup yourself: the rest of it is up to you" break end
 				-- still the same question and button (an addon may have just turned it into its own step, like the
 				-- Particles addon does with "old particles"): else looked at again
@@ -944,8 +944,11 @@ local function answerSetup(answers, files, name, firstWait)
 						answered[frame] = answered[frame] or {}
 						answered[frame][title] = true
 					end
-					-- (what was picked may be loading: the next press waits for the game to run smoothly)
-					settle(3)
+					-- (what was picked may be loading: the next press waits for the game to run smoothly. With the setup's
+					-- < > on, nothing loads until the last question, so only a short breath: the presets go faster)
+					local w = Env.BPWizard
+					local deferring = type(w) == "table" and type(w.deferring) == "function" and w.deferring()
+					if deferring then settle(0.4, 3) else settle(2) end
 				else
 					-- (its answer is put back for when it comes again)
 					queues[title] = queues[title] or {}
@@ -1052,7 +1055,7 @@ local function loadFiles(sourceFiles, name, remember)
 				-- (one at a time: each option starts its own loading, and all of them at once, right as the GUI itself
 				-- loads after the last question, froze the game for seconds: the 2013 loading screen's squares crawled at
 				-- 5 frames a second in the user's recording. The next one waits until the game runs smoothly again.)
-				settle(0.6)
+				settle(0.5, 3)
 			end
 		end
 		local decal = findIn(hammerPanel, OLD_DECAL_BUTTON)
