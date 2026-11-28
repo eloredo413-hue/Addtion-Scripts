@@ -197,6 +197,42 @@ local scriptToRun = "local SHOW_STATUS = " .. tostring(SHOW_STATUS) .. "\n"
             local T = Enum.TouchMovementMode
             MODERN = { T.Default, T.Thumbstick, T.DynamicThumbstick, T.ClickToMove }
         end)
+        -- (the sure way: the menu's modules are built with loadstring (RBXM Suite); where their code asks for the movement
+        -- modes, it is changed as it loads to keep only the modern ones. Works on executors without hookmetamethod too)
+        local function keepModern(list)
+            local out = {}
+            if type(list) ~= "table" then return list end
+            for _, v in ipairs(list) do
+                local n = tostring(v and v.Name or v)
+                if n ~= "DPad" and n ~= "Thumbpad" then table.insert(out, v) end
+            end
+            return out
+        end
+        Env.__BPModernModes = keepModern
+        pcall(function() _G.__BPModernModes = keepModern end)
+        local prevLoad = Env.loadstring or loadstring
+        local function patchModes(code)
+            if type(code) ~= "string" or not string.find(code, "TouchMovementMode", 1, true) then return code end
+            local n1, n2, n3
+            code, n1 = string.gsub(code, "([%w_%.]+):GetRegisteredTouchMovementModes%(%)",
+                "__BPModernModes(%1:GetRegisteredTouchMovementModes())")
+            code, n2 = string.gsub(code, "Enum%.TouchMovementMode:GetEnumItems%(%)",
+                "__BPModernModes(Enum.TouchMovementMode:GetEnumItems())")
+            -- (a list written out in the code: its DPad / Thumbpad entries dropped)
+            local n4 = 0
+            n3 = 0
+            if string.find(code, "Movement Mode", 1, true) then
+                code, n3 = string.gsub(code, "Enum%.TouchMovementMode%.DPad%s*,%s*", "")
+                code, n4 = string.gsub(code, "Enum%.TouchMovementMode%.Thumbpad%s*,%s*", "")
+            end
+            if n1 + n2 + n3 + n4 > 0 then
+                print("[2021] Movement Mode: the menu's list made modern as it loaded (no DPad / Thumbpad)")
+            end
+            return code
+        end
+        pcall(function()
+            Env.loadstring = function(code, name) return prevLoad(patchModes(code), name) end
+        end)
         local function modernList() local t = {} for i, v in ipairs(MODERN) do t[i] = v end return t end
         local unhookGame = nil
         pcall(function()
