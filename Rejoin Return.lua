@@ -29,11 +29,6 @@ local guiHere = tostring(Env.BP_RejoinGui or "")
 if guiHere == "" then guiHere = "FFlags" end
 
 local function say(text) print("[Rejoin Return] " .. text) end
-local function notify(text)
-	pcall(function()
-		game:GetService("StarterGui"):SetCore("SendNotification", { Title = "Bloxy", Text = text, Duration = 10 })
-	end)
-end
 
 local function has(code, text) return string.find(code, text, 1, true) ~= nil end
 
@@ -130,7 +125,7 @@ task.spawn(function()
 			warn("[Rejoin Return] the remembered copy of Bloxy doesn't load (" .. tostring(err) .. "): run Bloxy again by hand")
 		end
 	else
+		-- (no message on screen, the user asked: only the console says it)
 		say("no copy of Bloxy remembered yet: run Bloxy now, and the loader follows by itself")
-		notify("Run Bloxy once: the mod follows by itself, and after the next rejoin both come back on their own.")
 	end
 end)
