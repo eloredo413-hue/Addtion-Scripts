@@ -1450,9 +1450,8 @@ local PRESETS = {
 			{ "textures", "Normal" }, { "mobileJump", "No" }, { "body2006", "No" }, { "forcefield", "normal" },
 			{ "explosion", "Normal" }, { "terrain", "none" }, { "particles", "Normal" }, { "emotes", "No" } }),
 		choices = { SafeChat = false, Sounds = false, Mouse = "normal", MobileJump = false, Body2006 = false, Forcefield = "normal", Emotes = false } },
-	-- (no lighting of ours for 2021, the user asked: the game's own; it can be turned on in the hammer)
-	era { name = "2021", resetAll = true, topbar = "2021", note = "legacy materials, the game's own lighting, classic face, no leaderboard, no physics or camera",
-		material = "isLegacyMaterialsEnabled",
+	era { name = "2021", resetAll = true, topbar = "2021", note = "legacy materials, 2020 lighting, classic face, no leaderboard, no physics or camera",
+		material = "isLegacyMaterialsEnabled", lighting = { "isIWLighting2020Enabled" },
 		extra = { isClassicFaceEnabled = true, isRemoveLeaderboardEnabled = true },
 		physicsCamera = "none",
 		answers = setup({ { "safeChat", "No" }, { "backpack", "No" }, { "animations", "Normal" }, { "sounds", "No" }, { "mouse", "normal" },
