@@ -841,6 +841,43 @@ task.spawn(function()
     if why == "download" then warn("[Loader] Saved Settings.lua couldn't be downloaded") end
 end)
 
+-- REJOIN RETURN (Rejoin Return.lua in this repo): the FFlags GUIs (2021, 2023 old, 2023 new, Bloxy's own 2024(fflags))
+-- set Roblox flags and rejoin; in the server they rejoin only the GUI came back, without Bloxy or this loader, so nothing
+-- could be changed any more (the user asked for both back). Whatever is queued for after a rejoin gets one line in front
+-- that runs Rejoin Return.lua there: it starts Bloxy again (the copy it remembers), then this loader, and keeps Bloxy from
+-- loading its saved topbar again as it starts (that would rejoin again).
+local URL_REJOIN_RETURN = "https://raw.githubusercontent.com/eloredo413-hue/Addtion-Scripts/main/Rejoin%20Return.lua"
+do
+    local genv = getgenv()
+    genv.BPQueueWrappers = genv.BPQueueWrappers or setmetatable({}, { __mode = "k" })
+    local wrappers = genv.BPQueueWrappers
+    local function wrapQueue(orig)
+        if type(orig) ~= "function" or wrappers[orig] then return orig end
+        local wrapped = function(payload, ...)
+            if type(payload) == "string" and not string.find(payload, "BP_REJOIN_RETURN", 1, true) then
+                local pick = tostring(genv.BloxyTopbarPick or genv.BP_PendingTopbar or "")
+                payload = "-- BP_REJOIN_RETURN\npcall(function() local g = (getgenv and getgenv()) or _G g.BP_RejoinGui = "
+                    .. string.format("%q", pick) .. " task.spawn(function() local ok, e = pcall(function() loadstring(game:HttpGet(\""
+                    .. URL_REJOIN_RETURN .. "\"))() end) if not ok then warn(\"[Rejoin Return] didn't start: \" .. tostring(e)) end end) end)\n"
+                    .. payload
+                print("[Loader] after the rejoin, Bloxy and this loader come back too (Rejoin Return.lua)")
+            end
+            return orig(payload, ...)
+        end
+        wrappers[wrapped] = true
+        return wrapped
+    end
+    pcall(function()
+        local q = queue_on_teleport
+        if type(q) == "function" then genv.queue_on_teleport = wrapQueue(q) end
+    end)
+    pcall(function()
+        if type(syn) == "table" and type(syn.queue_on_teleport) == "function" then
+            syn.queue_on_teleport = wrapQueue(syn.queue_on_teleport)
+        end
+    end)
+end
+
 --========================================================
 -- UNCONDITIONAL MAIN ADDONS (Always Load)
 --========================================================
