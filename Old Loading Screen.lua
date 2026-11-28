@@ -643,8 +643,9 @@ local function build2016(screenGui)
 		Name = "GraphicsFrame",
 		BorderSizePixel = 0,
 		BackgroundTransparency = 1,
-		Position = UDim2.new(1, -69, 1, -70),
-		Size = UDim2.new(0, 64, 0, 64),
+		-- (Addtion-Scripts) a little bigger (69), as on the user's 2016 reference, the same 5 / 6 from the corner
+		Position = UDim2.new(1, -74, 1, -75),
+		Size = UDim2.new(0, 69, 0, 69),
 		ZIndex = 2,
 		Parent = blackFrame,
 	}
@@ -667,7 +668,7 @@ local function build2016(screenGui)
 		Size = UDim2.new(1, 0, 1, 0),
 		Position = UDim2.new(0, 0, 0, 0),
 		Font = Enum.Font.SourceSans,
-		TextSize = 14,
+		TextSize = 15, -- (the user's 2016 reference: a little bigger than 14, measured)
 		TextWrapped = false,
 		TextColor3 = COLORS.WHITE,
 		TextXAlignment = Enum.TextXAlignment.Center,
@@ -676,28 +677,32 @@ local function build2016(screenGui)
 		ZIndex = 2,
 		Parent = graphicsFrame,
 	}
+	-- (Addtion-Scripts) the name and the creator as in the user's 2016 reference ("Escape the iPhone Obby!"), measured
+	-- against our own screen on the same phone by the width of the words: the name in 40 (it was 32), wrapping onto a
+	-- second line within 40% of the width as there, the creator line in 30 (it was 24), 21 from the left; the name's last
+	-- line ends 38 above the bottom and the creator line starts 40 above it, as on the reference
 	local infoFrame = create "Frame" {
 		Name = "InfoFrame",
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0, 23, 1, -156),
-		Size = UDim2.new(0.4, 0, 0, 150),
+		Position = UDim2.new(0, 21, 1, -200),
+		Size = UDim2.new(0.4, 0, 0, 200),
 		ZIndex = 2,
 		Parent = blackFrame,
 	}
 	local placeLabel = textLabel {
-		Name = "PlaceLabel", Size = UDim2.new(1, 0, 0, 120), Font = Enum.Font.SourceSans, TextWrapped = true,
+		Name = "PlaceLabel", Size = UDim2.new(1, 0, 0, 162), Font = Enum.Font.SourceSans, TextWrapped = true,
 		Text = "", TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Bottom,
 		TextStrokeTransparency = 1, Parent = infoFrame,
 	}
 	placeLabel.TextScaled = false
-	placeLabel.TextSize = 32
+	placeLabel.TextSize = 40
 	local creatorLabel = textLabel {
-		Name = "CreatorLabel", Size = UDim2.new(1, 0, 0, 30), Position = UDim2.new(0, 0, 0, 120),
+		Name = "CreatorLabel", Size = UDim2.new(1, 0, 0, 36), Position = UDim2.new(0, 0, 0, 160),
 		Font = Enum.Font.SourceSans, TextWrapped = true, Text = "", TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = Enum.TextYAlignment.Top, TextStrokeTransparency = 1, Parent = infoFrame,
 	}
 	creatorLabel.TextScaled = false
-	creatorLabel.TextSize = 24
+	creatorLabel.TextSize = 30
 
 	local lastSize, dots, lastDot = nil, "...", os.clock()
 	local textureTransparency = 0
