@@ -2933,13 +2933,34 @@ task.spawn(function()
 			end
 
 			-- Exact labels first so "Bob" never claims "Bob2"'s row.
+			-- (the row's texts are read once, not once per player: with a full server,
+			-- reading the whole row again for every player and every button made the
+			-- menu stutter when it opened and rebuilt its rows)
+
+			local Texts = {}
+
+			local OwnRowText = GetText(Row)
+
+			if OwnRowText then
+				Texts[OwnRowText] = true
+			end
+
+			for _, Descendant in ipairs(Row:GetDescendants()) do
+
+				local Text = GetText(Descendant)
+
+				if Text then
+					Texts[Text] = true
+				end
+
+			end
 
 			for _, Player in ipairs(Players:GetPlayers()) do
 
 				if
-					HasText(Row, Player.Name)
-					or HasText(Row, Player.DisplayName)
-					or HasText(Row, "@" .. Player.Name)
+					Texts[Player.Name]
+					or Texts[Player.DisplayName]
+					or Texts["@" .. Player.Name]
 				then
 					return Player, Row
 				end
@@ -2966,6 +2987,61 @@ task.spawn(function()
 	-- holds the "Leave Game" button. The top bar also shows your name
 	-- (next to "Account: 13+") but must never be touched.
 
+	-- What each holder was found to be (the page and the frames that hold its rows stay
+	-- the same while the menu rebuilds its rows, so they are read once, not once per button:
+	-- reading the whole page four times for every flag and Add Friend button is what made
+	-- the menu stutter when it opened)
+
+	local HolderVerdict = setmetatable({}, { __mode = "k" })
+
+	local ReadHolder = function(Current: Instance)
+
+		local Known = HolderVerdict[Current]
+
+		if Known and os.clock() - Known.At < 5 then
+			return Known.Verdict
+		end
+
+		local Verdict = nil -- nil: keep looking further up
+
+		if Current.Name:lower():find("topbar") then
+			Verdict = false
+		else
+
+			local Leave = GetText(Current) == "Leave Game"
+
+			for _, Descendant in ipairs(Current:GetDescendants()) do
+
+				local Text = GetText(Descendant)
+
+				if Text then
+
+					if Text:sub(1, 8) == "Account:" then
+						Leave = nil
+						Verdict = false
+						break
+					end
+
+					if Text == "Leave Game" then
+						Leave = true
+					end
+
+				end
+
+			end
+
+			if Verdict == nil and Leave then
+				Verdict = true
+			end
+
+		end
+
+		HolderVerdict[Current] = { Verdict = Verdict, At = os.clock() }
+
+		return Verdict
+
+	end
+
 	local IsOnPlayersPage = function(Button: GuiButton)
 
 		local Current = Button.Parent
@@ -2976,22 +3052,10 @@ task.spawn(function()
 				return false
 			end
 
-			if Current.Name:lower():find("topbar") then
-				return false
-			end
+			local Verdict = ReadHolder(Current)
 
-			for _, Descendant in ipairs(Current:GetDescendants()) do
-
-				local Text = GetText(Descendant)
-
-				if Text and Text:sub(1, 8) == "Account:" then
-					return false
-				end
-
-			end
-
-			if HasText(Current, "Leave Game") then
-				return true
+			if Verdict ~= nil then
+				return Verdict
 			end
 
 			Current = Current.Parent

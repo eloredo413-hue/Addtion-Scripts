@@ -1243,7 +1243,7 @@ local function preset2013()
 			isRemoveProEnabled = true, is2012ColorsEnabled = true, isClassicFaceEnabled = true, isOldPartSoundsEnabled = true,
 			isHealthESPEnabled = true, isHideGameGuiEnabled = true, isOldHealthBarEnabled = true, isRemoveLeaderboardEnabled = true,
 			isMobileControlsEnabled = true, isOldThumbstickEnabled = true, isOutlineEnabled = true, isOldDecalEnabled = false, isUGCRemoverEnabled = false,
-			isAllPlayersEnabled = false, isOldAvatarEnabled = false, is2006AvatarEnabled = false, is2008PlayersEnabled = false },
+			isAllPlayersEnabled = true, isOldAvatarEnabled = false, is2006AvatarEnabled = false, is2008PlayersEnabled = false },
 		physicsCamera = "bothOld2013", answers = ANSWERS_2013, choices = CHOICES_2013 }
 end
 local function presetEarly2014()
@@ -1420,6 +1420,13 @@ local PRESETS = {
 			{ "explosion", "Normal" }, { "terrain", "none" }, { "particles", "Normal" }, { "emotes", "No" } }),
 		choices = { SafeChat = false, Sounds = false, Mouse = "normal", MobileJump = false, Body2006 = false, Forcefield = "normal", Emotes = false } },
 }
+-- All players: on in every preset up to 2019 (the user: "enable all players for all of the presets, except for everything
+-- above 2019"); 2021, 2023 old, 2023 new and 2024 keep it off
+local ALL_PLAYERS_UP_TO = 2019
+for _, preset in ipairs(PRESETS) do
+	local year = tonumber(string.match(preset.name, "(%d%d%d%d)%s*$")) or tonumber(string.match(preset.name, "(%d%d%d%d)"))
+	preset.config.isAllPlayersEnabled = (year ~= nil and year <= ALL_PLAYERS_UP_TO)
+end
 -- Bloxy's own ids for its own years (More guis' added ones are kept in the topbar pick file instead)
 local BLOXY_TOPBAR_IDS = {
 	["2024"] = "2024", ["2024(fflags)"] = "2023_FFlags", ["2023(w.i.p)"] = "2023_WIP", ["2019"] = "2019", ["2017"] = "2017",
