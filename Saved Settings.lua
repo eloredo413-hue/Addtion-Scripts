@@ -835,6 +835,19 @@ local function answerSetup(answers, files, name, firstWait)
 		local stopReason = nil
 		local pressesOn = setmetatable({}, { __mode = "k" }) -- frame -> { [title] = presses }
 		local lookedAgain = 0
+		-- (a question that really takes another tap now: the next answer's button is on it right after the tap, like
+		-- the physics / camera step's dropdown items. Only then is the next tap given at once; a question whose next
+		-- answer isn't there, like the topbar's "confirm" when picking a GUI already goes on, is left to go)
+		local tapAgainOn, tapAgainTitle = nil, nil
+		local function nextButtonHere(frame, title)
+			local q = queues[title]
+			if not (q and #q > 0) then return nil end
+			local a = q[1]
+			local r = animRig(title)
+			if r then a = animForRig(a, r) end
+			if a == "confirm" and string.find(string.lower(title), "topbar", 1, true) then return nil end
+			return answerButton(frame, a)
+		end
 		while not destroyed do
 			if tookOver then stopReason = "you answered the setup yourself: the rest of it is up to you" break end
 			local frame, title = currentQuestion(isAnswered)
@@ -842,7 +855,7 @@ local function answerSetup(answers, files, name, firstWait)
 				if os.clock() - idleSince > ((given == 0) and (firstWait or 20) or 12) then break end
 				task.wait(0.1) -- (was 0.25: the next question is answered sooner, the user asked)
 			elseif frame == lastFrame and title == lastTitle and os.clock() - lastAt < 1.2
-				and not (queues[title] and #queues[title] > 0) then
+				and not (tapAgainOn == frame and tapAgainTitle == title) then
 				task.wait(0.1) -- (just answered: it is on its way out)
 			elseif frame == lastFrame and title == lastTitle and os.clock() - lastAt < 0.08 then
 				-- (more taps on the same question, like the physics / camera step's dropdowns: a short breath only.
@@ -887,6 +900,7 @@ local function answerSetup(answers, files, name, firstWait)
 				local queue = queues[title]
 				local isTopbar = string.find(string.lower(title), "topbar", 1, true) ~= nil
 				local btn, text = nil, nil
+				local confirmMissing = false
 				while queue and #queue > 0 and not btn and not tookOver do
 					local candidate = queue[1]
 					-- (the animations step: an answer for the other kind of avatar is given as its match here at once.
@@ -899,16 +913,30 @@ local function answerSetup(answers, files, name, firstWait)
 						btn = answerButton(frame, candidate)
 						if not btn then task.wait(0.25) end
 					until btn or os.clock() > deadline or tookOver or not frame.Parent
+						or (candidate == "confirm" and questionTitle(frame) ~= title) -- (the GUI picked already went on)
 					table.remove(queue, 1)
 					if btn then
 						text = candidate
+					elseif isTopbar and candidate == "confirm" then
+						confirmMissing = true
 					elseif isTopbar and candidate ~= "confirm" then
 						stopReason = "\"" .. candidate .. "\" isn't in the topbar list here: the rest of the setup is up to you"
 						break
 					end
 				end
 				if stopReason then break end
-				if not btn and not tookOver then
+				-- (the topbar's "confirm" not there: picking the GUI already went on, as with the setup's < >. Not a reason
+				-- to stop: the next question is answered as usual)
+				local skipThis = false
+				if not btn and not tookOver and isTopbar and confirmMissing then
+					answered[frame] = answered[frame] or {}
+					answered[frame][title] = true
+					idleSince = os.clock()
+					skipThis = true
+				end
+				if skipThis then
+					-- nothing to press
+				elseif not btn and not tookOver then
 					if isTopbar then
 						-- (a GUI isn't guessed)
 						stopReason = "no saved topbar: the rest of the setup is up to you"
@@ -923,6 +951,7 @@ local function answerSetup(answers, files, name, firstWait)
 						break
 					end
 				end
+				if not skipThis then
 				if tookOver then stopReason = "you answered the setup yourself: the rest of it is up to you" break end
 				-- (it has just slid in; was 0.35: the presets go faster, the user asked. A second tap on the same question
 				-- doesn't wait for that)
@@ -961,7 +990,16 @@ local function answerSetup(answers, files, name, firstWait)
 					local deferring = type(w) == "table" and type(w.deferring) == "function" and w.deferring()
 					-- (a tap with more to come on the same question, like opening a dropdown or picking in it, loads
 					-- nothing: no wait for the game there)
+					tapAgainOn, tapAgainTitle = nil, nil
 					if queues[title] and #queues[title] > 0 then
+						-- (its next answer's button shows a moment after the tap, if this question takes another one)
+						local untilAt = os.clock() + 0.3
+						while os.clock() < untilAt and not nextButtonHere(frame, title) do
+							pcall(function() RunService.Heartbeat:Wait() end)
+						end
+						if nextButtonHere(frame, title) then tapAgainOn, tapAgainTitle = frame, title end
+					end
+					if tapAgainOn then
 						-- nothing
 					elseif deferring then settle(0.4, 3) else settle(2) end
 				else
@@ -974,6 +1012,7 @@ local function answerSetup(answers, files, name, firstWait)
 						break
 					end
 				end
+				end -- (not skipThis)
 				idleSince = os.clock()
 			end
 		end
