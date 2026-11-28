@@ -108,6 +108,130 @@ local scriptToRun = "local SHOW_STATUS = " .. tostring(SHOW_STATUS) .. "\n"
         if not ok then warn("[2021] saved settings panel not loaded: " .. tostring(err)) end
     end)
 
+    -- (Addtion-Scripts) MODERN MOVEMENT OPTIONS ON PHONES: the escape menu is the 2019 one, whose Settings > Movement Mode
+    -- list had 2019's choices (DPad, Thumbpad, "Default (Thumbstick)"). By 2021 Roblox had taken DPad and Thumbpad away and
+    -- the default on a phone was the dynamic thumbstick, so the list shows the modern choices: Default (Dynamic
+    -- Thumbstick), Dynamic Thumbstick, Thumbstick, Tap to Move. The ones left keep their own buttons (what each picks is
+    -- unchanged); the two old ones are hidden and the rest moved up into their places.
+    task.spawn(function()
+        local UIS = game:GetService("UserInputService")
+        if not UIS.TouchEnabled then return end
+        local OLD = { ["dpad"] = true, ["thumbpad"] = true }
+        local RENAME = { ["default (thumbstick)"] = "Default (Dynamic Thumbstick)", ["default"] = "Default (Dynamic Thumbstick)" }
+        local MODE_WORDS = { "thumbstick", "tap to move", "click to move", "dpad", "thumbpad" }
+        local function lower(t) return string.lower(tostring(t or "")) end
+        local function isModeText(t)
+            t = lower(t)
+            for _, w in ipairs(MODE_WORDS) do if string.find(t, w, 1, true) then return true end end
+            return false
+        end
+        -- (a phone set to DPad or Thumbpad from before: the modern default)
+        pcall(function()
+            local ugs = UserSettings():GetService("UserGameSettings")
+            local name = ugs.TouchMovementMode.Name
+            if name == "DPad" or name == "Thumbpad" then ugs.TouchMovementMode = Enum.TouchMovementMode.Default end
+        end)
+        -- one list of choices (the buttons in one frame): only the Movement Mode list has DPad / Thumbpad and thumbsticks
+        local done = setmetatable({}, { __mode = "k" })
+        local origPos = setmetatable({}, { __mode = "k" }) -- (each button's own place, before any were moved up)
+        local function fixList(holder)
+            if done[holder] then
+                -- (already done: again only if the menu showed an old choice again)
+                local again = false
+                for _, b in ipairs(holder:GetChildren()) do
+                    if b:IsA("TextButton") and b.Visible and OLD[lower(b.Text)] then again = true end
+                end
+                if not again then return end
+            end
+            local buttons, hasOld, modeCount = {}, false, 0
+            for _, b in ipairs(holder:GetChildren()) do
+                if b:IsA("GuiButton") then
+                    local text = b:IsA("TextButton") and b.Text or ""
+                    if text == "" then
+                        local l = b:FindFirstChildWhichIsA("TextLabel")
+                        text = l and l.Text or ""
+                    end
+                    if isModeText(text) then modeCount = modeCount + 1 end
+                    if OLD[lower(text)] then hasOld = true end
+                    if not origPos[b] then origPos[b] = b.Position end
+                    table.insert(buttons, { b = b, text = text })
+                end
+            end
+            if not hasOld or modeCount < 3 or modeCount < #buttons then return end
+            table.sort(buttons, function(a, c) return origPos[a.b].Y.Offset < origPos[c.b].Y.Offset end)
+            local slots = {}
+            for i, e in ipairs(buttons) do slots[i] = origPos[e.b] end
+            local n = 0
+            for _, e in ipairs(buttons) do
+                if OLD[lower(e.text)] then
+                    e.b.Visible = false
+                else
+                    n = n + 1
+                    e.b.Position = slots[n]
+                    local new = RENAME[lower(e.text)]
+                    if new then
+                        if e.b:IsA("TextButton") and e.b.Text ~= "" then e.b.Text = new
+                        else local l = e.b:FindFirstChildWhichIsA("TextLabel") if l then l.Text = new end end
+                    end
+                end
+            end
+            if holder:IsA("ScrollingFrame") and #buttons > 1 and not done[holder] then
+                local pitch = slots[2].Y.Offset - slots[1].Y.Offset
+                pcall(function()
+                    holder.CanvasSize = UDim2.new(holder.CanvasSize.X.Scale, holder.CanvasSize.X.Offset, 0,
+                        holder.CanvasSize.Y.Offset - pitch * (#buttons - n))
+                end)
+            end
+            if not done[holder] then
+                done[holder] = true
+                print("[2021] Movement Mode: the modern choices (no DPad / Thumbpad)")
+            end
+        end
+        -- the shown choice (the box with the arrow) says the modern default too
+        local function fixLabel(l)
+            if not (l:IsA("TextLabel") or l:IsA("TextButton")) then return end
+            local new = RENAME[lower(l.Text)]
+            if new and l.Parent and not l.Parent:IsA("ScrollingFrame") then
+                -- (only in the Movement Mode row)
+                local row, found = l.Parent, false
+                for _ = 1, 4 do
+                    if not row then break end
+                    for _, d in ipairs(row:GetChildren()) do
+                        if d:IsA("TextLabel") and string.find(lower(d.Text), "movement mode", 1, true) then found = true end
+                    end
+                    if found then break end
+                    row = row.Parent
+                end
+                if found then l.Text = new end
+            end
+        end
+        local function look(d)
+            if d:IsA("GuiButton") and d.Parent then task.defer(function() pcall(fixList, d.Parent) end) end
+            pcall(fixLabel, d)
+            if d:IsA("TextLabel") or d:IsA("TextButton") then
+                d:GetPropertyChangedSignal("Text"):Connect(function() pcall(fixLabel, d) end)
+            end
+        end
+        local CoreGui = game:GetService("CoreGui")
+        local gui = CoreGui:WaitForChild("NewRobloxGui", 60)
+        if not gui then return end
+        for _, d in ipairs(gui:GetDescendants()) do look(d) end
+        gui.DescendantAdded:Connect(look)
+        -- (a list opened again: the menu may put its buttons back)
+        game:GetService("RunService").Heartbeat:Connect(function()
+            for holder in pairs(done) do
+                if holder.Parent then
+                    for _, b in ipairs(holder:GetChildren()) do
+                        if b:IsA("GuiButton") and b.Visible then
+                            local t = b:IsA("TextButton") and b.Text or ""
+                            if OLD[lower(t)] then pcall(fixList, holder) break end
+                        end
+                    end
+                end
+            end
+        end)
+    end)
+
     local STATUS_GUI_NAME = "Legacy2019StatusGui"
     local HUD_GUI_NAME = "Legacy2019HudGui"
 
